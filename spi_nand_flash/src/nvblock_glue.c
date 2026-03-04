@@ -331,15 +331,22 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
     nvb_ctx->nvb_config.lock = NULL;  // Optional - not using thread locking
     nvb_ctx->nvb_config.unlock = NULL; // Optional - not using thread locking
     
-    // TODO: Initialize nvblock (Section 6)
-    // int ret = nvb_init(&nvb_ctx->nvb_info, &nvb_ctx->nvb_config);
-    // if (ret != 0) {
-    //     ESP_LOGE(TAG, "nvb_init failed: %d", ret);
-    //     free(nvb_ctx->meta_buf);
-    //     free(nvb_ctx);
-    //     handle->ops_priv_data = NULL;
-    //     return ESP_FAIL;
-    // }
+    // Task 6.1: Initialize nvblock
+    int ret = nvb_init(&nvb_ctx->nvb_info, &nvb_ctx->nvb_config);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_init failed: %d", ret);
+        free(nvb_ctx->meta_buf);
+        free(nvb_ctx);
+        handle->ops_priv_data = NULL;
+        // Map nvblock error to ESP error
+        if (ret == -NVB_EINVAL) {
+            return ESP_ERR_INVALID_ARG;
+        } else if (ret == -NVB_ENOSPC) {
+            return ESP_ERR_NO_MEM;
+        } else {
+            return ESP_FAIL;
+        }
+    }
 
     ESP_LOGI(TAG, "nvblock initialized successfully");
     return ESP_OK;
@@ -366,87 +373,274 @@ static esp_err_t nvblock_deinit(spi_nand_flash_device_t *handle)
 
 /**
  * @brief Read a sector through nvblock
+ * 
+ * Task 6.2: Read logical sector via nvblock wear leveling layer.
+ * nvblock manages logical-to-physical translation.
+ * 
+ * @param handle Device handle
+ * @param buffer Output buffer (size = page_size = sector size)
+ * @param sector_id Logical sector number
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, uint32_t sector_id)
 {
     ESP_LOGD(TAG, "nvblock_read: sector=%lu", sector_id);
-    // TODO: Implement logical sector read via nvblock
-    // nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
-    // Call nvb_read() with logical address translation
-    return ESP_ERR_NOT_SUPPORTED;
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // nvblock terminology: "block" = our sector (both are page_size)
+    // Read 1 block starting at sector_id
+    int ret = nvb_read(&nvb_ctx->nvb_info, buffer, sector_id, 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_read failed for sector %lu: %d", sector_id, ret);
+        // Map nvblock errors to ESP errors
+        if (ret == -NVB_EINVAL) {
+            return ESP_ERR_INVALID_ARG;
+        } else if (ret == -NVB_ENOENT) {
+            return ESP_ERR_NOT_FOUND;
+        } else {
+            return ESP_FAIL;
+        }
+    }
+    
+    return ESP_OK;
 }
 
 /**
  * @brief Write a sector through nvblock
+ * 
+ * Task 6.3: Write logical sector via nvblock wear leveling layer.
+ * nvblock handles wear leveling, bad block remapping, and physical allocation.
+ * 
+ * @param handle Device handle
+ * @param buffer Input buffer (size = page_size = sector size)
+ * @param sector_id Logical sector number
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *buffer, uint32_t sector_id)
 {
     ESP_LOGD(TAG, "nvblock_write: sector=%lu", sector_id);
-    // TODO: Implement logical sector write via nvblock
-    return ESP_ERR_NOT_SUPPORTED;
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // nvblock terminology: "block" = our sector (both are page_size)
+    // Write 1 block starting at sector_id
+    int ret = nvb_write(&nvb_ctx->nvb_info, buffer, sector_id, 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_write failed for sector %lu: %d", sector_id, ret);
+        // Map nvblock errors to ESP errors
+        if (ret == -NVB_EINVAL) {
+            return ESP_ERR_INVALID_ARG;
+        } else if (ret == -NVB_ENOSPC) {
+            return ESP_ERR_NO_MEM;  // Out of space (no spare blocks)
+        } else if (ret == -NVB_EROFS) {
+            return ESP_ERR_INVALID_STATE;  // Read-only
+        } else {
+            return ESP_FAIL;
+        }
+    }
+    
+    return ESP_OK;
 }
 
 /**
  * @brief Erase the entire chip
+ * 
+ * Erase all blocks and reinitialize nvblock.
+ * This is used for factory reset or switching wear leveling implementations.
+ * 
+ * @param handle Device handle
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_erase_chip(spi_nand_flash_device_t *handle)
 {
     ESP_LOGI(TAG, "nvblock_erase_chip");
-    // TODO: Implement chip erase (erase all blocks, reinitialize nvblock)
-    return ESP_ERR_NOT_SUPPORTED;
+    
+    // Erase all physical blocks via HAL
+    esp_err_t ret = nand_erase_chip(handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "nand_erase_chip failed: %d", ret);
+        return ret;
+    }
+    
+    // Deinitialize and reinitialize nvblock
+    nvblock_deinit(handle);
+    return nvblock_init(handle);
 }
 
 /**
- * @brief Erase a logical block
+ * @brief Erase a logical block (not typically used with wear leveling)
+ * 
+ * This function is provided for compatibility but direct block erase
+ * is not recommended with wear leveling. Use trim instead.
+ * 
+ * @param handle Device handle
+ * @param block Block number (physical, not logical)
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
     ESP_LOGD(TAG, "nvblock_erase_block: block=%lu", block);
-    // TODO: Map to nvblock trim operation
-    return ESP_ERR_NOT_SUPPORTED;
+    // Direct physical block erase (bypasses wear leveling)
+    return nand_erase_block(handle, block);
 }
 
 /**
  * @brief Trim a sector (mark as no longer needed)
+ * 
+ * Task 6.4: Implement trim using nvb_write with NULL data.
+ * According to nvblock documentation, writing NULL deletes blocks.
+ * 
+ * @param handle Device handle
+ * @param sector_id Logical sector number
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_trim(spi_nand_flash_device_t *handle, uint32_t sector_id)
 {
     ESP_LOGD(TAG, "nvblock_trim: sector=%lu", sector_id);
-    // TODO: Call nvb_trim()
-    return ESP_ERR_NOT_SUPPORTED;
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // nvblock trim: write NULL data to delete the block
+    int ret = nvb_write(&nvb_ctx->nvb_info, NULL, sector_id, 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_write(NULL) failed for sector %lu: %d", sector_id, ret);
+        if (ret == -NVB_EINVAL) {
+            return ESP_ERR_INVALID_ARG;
+        } else {
+            return ESP_FAIL;
+        }
+    }
+    
+    return ESP_OK;
 }
 
 /**
  * @brief Sync/flush pending operations
+ * 
+ * Task 6.5: Flush nvblock state to ensure persistence.
+ * Uses nvblock's IOCTL interface with NVB_CMD_CTRL_SYNC command.
+ * 
+ * @param handle Device handle
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_sync(spi_nand_flash_device_t *handle)
 {
     ESP_LOGD(TAG, "nvblock_sync");
-    // TODO: Call nvb_flush()
-    return ESP_ERR_NOT_SUPPORTED;
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Use nvblock IOCTL to sync/flush
+    int ret = nvb_ioctl(&nvb_ctx->nvb_info, NVB_CMD_CTRL_SYNC, NULL);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_ioctl(NVB_CMD_CTRL_SYNC) failed: %d", ret);
+        return ESP_FAIL;
+    }
+    
+    return ESP_OK;
 }
 
 /**
  * @brief Copy a sector
+ * 
+ * Task 6.7: Copy data from one logical sector to another.
+ * Implemented as read + write operation.
+ * 
+ * @param handle Device handle
+ * @param src_sec Source sector ID
+ * @param dst_sec Destination sector ID
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_copy_sector(spi_nand_flash_device_t *handle, uint32_t src_sec, uint32_t dst_sec)
 {
     ESP_LOGD(TAG, "nvblock_copy_sector: src=%lu, dst=%lu", src_sec, dst_sec);
-    // TODO: Implement sector copy (read + write)
-    return ESP_ERR_NOT_SUPPORTED;
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Allocate temporary buffer for sector data
+    uint8_t *temp_buf = malloc(handle->chip.page_size);
+    if (!temp_buf) {
+        ESP_LOGE(TAG, "Failed to allocate temp buffer for copy");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Read source sector
+    int ret = nvb_read(&nvb_ctx->nvb_info, temp_buf, src_sec, 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_read failed for src sector %lu: %d", src_sec, ret);
+        free(temp_buf);
+        return ESP_FAIL;
+    }
+    
+    // Write to destination sector
+    ret = nvb_write(&nvb_ctx->nvb_info, temp_buf, dst_sec, 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_write failed for dst sector %lu: %d", dst_sec, ret);
+        free(temp_buf);
+        return ESP_FAIL;
+    }
+    
+    free(temp_buf);
+    return ESP_OK;
 }
 
 /**
  * @brief Get capacity in sectors
+ * 
+ * Task 6.6: Query nvblock capacity and convert to sector count.
+ * Uses nvblock's IOCTL interface with NVB_CMD_GET_BLK_COUNT command.
+ * 
+ * @param handle Device handle
+ * @param number_of_sectors Output: total number of logical sectors
+ * @return ESP_OK on success, error code otherwise
  */
 static esp_err_t nvblock_get_capacity(spi_nand_flash_device_t *handle, uint32_t *number_of_sectors)
 {
     ESP_LOGD(TAG, "nvblock_get_capacity");
-    // TODO: Query nvb_capacity() and convert to sectors
-    if (number_of_sectors) {
-        *number_of_sectors = 0; // Placeholder
+    nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
+    
+    if (!nvb_ctx) {
+        ESP_LOGE(TAG, "nvblock context not initialized");
+        return ESP_ERR_INVALID_STATE;
     }
-    return ESP_ERR_NOT_SUPPORTED;
+    
+    if (!number_of_sectors) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Query nvblock for total block count
+    uint32_t block_count = 0;
+    int ret = nvb_ioctl(&nvb_ctx->nvb_info, NVB_CMD_GET_BLK_COUNT, &block_count);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "nvb_ioctl(NVB_CMD_GET_BLK_COUNT) failed: %d", ret);
+        return ESP_FAIL;
+    }
+    
+    // In our implementation: 1 nvblock "block" = 1 sector (both are page_size)
+    *number_of_sectors = block_count;
+    ESP_LOGD(TAG, "nvblock capacity: %lu sectors", *number_of_sectors);
+    
+    return ESP_OK;
 }
 
 // ============================================================================

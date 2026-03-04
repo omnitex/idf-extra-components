@@ -44,13 +44,13 @@
 
 ## 6. nvblock Glue Layer - spi_nand_ops Interface
 
-- [ ] 6.1 Implement nvblock_init (allocate context, configure nvblock, call nvb_init)
-- [ ] 6.2 Implement nvblock_read (logical address → nvblock page translation → nvb_read)
-- [ ] 6.3 Implement nvblock_write (logical address → nvblock page translation → nvb_write)
-- [ ] 6.4 Implement nvblock_erase (logical address range → nvb_trim)
-- [ ] 6.5 Implement nvblock_sync (call nvb_flush)
-- [ ] 6.6 Implement nvblock_get_capacity (query nvb_capacity)
-- [ ] 6.7 Populate nvblock_ops structure and export for nand_register_dev
+- [x] 6.1 Implement nvblock_init (allocate context, configure nvblock, call nvb_init)
+- [x] 6.2 Implement nvblock_read (logical address → nvblock page translation → nvb_read)
+- [x] 6.3 Implement nvblock_write (logical address → nvblock page translation → nvb_write)
+- [x] 6.4 Implement nvblock_erase (logical address range → nvb_trim)
+- [x] 6.5 Implement nvblock_sync (call nvb_flush)
+- [x] 6.6 Implement nvblock_get_capacity (query nvb_capacity)
+- [x] 6.7 Populate nvblock_ops structure and export for nand_register_dev
 
 ## 7. Core Integration
 
