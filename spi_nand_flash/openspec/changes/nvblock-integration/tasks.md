@@ -34,13 +34,13 @@
 
 ## 5. nvblock Glue Layer - HAL Callbacks
 
-- [ ] 5.1 Implement nvb_read_cb (group/page → HAL nand_read_page)
-- [ ] 5.2 Implement nvb_write_cb (group/page → HAL nand_write_page)
-- [ ] 5.3 Implement nvb_erase_cb (group → HAL nand_erase_block)
-- [ ] 5.4 Implement nvb_isbad_cb (group → HAL nand_is_block_bad)
-- [ ] 5.5 Implement nvb_markbad_cb (group → HAL nand_mark_block_bad)
-- [ ] 5.6 Implement nvb_move_cb with optimized nand_copy() from HAL
-- [ ] 5.7 Add error code mapping (nvblock errors → esp_err_t)
+- [x] 5.1 Implement nvb_read_cb (group/page → HAL nand_read_page)
+- [x] 5.2 Implement nvb_write_cb (group/page → HAL nand_write_page)
+- [x] 5.3 Implement nvb_erase_cb (group → HAL nand_erase_block)
+- [x] 5.4 Implement nvb_isbad_cb (group → HAL nand_is_block_bad)
+- [x] 5.5 Implement nvb_markbad_cb (group → HAL nand_mark_block_bad)
+- [x] 5.6 Implement nvb_move_cb with optimized nand_copy() from HAL
+- [x] 5.7 Add error code mapping (nvblock errors → esp_err_t)
 
 ## 6. nvblock Glue Layer - spi_nand_ops Interface
 
