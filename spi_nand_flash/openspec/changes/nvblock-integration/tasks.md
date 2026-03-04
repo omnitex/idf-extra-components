@@ -10,15 +10,15 @@
 
 ## 2. Kconfig Configuration
 
-- [ ] 2.1 Add wear leveling choice menu to Kconfig (SPI_NAND_FLASH_WL_DHARA vs SPI_NAND_FLASH_WL_NVBLOCK)
-- [ ] 2.2 Set SPI_NAND_FLASH_WL_DHARA as default choice
-- [ ] 2.3 Add comprehensive help text documenting trade-offs and migration requirements
+- [x] 2.1 Add wear leveling choice menu to Kconfig (SPI_NAND_FLASH_WL_DHARA vs SPI_NAND_FLASH_WL_NVBLOCK)
+- [x] 2.2 Set SPI_NAND_FLASH_WL_DHARA as default choice
+- [x] 2.3 Add comprehensive help text documenting trade-offs and migration requirements
 - [ ] 2.4 Verify menuconfig displays correctly (idf.py menuconfig)
 - [ ] 2.5 Test Kconfig mutual exclusion (only one option selectable)
 
 ## 3. Build System Integration
 
-- [ ] 3.1 Update CMakeLists.txt to conditionally compile dhara_glue.c or nvblock_glue.c based on Kconfig
+- [x] 3.1 Update CMakeLists.txt to conditionally compile dhara_glue.c or nvblock_glue.c based on Kconfig
 - [ ] 3.2 Add both dhara and nvblock to PRIV_REQUIRES (component manager limitation)
 - [ ] 3.3 Verify Dhara build still works (CONFIG_SPI_NAND_FLASH_WL_DHARA=y, idf.py build)
 - [ ] 3.4 Verify nvblock build configuration (CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y, idf.py fullclean build)
@@ -26,8 +26,8 @@
 
 ## 4. nvblock Glue Layer - Data Structures
 
-- [ ] 4.1 Create src/nvblock_glue.c skeleton file
-- [ ] 4.2 Define nvblock_context_t structure (nvb_t instance, metadata buffer, device handle)
+- [x] 4.1 Create src/nvblock_glue.c skeleton file
+- [x] 4.2 Define nvblock_context_t structure (nvb_t instance, metadata buffer, device handle)
 - [ ] 4.3 Implement runtime nvblock configuration calculation (bsize, bpg, gcnt, spgcnt from chip params)
 - [ ] 4.4 Implement metadata buffer allocation with runtime sizing (48 + bpg*2 bytes)
 - [ ] 4.5 Add context cleanup/free functions

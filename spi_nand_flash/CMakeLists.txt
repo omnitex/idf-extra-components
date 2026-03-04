@@ -15,6 +15,13 @@ if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" GREATER_EQUAL "6.0")
     endif()
 endif()
 
+# Conditionally add wear leveling implementation based on Kconfig selection
+if(CONFIG_SPI_NAND_FLASH_WL_DHARA)
+    list(APPEND srcs "src/dhara_glue.c")
+elseif(CONFIG_SPI_NAND_FLASH_WL_NVBLOCK)
+    list(APPEND srcs "src/nvblock_glue.c")
+endif()
+
 if(${target} STREQUAL "linux")
     list(APPEND srcs "src/nand_impl_linux.c"
                      "src/nand_linux_mmap_emul.c"

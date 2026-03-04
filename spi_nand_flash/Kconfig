@@ -1,5 +1,51 @@
 menu "SPI NAND Flash configuration"
 
+    choice SPI_NAND_FLASH_WL_IMPL
+        prompt "Wear Leveling Implementation"
+        default SPI_NAND_FLASH_WL_DHARA
+        help
+            Select the wear leveling / FTL (Flash Translation Layer) implementation for SPI NAND flash.
+
+            - Dhara: Mature, proven implementation with good performance. Default choice for most applications.
+            - nvblock: Newer implementation with smaller memory footprint and configurable block sizes.
+              Suitable for resource-constrained systems. Currently experimental.
+
+            WARNING: Changing wear leveling implementation requires erasing the entire flash chip.
+            Data formats are not compatible between implementations.
+
+    config SPI_NAND_FLASH_WL_DHARA
+        bool "Dhara (default, recommended)"
+        help
+            Use Dhara library for wear leveling.
+
+            Dhara is a mature and well-tested Flash Translation Layer implementation that provides:
+            - Excellent wear leveling performance
+            - Proven stability in production environments
+            - Good documentation and community support
+
+            This is the default and recommended option for most use cases.
+
+    config SPI_NAND_FLASH_WL_NVBLOCK
+        bool "nvblock (experimental, smaller footprint)"
+        help
+            Use nvblock library for wear leveling.
+
+            nvblock is a lightweight Flash Translation Layer implementation that provides:
+            - Smaller memory footprint (configurable block sizes down to 64 bytes)
+            - Simpler, more maintainable codebase
+            - Flexible block grouping for different use cases
+            - Atomic write guarantees with power-fail recovery
+
+            This option is suitable for:
+            - Resource-constrained systems with limited RAM
+            - Applications requiring specific block size configurations
+            - Systems prioritizing small code size
+
+            Note: nvblock integration is currently EXPERIMENTAL. Thorough testing
+            is recommended before using in production.
+
+    endchoice
+
     config NAND_FLASH_VERIFY_WRITE
         bool "Verify SPI NAND flash writes"
         default n
