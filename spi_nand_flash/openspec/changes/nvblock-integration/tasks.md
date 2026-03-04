@@ -55,9 +55,9 @@
 ## 7. Core Integration
 
 - [x] 7.1 Implement nand_register_dev() and nand_unregister_dev() in nvblock_glue.c (registers nvblock_ops)
-- [ ] 7.2 Verify no changes to public API (include/spi_nand_flash.h remains unchanged)
-- [ ] 7.3 Test device initialization with nvblock (verify nvb_init succeeds on real hardware)
-- [ ] 7.4 Test device registration and handle creation (verify context properly allocated)
+- [x] 7.2 Verify no changes to public API (include/spi_nand_flash.h remains unchanged)
+- [x] 7.3 Test device initialization with nvblock (verify nvb_init succeeds on real hardware)
+- [x] 7.4 Test device registration and handle creation (verify context properly allocated)
 
 ## 8. Functional Testing - Basic Operations
 
