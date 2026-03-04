@@ -9,14 +9,12 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "nvblock/nvblock.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
 #endif
 #include "nand_impl.h"
 #include "nand.h"
-
-// Note: nvblock header will be included once nvblock component is available
-// #include "nvblock/nvblock.h"
 
 static const char *TAG = "nvblock_glue";
 
@@ -28,7 +26,8 @@ static const char *TAG = "nvblock_glue";
  */
 typedef struct {
     spi_nand_flash_device_t *parent_handle;  ///< Pointer back to parent device
-    // nvb_t nvb;                              ///< nvblock instance (TODO: add when nvblock available)
+    struct nvb_info nvb_info;                 ///< nvblock instance
+    struct nvb_config nvb_config;             ///< nvblock configuration
     uint8_t *meta_buf;                        ///< Metadata buffer for nvblock (runtime-sized)
     size_t meta_buf_size;                     ///< Size of metadata buffer
 } nvblock_context_t;
@@ -123,21 +122,70 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
     handle->ops_priv_data = nvb_ctx;
     nvb_ctx->parent_handle = handle;
 
-    // TODO: Calculate nvblock configuration from chip parameters
-    // - bsize = chip.page_size
-    // - bpg = chip.pages_per_block (1 << chip.log2_ppb)
-    // - gcnt = chip.num_blocks
-    // - spgcnt = calculated spare blocks
+    // Task 4.3: Calculate nvblock configuration from chip parameters
+    // Map nvblock terminology to NAND flash:
+    // - bsize (virtual block size) = NAND page size
+    // - bpg (blocks per group) = NAND pages per block
+    // - gcnt (total groups) = NAND total blocks
+    // - spgcnt (spare groups) = calculated from gc_factor
+    
+    uint32_t bsize = handle->chip.page_size;                  // e.g., 2048 bytes
+    uint32_t bpg = 1 << handle->chip.log2_ppb;                // e.g., 64 pages/block
+    uint32_t gcnt = handle->chip.num_blocks;                  // e.g., 1024 blocks
+    
+    // Calculate spare group count for wear leveling
+    // gc_factor is percentage (e.g., 4 means 4% spare)
+    // Minimum 2 spare groups for wear leveling to function
+    uint32_t spgcnt = (gcnt * handle->config.gc_factor) / 100;
+    if (spgcnt < 2) {
+        spgcnt = 2;  // Ensure minimum spare blocks
+    }
+    
+    ESP_LOGI(TAG, "nvblock config: bsize=%lu, bpg=%lu, gcnt=%lu, spgcnt=%lu",
+             bsize, bpg, gcnt, spgcnt);
 
-    // TODO: Allocate metadata buffer (48 + bpg*2 bytes)
-    // nvb_ctx->meta_buf_size = 48 + (bpg * 2);
-    // nvb_ctx->meta_buf = malloc(nvb_ctx->meta_buf_size);
+    // Task 4.4: Allocate metadata buffer with runtime sizing
+    // According to nvblock documentation and comprehensive-spec.md:
+    // Metadata size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE)
+    // where NVB_META_DMP_START = 48 bytes (magic + version + epoch + crc + tgt + alt)
+    // and NVB_META_ADDRESS_SIZE = 2 bytes per block address
+    nvb_ctx->meta_buf_size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE);
+    nvb_ctx->meta_buf = calloc(1, nvb_ctx->meta_buf_size);
+    if (!nvb_ctx->meta_buf) {
+        ESP_LOGE(TAG, "Failed to allocate metadata buffer (%zu bytes)", nvb_ctx->meta_buf_size);
+        free(nvb_ctx);
+        handle->ops_priv_data = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "Allocated metadata buffer: %zu bytes", nvb_ctx->meta_buf_size);
 
-    // TODO: Configure nvblock callbacks and initialize
-    // nvb_config.cfg.read = nvb_read_cb;
-    // nvb_config.cfg.write = nvb_write_cb;
-    // ...
-    // nvb_init(&nvb_ctx->nvb, &nvb_config);
+    // Configure nvblock structure
+    memset(&nvb_ctx->nvb_config, 0, sizeof(struct nvb_config));
+    nvb_ctx->nvb_config.context = nvb_ctx;
+    nvb_ctx->nvb_config.meta = nvb_ctx->meta_buf;
+    nvb_ctx->nvb_config.bsize = bsize;
+    nvb_ctx->nvb_config.bpg = bpg;
+    nvb_ctx->nvb_config.gcnt = gcnt;
+    nvb_ctx->nvb_config.spgcnt = spgcnt;
+    
+    // TODO: Set up nvblock callbacks (Section 5)
+    // nvb_ctx->nvb_config.read = nvb_read_cb;
+    // nvb_ctx->nvb_config.prog = nvb_write_cb;
+    // nvb_ctx->nvb_config.move = nvb_move_cb;
+    // nvb_ctx->nvb_config.is_bad = nvb_isbad_cb;
+    // nvb_ctx->nvb_config.mark_bad = nvb_markbad_cb;
+    // nvb_ctx->nvb_config.sync = NULL; // Optional
+    
+    // TODO: Initialize nvblock (Section 6)
+    // int ret = nvb_init(&nvb_ctx->nvb_info, &nvb_ctx->nvb_config);
+    // if (ret != 0) {
+    //     ESP_LOGE(TAG, "nvb_init failed: %d", ret);
+    //     free(nvb_ctx->meta_buf);
+    //     free(nvb_ctx);
+    //     handle->ops_priv_data = NULL;
+    //     return ESP_FAIL;
+    // }
 
     ESP_LOGI(TAG, "nvblock initialized successfully");
     return ESP_OK;
