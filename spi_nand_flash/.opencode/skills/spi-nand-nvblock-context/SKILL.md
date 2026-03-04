@@ -1,228 +1,171 @@
 ---
 name: spi-nand-nvblock-context
-description: Context for spi_nand_flash nvblock integration project - OpenSpec workflows, project structure, and implementation approach
+description: How to work on the spi_nand_flash nvblock integration project - OpenSpec workflows and development practices
 license: MIT
 metadata:
   author: OpenCode AI
-  version: "1.1"
+  version: "2.0"
   created: 2026-03-04
   updated: 2026-03-04
-  progress: "21/113 tasks (19%)"
-  status: "active - implementing Section 5 HAL callbacks"
 ---
 
-# SPI NAND Flash + nvblock Integration - Project Context
+# SPI NAND Flash + nvblock Integration - How To Guide
 
-Complete context for working on the spi_nand_flash component nvblock integration using OpenSpec workflows.
+This skill provides everything you need to know to work on the nvblock integration project using OpenSpec workflows.
 
-## What is OpenSpec?
+## How to Check Current Progress
 
-**OpenSpec** is an AI-native system for spec-driven development that uses a structured workflow to go from idea → specification → implementation.
-
-**Core Concept**: Changes progress through artifact stages:
-- `proposal.md` - Why/what/capabilities
-- `specs/<capability>/spec.md` - Detailed requirements per capability
-- `design.md` - Technical decisions and architecture
-- `tasks.md` - Implementation checklist
-
-**Current Schema**: `spec-driven` (proposal → specs → design → tasks)
-
-## OpenSpec CLI Commands
+**ALWAYS start a session by checking current state:**
 
 ```bash
+# View dashboard with overall progress
+openspec view
+
+# Check specific change status
+openspec status --change "nvblock-integration"
+
 # List all changes
 openspec list
-
-# Show change details
-openspec show <change-name>
-
-# Check artifact status
-openspec status --change "<change-name>"
-
-# Get instructions for creating artifacts
-openspec instructions <artifact-id> --change "<change-name>" --json
-
-# Get instructions for implementing tasks
-openspec instructions apply --change "<change-name>" --json
-
-# Archive completed change
-openspec archive <change-name>
 ```
 
-## Custom Slash Commands (/.opencode/command/)
+This shows you:
+- Current task completion percentage
+- Which sections are done
+- What to work on next
 
-Use these shortcuts for OpenSpec workflows:
+## How to Implement Tasks with OpenSpec
 
-### `/opsx-new [change-name]`
-Start a new change - creates the directory structure and shows first artifact template
+### ⭐ Recommended: Use `/opsx-apply` Command
 
-### `/opsx-continue [change-name]`
-Create the next artifact in sequence (proposal → specs → design → tasks)
-
-### `/opsx-ff [change-name]` 
-Fast-forward - generate ALL artifacts at once without stepping through each
-
-### `/opsx-apply [change-name]`
-**Most important for implementation!** Implements tasks from tasks.md:
-- Reads context files (proposal, specs, design, tasks)
-- Works through pending tasks
-- Marks tasks complete as you go
-- Pauses on blockers or unclear requirements
-
-### `/opsx-verify [change-name]`
-Verify implementation matches specs before archiving:
-- Checks task completion
-- Validates spec coverage
-- Checks requirement implementation
-
-### `/opsx-archive [change-name]`
-Archive completed change and update main specs
-
-### `/opsx-explore`
-Enter explore mode - thinking partner for ideas and requirements clarification
-
-### `/opsx-sync [change-name]`
-Sync delta specs from a change to main specs without archiving
-
-## Project Structure
+**This is the PRIMARY way to work on this project:**
 
 ```
-spi_nand_flash/
-├── openspec/
-│   └── changes/
-│       └── nvblock-integration/          # Current active change
-│           ├── .openspec.yaml           # Schema: spec-driven
-│           ├── README.md                # Brief description
-│           ├── proposal.md              # Why/what/capabilities
-│           ├── comprehensive-spec.md    # Detailed 754-line spec (preserved)
-│           ├── design.md                # Technical decisions
-│           ├── tasks.md                 # 113 tasks (21 complete = 19%)
-│           ├── REVIEW.md                # Verification checklist
-│           └── specs/                   # Granular capability specs
-│               ├── nvblock-testing/
-│               ├── nvblock-wear-leveling/
-│               └── wear-leveling-selection/
-├── src/
-│   ├── nand.c                          # Core device management
-│   ├── nand_impl.c                     # HAL - low-level SPI NAND ops
-│   ├── dhara_glue.c                    # Existing Dhara integration
-│   └── nvblock_glue.c                  # nvblock integration (200+ lines, partial)
-├── include/
-│   └── spi_nand_flash.h                # Public API (MUST NOT CHANGE)
-├── priv_include/
-│   ├── nand.h                          # Internal: spi_nand_ops interface
-│   └── nand_impl.h                     # HAL function declarations
-├── Kconfig                             # Wear leveling selection menu ✅
-├── CMakeLists.txt                      # Conditional compilation ✅
-└── .opencode/
-    ├── command/                        # Slash commands (opsx-*)
-    └── skills/                         # Project-specific skills
-
-# nvblock component (sibling directory)
-nvblock/
-├── nvblock/                            # Git submodule (Laczen/nvblock)
-│   └── lib/
-│       ├── include/nvblock/nvblock.h   # API (874 lines)
-│       └── src/nvblock.c               # Implementation
-├── CMakeLists.txt                      # ESP-IDF wrapper
-├── idf_component.yml                   # Component manifest
-└── README.md
+/opsx-apply nvblock-integration
 ```
 
-## nvblock Integration - Current State
+**What it does:**
+- Loads all context (proposal, specs, design, tasks)
+- Shows current progress
+- Guides you through pending tasks
+- **Automatically marks tasks complete** in tasks.md as you work
+- Updates OpenSpec tracking correctly
+
+**Why use it:**
+- Prevents forgetting to update tasks.md (which breaks OpenSpec dashboard)
+- Ensures progress tracking stays accurate
+- Provides full context automatically
+- Handles the OpenSpec workflow for you
+
+### Alternative: Manual Task Tracking
+
+If you work without `/opsx-apply`, **you MUST manually update tasks.md**:
+
+1. Edit `openspec/changes/nvblock-integration/tasks.md`
+2. Change `- [ ]` to `- [x]` for completed tasks
+3. Commit tasks.md with your implementation commits
+4. Verify with `openspec view` that progress updated
+
+**Common mistake:** Implementing features but forgetting to mark tasks complete → OpenSpec shows wrong progress percentage!
+
+## How to Work on This Project
+
+### Starting a Work Session
+
+1. **Check current state** (see above)
+2. **Use the recommended approach:**
+   ```
+   /opsx-apply nvblock-integration
+   ```
+3. **Or manually review pending tasks:**
+   ```bash
+   # View which tasks are pending
+   cat openspec/changes/nvblock-integration/tasks.md | grep "^\- \[ \]"
+   ```
+
+### During Implementation
+
+**If using `/opsx-apply`:**
+- Let it guide you through tasks
+- It will mark tasks complete automatically
+
+**If working manually:**
+- Implement the code
+- Update tasks.md to mark `[x]` complete
+- Commit both code AND tasks.md together
+- Verify: `openspec view` shows correct progress
+
+### Commit Message Format
+
+Include task numbers in commits:
+
+```bash
+git commit -m "feat(nvblock): implement HAL callbacks (tasks 5.1-5.7)
+
+- Implement nvb_read_cb bridging to nand_read_page
+- Implement nvb_write_cb bridging to nand_write_page
+..."
+```
+
+### Building and Testing
+
+**Test both configurations after changes:**
+
+```bash
+# Build with Dhara (default - backward compatibility check)
+cd test_app
+idf.py build
+
+# Build with nvblock
+# Edit test_app/sdkconfig: CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y
+idf.py fullclean build
+```
+
+**Both must build successfully!**
+
+## Project Architecture
 
 ### What We're Building
 
 Add **nvblock** as an alternative wear leveling implementation alongside **Dhara**:
-- **Compile-time selection** via Kconfig (menuconfig) ✅ DONE
-- **100% backward compatible** - no public API changes ✅ VERIFIED
-- **Parallel implementation** - `nvblock_glue.c` alongside `dhara_glue.c` ✅ IN PROGRESS
-- Both implement the same `spi_nand_ops` interface 🚧 PARTIAL
+- Compile-time selection via Kconfig
+- 100% backward compatible (no public API changes)
+- Parallel implementation (`nvblock_glue.c` alongside `dhara_glue.c`)
+- Both implement the same `spi_nand_ops` interface
 
-### Why nvblock?
-
-- **Smaller footprint** - 0x2a6b0 bytes vs Dhara's 0x2b9c0 (confirmed!)
-- **Configurable block sizes** - Min 64 bytes vs Dhara's page-based approach
-- **Simpler design** - Single-file library (874 lines)
-- **Flexible configuration** - Better for resource-constrained systems
-- **Apache 2.0 license** - Same as ESP-IDF
-
-### Architecture Overview
+### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────┐
-│  Public API (spi_nand_flash.h)         │  ← NO CHANGES
+│  Public API (spi_nand_flash.h)         │  ← NO CHANGES ALLOWED
 └─────────────────────────────────────────┘
                    │
 ┌─────────────────────────────────────────┐
 │  Core (nand.c)                          │
-│  - Device detection & init              │
-│  - Registers spi_nand_ops based on      │
-│    Kconfig (dhara_ops vs nvblock_ops)   │
+│  Registers ops based on Kconfig         │
 └─────────────────────────────────────────┘
                    │
         ┌──────────┴──────────┐
         ▼                     ▼
 ┌──────────────┐      ┌──────────────┐
-│ dhara_glue.c │      │nvblock_glue.c│  ← NEW
-│ (existing)   │      │ (skeleton)   │
+│ dhara_glue.c │      │nvblock_glue.c│  ← Implementation here
+│ (existing)   │      │  (new)       │
 └──────────────┘      └──────────────┘
         │                     │
         └──────────┬──────────┘
                    ▼
         ┌─────────────────────┐
-        │  HAL (nand_impl.c)  │
+        │  HAL (nand_impl.h)  │
         │  - nand_read_page   │
         │  - nand_write_page  │
         │  - nand_erase_block │
         │  - nand_is_bad      │
         │  - nand_mark_bad    │
-        │  - nand_copy        │
-        └─────────────────────┘
-                   │
-                   ▼
-        ┌─────────────────────┐
-        │  SPI Driver         │
-        │  (ESP-IDF)          │
         └─────────────────────┘
 ```
 
-### Key Design Decisions
+### Key Interfaces
 
-**1. Parallel Implementation (nvblock_glue.c)**
-- Creates `src/nvblock_glue.c` parallel to `dhara_glue.c`
-- Both implement `spi_nand_ops` interface (defined in `priv_include/nand.h`)
-- Isolation: changes contained to new file, zero risk to existing code
-
-**2. Runtime Configuration Calculation**
-- nvblock config calculated at init time from chip parameters
-- `bsize = chip.page_size` (e.g., 2048 bytes)
-- `bpg = 1 << chip.log2_ppb` (e.g., 64 pages/block)
-- `gcnt = chip.num_blocks` (e.g., 1024 blocks)
-- `spgcnt = (gcnt * gc_factor) / 100` with minimum of 2 spare groups
-- Metadata buffer: `NVB_META_DMP_START (48) + (bpg * NVB_META_ADDRESS_SIZE)` bytes
-- **IMPLEMENTED** in nvblock_init() (tasks 4.3-4.4)
-
-**3. Kconfig Choice Menu**
-```
-choice SPI_NAND_FLASH_WL_IMPL
-    ├── SPI_NAND_FLASH_WL_DHARA (default)
-    └── SPI_NAND_FLASH_WL_NVBLOCK (experimental)
-```
-
-**4. CMakeLists.txt Conditional Compilation**
-```cmake
-if(CONFIG_SPI_NAND_FLASH_WL_DHARA)
-    list(APPEND srcs "src/dhara_glue.c")
-elseif(CONFIG_SPI_NAND_FLASH_WL_NVBLOCK)
-    list(APPEND srcs "src/nvblock_glue.c")
-endif()
-```
-
-### spi_nand_ops Interface
-
-Both glue layers must implement (from `priv_include/nand.h`):
-
+**spi_nand_ops** (what nvblock_glue.c must implement):
 ```c
 typedef struct {
     esp_err_t (*init)(spi_nand_flash_device_t *handle);
@@ -233,229 +176,223 @@ typedef struct {
     esp_err_t (*erase_block)(spi_nand_flash_device_t *handle, uint32_t block);
     esp_err_t (*trim)(spi_nand_flash_device_t *handle, uint32_t sector_id);
     esp_err_t (*sync)(spi_nand_flash_device_t *handle);
-    esp_err_t (*copy_sector)(spi_nand_flash_device_t *handle, uint32_t src_sec, uint32_t dst_sec);
-    esp_err_t (*get_capacity)(spi_nand_flash_device_t *handle, uint32_t *number_of_sectors);
+    esp_err_t (*copy_sector)(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
+    esp_err_t (*get_capacity)(spi_nand_flash_device_t *handle, uint32_t *sectors);
 } spi_nand_ops;
 ```
 
-### nvblock HAL Callbacks
-
-nvblock requires these callbacks (bridge to HAL):
-
+**nvblock HAL callbacks** (bridge to HAL):
 ```c
-// nvblock callback types (from nvblock API)
 int nvb_read_cb(void *ctx, uint32_t group, uint32_t page, void *buf, uint32_t len);
-int nvb_write_cb(void *ctx, uint32_t group, uint32_t page, const void *buf, uint32_t len);
-int nvb_erase_cb(void *ctx, uint32_t group);
-int nvb_isbad_cb(void *ctx, uint32_t group);
-int nvb_markbad_cb(void *ctx, uint32_t group);
-int nvb_move_cb(void *ctx, uint32_t from_grp, uint32_t from_pg, 
-                uint32_t to_grp, uint32_t to_pg, uint32_t len);
+int nvb_prog_cb(void *ctx, uint32_t group, uint32_t page, const void *buf, uint32_t len);
+int nvb_move_cb(void *ctx, uint32_t from_grp, uint32_t from_pg, uint32_t to_grp, uint32_t to_pg, uint32_t len);
+bool nvb_is_bad_cb(const void *ctx, uint32_t group);
+void nvb_mark_bad_cb(const void *ctx, uint32_t group);
 ```
 
-**Mapping**: nvblock "group" = NAND block, nvblock "page" = page within block
+**Terminology mapping:**
+- nvblock "group" = NAND block
+- nvblock "page" = page within block
+- nvblock "virtual block" = NAND page (configured via `bsize`)
 
-### Implementation Progress
+## Implementation Guidelines
 
-**Completed: 21/113 tasks (19%)**
+### Runtime Configuration
 
-✅ **Section 1: nvblock Component Setup (5/5)** - COMPLETE
-- 1.1: Created nvblock ESP-IDF component directory structure
-- 1.2: Added nvblock as git submodule from https://github.com/Laczen/nvblock
-- 1.3: Verified nvblock component builds (libnvblock.a)
-- 1.4: Added dependencies to spi_nand_flash and test_app idf_component.yml
-- 1.5: Verified both dhara and nvblock dependencies resolve (4 deps processed)
+nvblock config is calculated from chip parameters in `nvblock_init()`:
 
-✅ **Section 2: Kconfig Configuration (5/5)** - COMPLETE
-- 2.1-2.3: Created wear leveling choice menu with help text
-- 2.4: Verified menuconfig displays correctly
-- 2.5: Tested Kconfig mutual exclusion
+```c
+uint32_t bsize = handle->chip.page_size;           // e.g., 2048 bytes
+uint32_t bpg = 1 << handle->chip.log2_ppb;         // e.g., 64 pages/block
+uint32_t gcnt = handle->chip.num_blocks;           // e.g., 1024 blocks
+uint32_t spgcnt = (gcnt * gc_factor) / 100;        // spare groups (min 2)
+```
 
-✅ **Section 3: Build System Integration (5/5)** - COMPLETE
-- 3.1: Updated CMakeLists.txt for conditional compilation
-- 3.3: Verified Dhara build (100% backward compatible)
-- 3.4: Verified nvblock build configuration
-- 3.5: Confirmed only selected implementation compiled
-- 3.2: Both components in REQUIRES list
+**Metadata buffer size:**
+```c
+size_t meta_size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE);
+// For 64 pages/block: 48 + (64 * 2) = 176 bytes
+```
 
-✅ **Section 4: nvblock Glue Layer - Data Structures (5/5)** - COMPLETE
-- 4.1: Created src/nvblock_glue.c skeleton (now 200+ lines)
-- 4.2: Defined nvblock_context_t with nvb_info and nvb_config
-- 4.3: Implemented runtime configuration calculation (bsize, bpg, gcnt, spgcnt)
-- 4.4: Allocated metadata buffer with runtime sizing
-- 4.5: Context cleanup in nvblock_deinit()
+### HAL Function Reference
 
-✅ **Section 7: Core Integration (1/4)** - PARTIAL
-- 7.1: Implemented nand_register_dev() and nand_unregister_dev()
+Available in `nvblock_glue.c` via `#include "nand_impl.h"`:
 
-🚧 **Next Steps**:
-- **Section 5: nvblock HAL Callbacks (0/7)** - Implement 6 callbacks to bridge nvblock to nand_impl.h
-  - 5.1: nvb_read_cb
-  - 5.2: nvb_write_cb (prog)
-  - 5.3: nvb_erase_cb
-  - 5.4: nvb_isbad_cb
-  - 5.5: nvb_markbad_cb
-  - 5.6: nvb_move_cb
-  - 5.7: Wire up callbacks to nvblock config
-- **Section 6: spi_nand_ops Interface (0/7)** - Implement nvblock API integration in each ops
-- **Sections 8-20: Testing and Documentation** - Comprehensive testing and docs
+```c
+esp_err_t nand_read_page(device, block, page, buffer);
+esp_err_t nand_write_page(device, block, page, buffer);
+esp_err_t nand_erase_block(device, block);
+bool nand_is_block_bad(device, block);
+esp_err_t nand_mark_block_bad(device, block);
+esp_err_t nand_copy(device, src_block, src_page, dst_block, dst_page, count);
+```
 
-### Build Status
-
-Both configurations build successfully:
-- **Dhara (default)**: ✅ 0x2b9c0 bytes - 100% backward compatible
-- **nvblock**: ✅ 0x2a6b0 bytes - slightly smaller footprint
-- Expected warnings for unused callbacks (addressed in Section 5)
-
-### Recent Commits
-
-1. `e2b57af` - feat(nvblock): add nvblock ESP-IDF component wrapper (tasks 1.1-1.5)
-2. `89b568a` - feat(spi_nand_flash): implement nand_register_dev() for nvblock (task 7.1)
-3. `f605ebb` - feat(spi_nand_flash): implement nvblock data structures and initialization (tasks 4.3-4.5)
+**Use dhara_glue.c as reference** for how to:
+- Structure the glue layer
+- Implement callbacks
+- Handle errors
+- Manage context
 
 ### Critical Constraints
 
-⚠️ **MUST NOT**:
+⚠️ **MUST NOT:**
 - Change public API in `include/spi_nand_flash.h`
-- Break backward compatibility with existing Dhara users
-- Support runtime switching (compile-time only)
+- Break backward compatibility with Dhara
 - Modify `dhara_glue.c` or existing Dhara integration
+- Support runtime switching (compile-time only)
 
-✅ **MUST**:
+✅ **MUST:**
 - Keep Dhara as default (backward compatible)
 - Maintain identical public API behavior
-- Support all existing features (bad blocks, ECC, trim, sync)
-- Comprehensive testing before marking experimental → stable
+- Support all features (bad blocks, ECC, trim, sync)
+- Test both configurations (Dhara and nvblock)
 
-## Working with OpenSpec
+## OpenSpec Commands Reference
 
-### Starting a Session
+### Daily Workflow Commands
 
-1. **Check current changes**:
-   ```bash
-   openspec list
-   ```
+```bash
+# Check what needs to be done
+openspec view
 
-2. **Load change context** (for nvblock-integration):
-   ```bash
-   openspec show nvblock-integration
-   openspec status --change "nvblock-integration"
-   ```
+# Start working (recommended)
+/opsx-apply nvblock-integration
 
-3. **Start implementing** (recommended approach):
-   ```
-   /opsx-apply nvblock-integration
-   ```
-   This automatically:
-   - Reads all context files (proposal, specs, design, tasks)
-   - Shows current progress
-   - Guides through pending tasks
-   - Marks tasks complete as you go
+# When stuck or need to think through problems
+/opsx-explore
 
-### When to Use Each Command
-
-**Creating new changes**:
-- `/opsx-new <name>` - Step-by-step artifact creation
-- `/opsx-ff <name>` - Generate all artifacts at once
-
-**Working on existing changes**:
-- `/opsx-continue` - Create next artifact (if incomplete)
-- `/opsx-apply` - **Implement tasks** (main work loop)
-- `/opsx-explore` - Brainstorm/clarify before implementation
-
-**Finishing up**:
-- `/opsx-verify` - Check completeness/correctness before archiving
-- `/opsx-archive` - Finalize and archive completed change
-
-### Task Workflow
-
-Tasks are in `openspec/changes/<name>/tasks.md`:
-
-```markdown
-## Section Name
-
-- [ ] Task 1 description
-- [x] Task 2 description (completed)
-- [ ] Task 3 description
+# Before finishing work
+/opsx-verify nvblock-integration
 ```
 
-**When implementing**:
-1. Work through tasks sequentially
-2. Change `- [ ]` to `- [x]` when complete
-3. Commit changes with task numbers in commit message
-4. If blocked, document blocker and move to tasks that aren't blocked
+### Other Available Commands
 
-## Useful References
+```bash
+# Create new change
+/opsx-new <change-name>
 
-**ESP-IDF Component Structure**:
-- Public headers: `include/`
-- Private headers: `priv_include/`
-- Implementation: `src/`
-- Kconfig options: `Kconfig`
-- Build config: `CMakeLists.txt`
-- Dependencies: `idf_component.yml`
+# Continue creating artifacts
+/opsx-continue <change-name>
 
-**HAL Functions** (available in nvblock_glue.c via `nand_impl.h`):
-- `nand_read_page(dev, block, page, buffer)` - Read page data
-- `nand_write_page(dev, block, page, buffer)` - Write page data
-- `nand_erase_block(dev, block)` - Erase entire block
-- `nand_is_block_bad(dev, block)` - Check bad block status
-- `nand_mark_block_bad(dev, block)` - Mark block as bad
-- `nand_copy(dev, src_block, src_page, dst_block, dst_page, count)` - Optimized copy
+# Fast-forward create all artifacts
+/opsx-ff <change-name>
 
-**Supported NAND Chips**:
-- Winbond W25N series
-- Gigadevice GD5F series
-- Alliance AS5F series
-- Micron MT29F series
-- Zetta ZD35Q1GC
-- XTX XT26G08D
+# Sync specs without archiving
+/opsx-sync <change-name>
 
-## Quick Tips
+# Archive completed change
+/opsx-archive <change-name>
+```
 
-1. **Always use `/opsx-apply`** for implementation - it handles all the context loading and progress tracking
+## File Locations
 
-2. **Check OpenSpec status regularly**:
-   ```bash
-   openspec status --change "nvblock-integration"
-   ```
+```
+spi_nand_flash/
+├── openspec/changes/nvblock-integration/
+│   ├── proposal.md          # Why this change
+│   ├── design.md            # Technical decisions
+│   ├── tasks.md             # Implementation checklist ⭐ UPDATE THIS!
+│   └── specs/               # Detailed capability specs
+├── src/
+│   ├── nvblock_glue.c       # Your implementation here
+│   ├── dhara_glue.c         # Reference implementation
+│   └── nand.c               # Core (calls nand_register_dev)
+├── priv_include/
+│   ├── nand.h               # spi_nand_ops interface definition
+│   └── nand_impl.h          # HAL function declarations
+└── Kconfig                  # Wear leveling selection menu
 
-3. **Commit often** with task numbers:
-   ```
-   feat(nvblock): implement HAL callbacks (tasks 5.1-5.7)
-   ```
-
-4. **Read the design.md** - contains all technical decisions and rationale
-
-5. **When blocked** - use `/opsx-explore` to think through problems before coding
-
-6. **Before archiving** - always run `/opsx-verify` to catch incomplete work
+nvblock/ (sibling directory)
+├── nvblock/                 # Git submodule
+│   └── lib/
+│       ├── include/nvblock/nvblock.h   # nvblock API
+│       └── src/nvblock.c               # nvblock implementation
+```
 
 ## Troubleshooting
 
-**"Can't build nvblock_glue.c"**
-→ Fixed! nvblock component now exists and builds successfully
+### "OpenSpec shows wrong progress percentage"
 
-**"Which tasks should I do next?"**
-→ Section 5: nvblock HAL Callbacks (tasks 5.1-5.7) - implement the 6 callbacks
-→ Use `/opsx-apply nvblock-integration` for guided implementation
+**Cause:** tasks.md not updated when implementing features
 
-**"How do I know if implementation is correct?"**
-→ Build both configurations: Dhara (default) and nvblock
-→ Run `/opsx-verify nvblock-integration` when sections are complete
-→ Eventually: run test_app with real hardware
+**Fix:**
+```bash
+# Either use /opsx-apply which handles this automatically, or:
+# Manually edit openspec/changes/nvblock-integration/tasks.md
+# Change - [ ] to - [x] for completed tasks
+# Commit tasks.md
+# Verify: openspec view
+```
 
-**"Can I modify the workflow?"**
-→ Yes! OpenSpec is fluid - update artifacts if you discover better approaches
+### "Which tasks should I do next?"
 
-**"What's the metadata buffer size calculation?"**
-→ `NVB_META_DMP_START (48) + (bpg * NVB_META_ADDRESS_SIZE (2))`
-→ For 64 pages/block: 48 + (64 * 2) = 176 bytes
-→ See nvblock_glue.c:152 for implementation
+```bash
+# Check OpenSpec
+openspec view
+
+# Or use guided implementation
+/opsx-apply nvblock-integration
+```
+
+### "Build fails with nvblock configuration"
+
+1. Check Kconfig: `CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y`
+2. Clean build: `idf.py fullclean build`
+3. Verify only nvblock_glue.c compiles (not dhara_glue.c)
+4. Check for linker errors (usually missing function implementations)
+
+### "How to verify changes are correct?"
+
+```bash
+# Build both configurations
+# 1. Dhara (default) - must still work (backward compat)
+idf.py build
+
+# 2. nvblock - must compile and link
+# (edit sdkconfig to enable nvblock)
+idf.py fullclean build
+
+# Run verification
+/opsx-verify nvblock-integration
+```
+
+## ESP-IDF Component Structure
+
+Standard ESP-IDF component layout:
+
+```
+component/
+├── include/           # Public API headers
+├── priv_include/      # Private headers (component-internal)
+├── src/               # Implementation (.c files)
+├── Kconfig            # Configuration options
+├── CMakeLists.txt     # Build configuration
+└── idf_component.yml  # Component dependencies
+```
 
 ## Resources
 
-- **nvblock repo**: https://github.com/Laczen/nvblock
-- **Dhara library**: https://github.com/dlbeer/dhara
-- **OpenSpec docs**: Check `.opencode/command/` for detailed command workflows
-- **Change artifacts**: `openspec/changes/nvblock-integration/`
+- **nvblock repo**: https://github.com/Laczen/nvblock (874-line implementation)
+- **Dhara reference**: `src/dhara_glue.c` (existing implementation to mirror)
+- **OpenSpec change**: `openspec/changes/nvblock-integration/`
+- **Design decisions**: `openspec/changes/nvblock-integration/design.md`
+- **Task checklist**: `openspec/changes/nvblock-integration/tasks.md`
+
+## Quick Reference
+
+**Always start here:**
+```bash
+openspec view                      # See current progress
+/opsx-apply nvblock-integration    # Start working (recommended!)
+```
+
+**Reference implementation:**
+- Look at `src/dhara_glue.c` for patterns
+- Check `design.md` for technical decisions
+- Read nvblock API in `nvblock/nvblock/lib/include/nvblock/nvblock.h`
+
+**Don't forget:**
+- Update tasks.md (or use `/opsx-apply` which does it for you)
+- Test both Dhara and nvblock builds
+- Commit with task numbers in message
+- Check `openspec view` shows correct progress
