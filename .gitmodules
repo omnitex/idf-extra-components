@@ -81,3 +81,6 @@
 [submodule "cjson/cJSON"]
 	path = cjson/cJSON
 	url = https://github.com/DaveGamble/cJSON.git
+[submodule "nvblock/nvblock"]
+	path = nvblock/nvblock
+	url = https://github.com/Laczen/nvblock.git

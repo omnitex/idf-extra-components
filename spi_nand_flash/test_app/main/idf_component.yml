@@ -2,3 +2,6 @@ dependencies:
   espressif/spi_nand_flash:
     version: '*'
     override_path: '../../'
+  nvblock:
+    version: '0.1.*'
+    override_path: '../../../nvblock'

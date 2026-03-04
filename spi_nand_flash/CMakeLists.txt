@@ -51,5 +51,5 @@ endif()
 idf_component_register(SRCS ${srcs}
         INCLUDE_DIRS ${inc}
         PRIV_INCLUDE_DIRS ${priv_inc}
-        REQUIRES ${reqs}
+        REQUIRES ${reqs} dhara nvblock
         PRIV_REQUIRES ${priv_reqs})
