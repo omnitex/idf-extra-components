@@ -263,3 +263,23 @@ const spi_nand_ops nvblock_ops = {
     .copy_sector = nvblock_copy_sector,
     .get_capacity = nvblock_get_capacity,
 };
+
+// ============================================================================
+// Device Registration Functions
+// ============================================================================
+
+esp_err_t nand_register_dev(spi_nand_flash_device_t *handle)
+{
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    handle->ops = &nvblock_ops;
+    return ESP_OK;
+}
+
+esp_err_t nand_unregister_dev(spi_nand_flash_device_t *handle)
+{
+    free(handle->ops_priv_data);
+    handle->ops = NULL;
+    return ESP_OK;
+}
