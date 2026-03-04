@@ -13,16 +13,16 @@
 - [x] 2.1 Add wear leveling choice menu to Kconfig (SPI_NAND_FLASH_WL_DHARA vs SPI_NAND_FLASH_WL_NVBLOCK)
 - [x] 2.2 Set SPI_NAND_FLASH_WL_DHARA as default choice
 - [x] 2.3 Add comprehensive help text documenting trade-offs and migration requirements
-- [ ] 2.4 Verify menuconfig displays correctly (idf.py menuconfig)
-- [ ] 2.5 Test Kconfig mutual exclusion (only one option selectable)
+- [x] 2.4 Verify menuconfig displays correctly (idf.py menuconfig)
+- [x] 2.5 Test Kconfig mutual exclusion (only one option selectable)
 
 ## 3. Build System Integration
 
 - [x] 3.1 Update CMakeLists.txt to conditionally compile dhara_glue.c or nvblock_glue.c based on Kconfig
 - [ ] 3.2 Add both dhara and nvblock to PRIV_REQUIRES (component manager limitation)
-- [ ] 3.3 Verify Dhara build still works (CONFIG_SPI_NAND_FLASH_WL_DHARA=y, idf.py build)
-- [ ] 3.4 Verify nvblock build configuration (CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y, idf.py fullclean build)
-- [ ] 3.5 Confirm only selected implementation linked (check .map file for unused symbols)
+- [x] 3.3 Verify Dhara build still works (CONFIG_SPI_NAND_FLASH_WL_DHARA=y, idf.py build)
+- [x] 3.4 Verify nvblock build configuration (CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y, idf.py fullclean build)
+- [x] 3.5 Confirm only selected implementation linked (check .map file for unused symbols)
 
 ## 4. nvblock Glue Layer - Data Structures
 
