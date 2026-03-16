@@ -86,8 +86,8 @@ The system SHALL provide `nand_emul_mark_bad_block()` function to simulate facto
 #### Scenario: Operations on marked bad block
 - **WHEN** block is marked bad
 - **AND** developer attempts erase or write to that block
-- **THEN** system behavior SHALL match failure model configuration
-- **AND** operation MAY fail if failure model checks bad block flag
+- **THEN** the core operation handler SHALL return `ESP_ERR_FLASH_BAD_BLOCK`
+- **AND** SHALL NOT modify flash contents or update metadata
 
 ### Requirement: Export wear map
 The system SHALL provide `nand_emul_export_json()` function to export metadata to JSON for analysis.

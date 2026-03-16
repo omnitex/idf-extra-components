@@ -130,7 +130,8 @@ The system SHALL build comprehensive `nand_operation_context_t` before calling f
 #### Scenario: Core updates metadata when failure model marks block bad
 - **WHEN** failure model's `is_block_bad()` returns true for a block (e.g. before erase or write)
 - **THEN** core SHALL call metadata backend's `set_bad_block(block_num, true)` so metadata reflects the bad block
-- **AND** subsequent operations on that block SHALL treat it as bad (e.g. return ESP_ERR_FLASH_BAD_BLOCK if supported)
+- **AND** the core handler SHALL immediately return `ESP_ERR_FLASH_BAD_BLOCK`
+- **AND** SHALL NOT modify flash contents or update other metadata
 
 ### Requirement: Maintain existing statistics
 The system SHALL continue to update `CONFIG_NAND_ENABLE_STATS` counters when enabled.

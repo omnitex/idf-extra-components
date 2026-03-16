@@ -117,9 +117,10 @@ The system SHALL impose minimal performance overhead when advanced features are 
 The system SHALL propagate errors from backends and models to callers with clear codes.
 
 #### Scenario: Backend error during operation
-- **WHEN** metadata backend callback returns error during write operation
-- **THEN** `nand_emul_write()` SHALL return `ESP_ERR_FLASH_OP_FAIL` or appropriate code
-- **AND** SHALL log error with backend name and function
+- **WHEN** metadata backend callback returns error during write or erase operation
+- **THEN** the operation SHALL log a warning with backend name and function name
+- **AND** SHALL continue and return the flash operation result (tracking failure is non-fatal)
+- **AND** SHALL NOT return the backend error to the caller
 
 #### Scenario: Model init error
 - **WHEN** failure model's `init()` returns `ESP_ERR_NO_MEM`

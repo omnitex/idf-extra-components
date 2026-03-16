@@ -159,7 +159,8 @@ The system SHALL allow failure model to mark blocks as bad based on metadata ana
 #### Scenario: Bad block operations fail
 - **WHEN** a block is marked bad (by explicit mark or failure model)
 - **AND** operation is attempted on that block
-- **THEN** operation SHALL fail with `ESP_ERR_FLASH_BAD_BLOCK` if supported
+- **THEN** the core operation handler SHALL return `ESP_ERR_FLASH_BAD_BLOCK`
+- **AND** SHALL NOT modify flash contents or update metadata
 
 ### Requirement: Model lifecycle
 The system SHALL properly initialize and clean up failure model resources.

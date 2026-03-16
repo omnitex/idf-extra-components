@@ -74,12 +74,13 @@ typedef struct {
 
 // Page-level metadata
 typedef struct {
-    uint32_t program_count;         // Number of times page was programmed (aggregate)
+    uint32_t program_count;         // Number of programs in the CURRENT erase cycle (reset to 0 on block erase)
+    uint32_t program_count_total;   // Lifetime total programs (never reset; accumulates across all erase cycles)
     uint64_t first_program_timestamp; 
     uint64_t last_program_timestamp;
     uint32_t page_num;              // Page number (for iteration)
-    uint16_t byte_delta_count;      // Number of bytes with non-zero deltas
-    byte_delta_metadata_t *byte_deltas; // Sparse array of byte-level deltas (NULL if none)
+    uint16_t byte_delta_count;      // Number of bytes with non-zero deltas in the current erase cycle
+    byte_delta_metadata_t *byte_deltas; // Sparse array of byte-level deltas (NULL if none; reset on block erase)
 } page_metadata_t;
 
 // Block-level metadata
@@ -100,8 +101,8 @@ typedef struct {
     uint32_t min_block_erases;
     uint32_t max_block_erases;
     uint32_t avg_block_erases;
-    uint32_t min_page_programs;
-    uint32_t max_page_programs;
+    uint32_t min_page_programs;      // Based on program_count_total (lifetime)
+    uint32_t max_page_programs;      // Based on program_count_total (lifetime)
     uint32_t blocks_never_erased;
     uint32_t pages_never_written;
     double   wear_leveling_variation;  // (max - min) / avg erase counts (lower is better)
@@ -385,13 +386,15 @@ Block Metadata Section (variable):
 Page Metadata Section (variable):
   For each written page (sparse):
   - page_num: uint32_t
-  - program_count: uint32_t
+  - program_count: uint32_t       (current erase cycle)
+  - program_count_total: uint32_t (lifetime cumulative)
+  - (padding): 4 bytes
   - first_program_ts: uint64_t
   - last_program_ts: uint64_t
   - byte_delta_count: uint16_t
   - byte_delta_offset: uint32_t (relative offset in byte delta section)
   - (padding): 2 bytes
-  TOTAL: 32 bytes per page
+  TOTAL: 40 bytes per page
 
 Byte Delta Section (variable):
   For each outlier byte (compressed):
@@ -403,7 +406,7 @@ Byte Delta Section (variable):
 ```
 
 **Snapshot integrity and versioning**:
-- **Checksum**: CRC32 is computed over the **entire file** (header and all three sections). On load, the backend verifies it and returns an error if mismatch.
+- **Checksum**: CRC32 is computed over the **header only** (the first 60 bytes, excluding the 4-byte checksum field at the end). On load, the backend verifies it and returns an error if mismatch.
 - **Version**: Only version 1 is supported. Load SHALL return `ESP_ERR_NOT_SUPPORTED` for any other version and SHALL NOT change backend state.
 
 **Snapshot Size Estimates**:
@@ -926,8 +929,8 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 
 7. **`is_block_bad` (failure model) vs `nand_emul_mark_bad_block` (explicit mark)**
   - **Question**: How do the two sources of "bad block" combine?
-  - **Decision**: A block is considered bad if **either** (a) it was explicitly marked via `nand_emul_mark_bad_block` / backend `set_bad_block`, or (b) the failure model's `is_block_bad()` returns true. When the failure model returns true, the core SHALL call the backend's `set_bad_block(block_num, true)` so metadata reflects the status. Explicit mark and model-driven mark are equivalent once set; no override.
-  - **Rationale**: Single source of truth in metadata; both paths update the same flag.
+  - **Decision**: A block is considered bad if **either** (a) it was explicitly marked via `nand_emul_mark_bad_block` / backend `set_bad_block`, or (b) the failure model's `is_block_bad()` returns true. When the failure model returns true, the core SHALL call the backend's `set_bad_block(block_num, true)` so metadata reflects the status. The core operation handler SHALL then immediately return `ESP_ERR_FLASH_BAD_BLOCK` and SHALL NOT modify flash contents or update other metadata. Explicit mark and model-driven mark are equivalent once set.
+  - **Rationale**: Single source of truth in metadata; both paths update the same flag; bad block enforcement is in the core layer (unconditional), not delegated to the failure model.
 
 8. **Lifetime of `page_metadata_t.byte_deltas` and `get_byte_deltas` pointer**
   - **Question**: How long is the pointer returned in `get_page_info()` / `get_byte_deltas()` valid?
@@ -936,8 +939,8 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 
 9. **Snapshot checksum (CRC32) scope**
   - **Question**: CRC32 covers header only or entire file?
-  - **Decision**: CRC32 SHALL cover the **entire snapshot file** (header + block section + page section + byte delta section). On load, the backend SHALL verify the checksum over the same range and SHALL return an error if it does not match.
-  - **Rationale**: Ensures full file integrity; catches corruption in any section.
+  - **Decision**: CRC32 SHALL cover **the snapshot header only** (the first 60 bytes, excluding the 4-byte checksum field). On load, the backend SHALL verify the checksum over the same range and SHALL return an error if it does not match.
+  - **Rationale**: Header-only CRC is computable at header-write time without buffering the entire file. The header contains offsets and counts that describe the payload, so a corrupt payload (changed counts or offsets) is detectable via the header checksum.
 
 10. **Snapshot format versioning**
   - **Question**: How to handle unknown or future snapshot versions?
@@ -948,6 +951,15 @@ printf("Max block erases: %u\n", stats.max_block_erases);
   - **Question**: May the failure model corrupt only a subset of bytes? May it change length?
   - **Decision**: `data` is the read buffer; `len` is the number of bytes read (unchanged by the model). The model MAY flip bits (or otherwise corrupt) any subset of bytes in the range `[0, len)`. The model SHALL NOT write outside `[0, len)` and SHALL NOT assume it can change `len` or reallocate the buffer.
   - **Rationale**: Simulates bit errors in place; keeps API simple and safe.
+
+12. **Page program history across erase cycles**
+  - **Question**: Should `program_count` accumulate across all erase cycles, or only track the current cycle?
+  - **Decision**: `page_metadata_t` SHALL have two counters:
+    - `program_count` — number of programs **in the current erase cycle** (reset to 0 when the block is erased)
+    - `program_count_total` — **lifetime cumulative** programs across all cycles (never reset)
+  - Byte deltas (`byte_deltas`, `byte_delta_count`) track the current erase cycle only (freed and reset to NULL/0 on block erase).
+  - `first_program_timestamp` and `last_program_timestamp` track the **current cycle**; lifetime-first and lifetime-last can be derived from block data if needed.
+  - **Rationale**: `program_count` (per-cycle) is what makes delta encoding semantically correct — `write_count_delta` means "this byte was written N more times than the page in this cycle." `program_count_total` adds the historical view requested without breaking the delta math.
 
 ## Open Questions (For Future Consideration)
 

@@ -49,11 +49,18 @@ The system SHALL track program operations at page granularity including program 
 #### Scenario: Record page program
 - **WHEN** `nand_emul_write()` writes data to a page for the first time after erase
 - **THEN** backend SHALL receive `on_page_program()` callback with page number and timestamp
-- **AND** SHALL increment the page's program count
+- **AND** SHALL increment the page's `program_count` (current erase cycle)
+- **AND** SHALL also increment the page's `program_count_total` (lifetime cumulative, never reset)
 
 #### Scenario: Multiple writes to same page
 - **WHEN** multiple write operations target the same page without intermediate erase
-- **THEN** backend SHALL count each write as a separate program operation
+- **THEN** backend SHALL count each write as a separate program operation in both `program_count` and `program_count_total`
+
+#### Scenario: program_count resets on block erase
+- **WHEN** a block is erased
+- **THEN** backend SHALL reset `program_count` and byte deltas for all pages in that block to zero/NULL
+- **AND** SHALL NOT reset `program_count_total` (it persists across erase cycles)
+- **AND** SHALL retain the page metadata entry in the hash table to preserve the lifetime count
 
 ### Requirement: Byte-level tracking (optional)
 The system SHALL support optional byte-level delta tracking for partial page programs when enabled in configuration.
@@ -183,13 +190,13 @@ The system SHALL support saving and loading binary snapshots of metadata for wea
 #### Scenario: Save snapshot with metadata only
 - **WHEN** developer calls backend's `save_snapshot()` with filename and timestamp
 - **THEN** backend SHALL write binary file with header, block metadata, page metadata, and byte deltas
-- **AND** file SHALL include CRC32 checksum computed over the **entire file** (header + all sections) for integrity verification
+- **AND** file header SHALL include CRC32 checksum computed over **the header only** (excluding the checksum field itself) for integrity verification
 - **AND** file SHALL contain metadata ONLY (not flash data contents)
 - **AND** SHALL complete in less than 10ms for 32MB flash simulation
 
 #### Scenario: Load snapshot restores metadata
 - **WHEN** developer calls backend's `load_snapshot()` with snapshot filename
-- **THEN** backend SHALL verify CRC32 over the entire file; on mismatch SHALL return error and SHALL NOT modify backend state
+- **THEN** backend SHALL verify CRC32 over the header (excluding checksum field); on mismatch SHALL return error and SHALL NOT modify backend state
 - **AND** SHALL restore all block, page, and byte delta metadata
 - **AND** SHALL NOT modify flash data contents (mmap file)
 - **AND** subsequent queries SHALL return metadata from loaded snapshot

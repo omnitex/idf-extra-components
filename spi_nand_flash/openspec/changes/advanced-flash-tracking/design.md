@@ -36,16 +36,18 @@ typedef struct {
     uint32_t _reserved;            // For 16-byte alignment
 } byte_delta_metadata_t;
 
-// Page-level metadata (48 bytes with pointer)
+// Page-level metadata (56 bytes with pointer)
 typedef struct {
     uint32_t page_num;              // Page number (for iteration/hashing)
-    uint32_t program_count;         // Number of times page was programmed
-    uint64_t first_program_timestamp;
-    uint64_t last_program_timestamp;
-    uint16_t byte_delta_count;      // Number of entries in byte_deltas array
+    uint32_t program_count;         // Programs in current erase cycle (reset to 0 on block erase)
+    uint32_t program_count_total;   // Lifetime total programs (never reset)
+    uint32_t _reserved;             // Padding
+    uint64_t first_program_timestamp; // First program in current erase cycle
+    uint64_t last_program_timestamp;  // Last program in current erase cycle
+    uint16_t byte_delta_count;      // Number of entries in byte_deltas array (current cycle)
     uint16_t byte_delta_capacity;   // Allocated capacity (for realloc tracking)
-    byte_delta_metadata_t *byte_deltas; // Dynamic array, NULL if no deltas
-    uint32_t _reserved;             // Padding to 48 bytes
+    byte_delta_metadata_t *byte_deltas; // Dynamic array (current cycle), NULL if no deltas
+    uint32_t _reserved2;            // Padding to 56 bytes
 } page_metadata_t;
 
 // Block-level metadata (40 bytes)
@@ -249,13 +251,23 @@ esp_err_t sparse_hash_on_block_erase(void *backend_handle,
         if (page_node) {
             page_metadata_t *page_meta = (page_metadata_t*)page_node->data;
             
-            // Free byte deltas if present
+            // Free byte deltas — they belong to the current erase cycle
             if (page_meta->byte_deltas) {
                 free(page_meta->byte_deltas);
+                page_meta->byte_deltas = NULL;
             }
             
-            // Remove page from table (it's been erased)
-            hash_table_remove(backend->page_table, page_num);
+            // Accumulate into lifetime total before resetting
+            page_meta->program_count_total += page_meta->program_count;
+            
+            // Reset per-cycle counters (preserve lifetime total and page_num)
+            page_meta->program_count = 0;
+            page_meta->byte_delta_count = 0;
+            page_meta->byte_delta_capacity = 0;
+            page_meta->first_program_timestamp = 0;
+            page_meta->last_program_timestamp = 0;
+            
+            // Note: keep the hash table entry; program_count_total preserves history
         }
     }
     
@@ -294,13 +306,11 @@ esp_err_t sparse_hash_on_page_program(void *backend_handle,
     
     page_metadata_t *meta = (page_metadata_t*)node->data;
     
-    // Initialize on first program
+    // Initialize on first program in this erase cycle
     if (meta->program_count == 0) {
         meta->page_num = page_num;
         meta->first_program_timestamp = timestamp;
-        meta->byte_deltas = NULL;
-        meta->byte_delta_count = 0;
-        meta->byte_delta_capacity = 0;
+        // byte_deltas is already NULL/zeroed (set to NULL on erase or by calloc)
     }
     
     meta->program_count++;
@@ -398,7 +408,9 @@ static void update_byte_delta(page_metadata_t *page_meta,
         page_meta->byte_delta_capacity = new_capacity;
     }
     
-    // Add new delta (starts at delta = 1, since page was programmed once already)
+    // Add new delta (starts at delta = 1, since page was programmed once already).
+    // Invariant: only deltas with write_count_delta != 0 are ever stored.
+    // This ensures the internal array can be returned directly without filtering.
     byte_delta_metadata_t *delta = &page_meta->byte_deltas[page_meta->byte_delta_count++];
     delta->byte_offset = byte_offset;
     delta->write_count_delta = 1;
@@ -426,38 +438,16 @@ esp_err_t sparse_hash_get_byte_deltas(void *backend_handle,
     
     page_metadata_t *meta = (page_metadata_t*)node->data;
     
-    // Filter out zero-deltas (bytes with same count as page)
-    // Actual write count = program_count + delta
-    // If delta == 0, write count equals page program count (no outlier)
+    // Return pointer into backend-owned storage. Caller MUST NOT free the pointer.
+    // Pointer is valid until the next call that modifies metadata (write, erase,
+    // snapshot load) or until deinit. Caller must copy data if longer lifetime needed.
+    //
+    // Note: The backend stores only non-zero deltas internally; all entries in
+    // meta->byte_deltas already have write_count_delta != 0 (zero-deltas were
+    // never inserted). So we return the internal array directly.
     
-    size_t non_zero_count = 0;
-    for (size_t i = 0; i < meta->byte_delta_count; i++) {
-        if (meta->byte_deltas[i].write_count_delta != 0) {
-            non_zero_count++;
-        }
-    }
-    
-    if (non_zero_count == 0) {
-        *out_deltas = NULL;
-        *out_count = 0;
-        return ESP_OK;
-    }
-    
-    // Allocate filtered array (caller must free)
-    byte_delta_metadata_t *filtered = malloc(
-        non_zero_count * sizeof(byte_delta_metadata_t)
-    );
-    if (!filtered) return ESP_ERR_NO_MEM;
-    
-    size_t write_idx = 0;
-    for (size_t i = 0; i < meta->byte_delta_count; i++) {
-        if (meta->byte_deltas[i].write_count_delta != 0) {
-            filtered[write_idx++] = meta->byte_deltas[i];
-        }
-    }
-    
-    *out_deltas = filtered;
-    *out_count = non_zero_count;
+    *out_deltas = meta->byte_deltas;          // backend-owned, caller must NOT free
+    *out_count = meta->byte_delta_count;
     return ESP_OK;
 }
 ```
@@ -508,7 +498,7 @@ typedef struct __attribute__((packed)) {
     uint64_t block_metadata_offset; // Offset in file
     uint64_t page_metadata_offset;
     uint64_t byte_delta_offset;
-    uint32_t checksum;             // CRC32 of header (excluding checksum field)
+    uint32_t checksum;             // CRC32 of header (bytes 0..59, excluding this field)
 } snapshot_header_t;
 
 _Static_assert(sizeof(snapshot_header_t) == 64, "Header must be 64 bytes");
