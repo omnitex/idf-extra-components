@@ -271,11 +271,14 @@ esp_err_t nand_emul_load_snapshot(spi_nand_flash_device_t *handle,
                                   const char *filename);
 
 // Get byte-level deltas for a specific page
+// out_deltas: backend-owned; valid until next metadata-modifying call or deinit; caller must not free
 esp_err_t nand_emul_get_byte_deltas(spi_nand_flash_device_t *handle,
                                     uint32_t page_num,
                                     byte_delta_metadata_t **out_deltas,
                                     uint16_t *out_count);
 ```
+
+For blocks/pages that have never been erased or written, `nand_emul_get_block_wear()` and `nand_emul_get_page_wear()` SHALL return `ESP_OK` and SHALL fill `out` with a zeroed metadata structure (no error).
 
 ### 5. Built-in Implementations
 
@@ -365,7 +368,7 @@ Header (64 bytes, aligned):
 │ Block metadata offset: uint64_t    8 bytes     │
 │ Page metadata offset: uint64_t     8 bytes     │
 │ Byte delta offset: uint64_t        8 bytes     │
-│ Checksum (CRC32): uint32_t         4 bytes     │
+│ Checksum (CRC32): uint32_t    4 bytes     │  ← CRC32 of entire file
 └────────────────────────────────────────────────┘
 
 Block Metadata Section (variable):
@@ -398,6 +401,10 @@ Byte Delta Section (variable):
   - last_write_ts: uint64_t
   TOTAL: 16 bytes per delta
 ```
+
+**Snapshot integrity and versioning**:
+- **Checksum**: CRC32 is computed over the **entire file** (header and all three sections). On load, the backend verifies it and returns an error if mismatch.
+- **Version**: Only version 1 is supported. Load SHALL return `ESP_ERR_NOT_SUPPORTED` for any other version and SHALL NOT change backend state.
 
 **Snapshot Size Estimates**:
 
@@ -909,6 +916,38 @@ printf("Max block erases: %u\n", stats.max_block_erases);
   - **Decision**: Every write operation creates byte deltas; backend optimizes away zero-deltas
   - **Rationale**: Simple implementation, never misses partial writes, backend handles optimization
   - **Implementation**: Write handler records all byte ranges; backend compares against page program count
+
+### Resolved Edge Cases
+
+6. **`wear_leveling_variation` when no blocks erased (avg = 0)**
+  - **Question**: Formula `(max - min) / avg` divides by zero when no block has been erased.
+  - **Decision**: When `avg_block_erases == 0` (or no block has been erased), `wear_leveling_variation` SHALL be 0.0. Pristine flash has no variation.
+  - **Rationale**: Matches "Statistics for pristine flash"; avoids undefined behavior; 0.0 is the correct semantic (no spread).
+
+7. **`is_block_bad` (failure model) vs `nand_emul_mark_bad_block` (explicit mark)**
+  - **Question**: How do the two sources of "bad block" combine?
+  - **Decision**: A block is considered bad if **either** (a) it was explicitly marked via `nand_emul_mark_bad_block` / backend `set_bad_block`, or (b) the failure model's `is_block_bad()` returns true. When the failure model returns true, the core SHALL call the backend's `set_bad_block(block_num, true)` so metadata reflects the status. Explicit mark and model-driven mark are equivalent once set; no override.
+  - **Rationale**: Single source of truth in metadata; both paths update the same flag.
+
+8. **Lifetime of `page_metadata_t.byte_deltas` and `get_byte_deltas` pointer**
+  - **Question**: How long is the pointer returned in `get_page_info()` / `get_byte_deltas()` valid?
+  - **Decision**: The pointer is **owned by the backend**. It is valid until the next call to any metadata backend operation or emulator API that may modify metadata (e.g. write, erase, snapshot load), or until `nand_emul_deinit()`. Callers SHALL NOT free it; they may copy or use the data within that scope only.
+  - **Rationale**: Allows backend to use internal storage; avoids forcing a copy on every query.
+
+9. **Snapshot checksum (CRC32) scope**
+  - **Question**: CRC32 covers header only or entire file?
+  - **Decision**: CRC32 SHALL cover the **entire snapshot file** (header + block section + page section + byte delta section). On load, the backend SHALL verify the checksum over the same range and SHALL return an error if it does not match.
+  - **Rationale**: Ensures full file integrity; catches corruption in any section.
+
+10. **Snapshot format versioning**
+  - **Question**: How to handle unknown or future snapshot versions?
+  - **Decision**: The loader SHALL accept only version 1. For any other version field value, `load_snapshot()` SHALL return `ESP_ERR_NOT_SUPPORTED` and SHALL NOT modify backend state. Future versions may define backward compatibility in later specs.
+  - **Rationale**: Prevents misinterpreting unknown formats; allows format evolution with explicit support.
+
+11. **`corrupt_read_data` buffer contract**
+  - **Question**: May the failure model corrupt only a subset of bytes? May it change length?
+  - **Decision**: `data` is the read buffer; `len` is the number of bytes read (unchanged by the model). The model MAY flip bits (or otherwise corrupt) any subset of bytes in the range `[0, len)`. The model SHALL NOT write outside `[0, len)` and SHALL NOT assume it can change `len` or reallocate the buffer.
+  - **Rationale**: Simulates bit errors in place; keeps API simple and safe.
 
 ## Open Questions (For Future Consideration)
 

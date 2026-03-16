@@ -62,6 +62,12 @@ The system SHALL allow failure model to corrupt read data to simulate bit flips 
 - **THEN** model SHALL modify data buffer in-place to simulate bit flips
 - **AND** `nand_emul_read()` SHALL return corrupted data to caller
 
+#### Scenario: corrupt_read_data buffer contract
+- **WHEN** failure model's `corrupt_read_data(ctx, data, len)` is invoked
+- **THEN** `data` is the read buffer and `len` is the number of bytes read (caller-defined, unchanged by model)
+- **AND** model MAY corrupt any subset of bytes in the range `[0, len)`
+- **AND** model SHALL NOT write outside `[0, len)` and SHALL NOT change `len` or reallocate the buffer
+
 #### Scenario: No corruption
 - **WHEN** failure model's `corrupt_read_data()` chooses not to corrupt data
 - **THEN** data buffer SHALL remain unchanged
@@ -138,15 +144,20 @@ The system SHALL provide a built-in probabilistic failure model using Weibull di
 - **AND** SHALL use delta information to model localized wear-out
 
 ### Requirement: Bad block detection
-The system SHALL allow failure model to mark blocks as bad based on metadata analysis.
+The system SHALL allow failure model to mark blocks as bad based on metadata analysis. A block is bad if either explicitly marked via `nand_emul_mark_bad_block` / backend `set_bad_block`, or the failure model's `is_block_bad()` returns true.
 
 #### Scenario: Model marks block bad
 - **WHEN** failure model's `is_block_bad()` returns true for a block
-- **THEN** metadata backend SHALL reflect bad block status
+- **THEN** core SHALL call backend's `set_bad_block(block_num, true)` so metadata reflects bad block status
 - **AND** subsequent operations on that block SHALL honor bad block state
 
+#### Scenario: Explicit mark and model mark equivalent
+- **WHEN** a block is marked bad either via `nand_emul_mark_bad_block()` or because failure model's `is_block_bad()` returned true (and core called `set_bad_block`)
+- **THEN** metadata SHALL hold `is_bad_block = true`; there is no override between the two sources
+- **AND** once set, the block remains bad for the lifetime of the backend state unless explicitly cleared (if supported)
+
 #### Scenario: Bad block operations fail
-- **WHEN** a block is marked bad by failure model
+- **WHEN** a block is marked bad (by explicit mark or failure model)
 - **AND** operation is attempted on that block
 - **THEN** operation SHALL fail with `ESP_ERR_FLASH_BAD_BLOCK` if supported
 

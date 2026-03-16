@@ -22,6 +22,10 @@ The system SHALL maintain three levels of metadata: block-level, page-level, and
 - **WHEN** developer calls backend's `get_block_info()` for a block that has been erased
 - **THEN** backend SHALL return metadata including erase count and timestamps
 
+#### Scenario: Query never-erased block metadata
+- **WHEN** developer calls backend's `get_block_info()` for a block that has never been erased
+- **THEN** backend SHALL return zeroed metadata structure (erase_count 0, timestamps 0, is_bad_block false)
+
 #### Scenario: Query unwritten page metadata
 - **WHEN** developer calls backend's `get_page_info()` for a page that has never been written
 - **THEN** backend SHALL return zeroed metadata structure
@@ -76,6 +80,12 @@ The system SHALL support optional byte-level delta tracking for partial page pro
 - **AND** SHALL only allocate storage for outlier bytes
 - **AND** `get_byte_deltas()` SHALL return only non-zero deltas
 
+#### Scenario: Pointer lifetime for byte deltas and page metadata
+- **WHEN** backend returns pointers in `get_page_info()` (e.g. `byte_deltas`) or `get_byte_deltas()`
+- **THEN** those pointers SHALL be owned by the backend
+- **AND** SHALL remain valid until the next call to any backend operation that may modify metadata (e.g. on_block_erase, on_page_program, on_byte_write_range, load_snapshot), or until backend deinit
+- **AND** caller SHALL NOT free the pointers; caller MAY copy or use the data only within that scope
+
 #### Scenario: Backend does not support byte tracking
 - **WHEN** backend's `on_byte_write_range()` returns `ESP_ERR_NOT_SUPPORTED`
 - **THEN** emulator SHALL continue operation without byte-level tracking
@@ -113,6 +123,11 @@ The system SHALL compute aggregate wear statistics across all blocks including m
 - **THEN** SHALL return all counts as zero
 - **AND** SHALL set `blocks_never_erased` equal to total block count
 - **AND** SHALL set `wear_leveling_variation` to 0.0 (no variation)
+
+#### Scenario: Wear variation when no blocks erased (avg = 0)
+- **WHEN** `get_stats()` is called and no block has been erased (avg_block_erases is 0)
+- **THEN** SHALL set `wear_leveling_variation` to 0.0
+- **AND** SHALL NOT divide by zero; 0.0 denotes no spread
 
 ### Requirement: Block iteration
 The system SHALL allow iteration over all blocks that have been erased or written.
@@ -168,17 +183,22 @@ The system SHALL support saving and loading binary snapshots of metadata for wea
 #### Scenario: Save snapshot with metadata only
 - **WHEN** developer calls backend's `save_snapshot()` with filename and timestamp
 - **THEN** backend SHALL write binary file with header, block metadata, page metadata, and byte deltas
-- **AND** file SHALL include checksum for integrity verification
+- **AND** file SHALL include CRC32 checksum computed over the **entire file** (header + all sections) for integrity verification
 - **AND** file SHALL contain metadata ONLY (not flash data contents)
 - **AND** SHALL complete in less than 10ms for 32MB flash simulation
 
 #### Scenario: Load snapshot restores metadata
 - **WHEN** developer calls backend's `load_snapshot()` with snapshot filename
-- **THEN** backend SHALL verify checksum
+- **THEN** backend SHALL verify CRC32 over the entire file; on mismatch SHALL return error and SHALL NOT modify backend state
 - **AND** SHALL restore all block, page, and byte delta metadata
 - **AND** SHALL NOT modify flash data contents (mmap file)
 - **AND** subsequent queries SHALL return metadata from loaded snapshot
 - **AND** SHALL complete in less than 20ms for 32MB flash
+
+#### Scenario: Load snapshot rejects unknown version
+- **WHEN** developer calls backend's `load_snapshot()` and file header specifies a version other than supported (e.g. version 1)
+- **THEN** backend SHALL return `ESP_ERR_NOT_SUPPORTED`
+- **AND** SHALL NOT modify backend state or load any data from the file
 
 #### Scenario: Snapshot roundtrip integrity
 - **WHEN** metadata state is saved, cleared, and loaded

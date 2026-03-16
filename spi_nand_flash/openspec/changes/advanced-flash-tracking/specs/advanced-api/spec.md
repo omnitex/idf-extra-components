@@ -164,3 +164,11 @@ The system SHALL provide JSON export for analysis and visualization.
 - **WHEN** emulator initialized without advanced tracking
 - **AND** developer calls `nand_emul_export_json()`
 - **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
+
+### Requirement: Query API pointer lifetime
+The system SHALL document that pointers returned by `nand_emul_get_byte_deltas()` and by `get_page_info()` (e.g. `page_metadata_t.byte_deltas`) are owned by the backend and valid only until the next metadata-modifying operation or deinit; callers SHALL NOT free them.
+
+#### Scenario: Byte deltas pointer use
+- **WHEN** developer calls `nand_emul_get_byte_deltas()` and receives `out_deltas` and `out_count`
+- **THEN** the pointer SHALL remain valid until the next write, erase, snapshot load, or deinit
+- **AND** caller SHALL NOT free the pointer; caller MAY copy the data for longer use
