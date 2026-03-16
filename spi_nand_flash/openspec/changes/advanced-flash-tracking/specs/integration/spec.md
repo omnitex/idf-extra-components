@@ -39,15 +39,23 @@ The system SHALL call metadata backend during `nand_emul_write()` when advanced 
 - **THEN** function SHALL call backend's `on_page_program()` for affected pages
 - **AND** SHALL pass page numbers and timestamp
 
-#### Scenario: Track byte writes
-- **WHEN** `nand_emul_write()` writes data
+#### Scenario: Detect and track partial page program
+- **WHEN** `nand_emul_write()` writes less than full page size
 - **AND** byte-level tracking is enabled
-- **THEN** function SHALL call backend's `on_byte_write()` for each modified byte
-- **AND** SHALL pass old value, new value, and timestamp
+- **THEN** function SHALL detect partial write
+- **AND** SHALL call backend's `on_byte_delta_write()` with page_num, byte_offset, length
+- **AND** backend SHALL record deltas for affected byte range
 
-#### Scenario: Partial page write
+#### Scenario: Track full page write with byte tracking enabled
+- **WHEN** `nand_emul_write()` writes exactly one full page
+- **AND** byte-level tracking is enabled
+- **THEN** function SHALL increment page program_count
+- **AND** SHALL NOT create byte deltas (all bytes written together)
+
+#### Scenario: Track multi-page write
 - **WHEN** write operation spans multiple pages
 - **THEN** metadata tracking SHALL record program operation for each affected page
+- **AND** SHALL detect if first/last pages are partial writes
 
 ### Requirement: Integrate failure model with erase operations
 The system SHALL check failure model before executing `nand_emul_erase_block()`.
@@ -145,10 +153,11 @@ The system SHALL limit performance impact of advanced tracking to acceptable lev
 - **WHEN** emulator is configured with block and page level tracking
 - **THEN** operation performance SHALL degrade by less than 5% compared to no tracking
 
-#### Scenario: Byte-level tracking overhead
-- **WHEN** byte-level tracking is enabled
-- **THEN** write performance degradation SHALL be less than 20%
-- **AND** documentation SHALL warn about byte tracking performance cost
+#### Scenario: Byte-level delta tracking overhead
+- **WHEN** byte-level delta tracking is enabled
+- **THEN** write performance degradation SHALL be less than 15%
+- **AND** overhead SHALL be proportional to number of partial page programs (not total bytes)
+- **AND** full page programs SHALL have minimal overhead
 
 #### Scenario: No-op model overhead
 - **WHEN** using no-op failure model

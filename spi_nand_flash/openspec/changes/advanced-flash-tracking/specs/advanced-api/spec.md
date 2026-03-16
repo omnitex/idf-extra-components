@@ -29,9 +29,10 @@ The system SHALL define `nand_emul_advanced_config_t` structure that extends bas
 - **THEN** those settings SHALL be used for underlying file mmap emulation
 - **AND** SHALL support all existing `nand_file_mmap_emul_config_t` fields
 
-#### Scenario: Configure tracking granularity
-- **WHEN** config specifies `track_block_level = true, track_page_level = true, track_byte_level = false`
-- **THEN** emulator SHALL track blocks and pages but not individual bytes
+#### Scenario: Configure tracking granularity with byte deltas
+- **WHEN** config specifies `track_block_level = true, track_page_level = true, track_byte_level = true`
+- **THEN** emulator SHALL track blocks, pages, and byte-level deltas
+- **AND** SHALL use delta encoding for byte tracking (not dense per-byte metadata)
 - **AND** SHALL pass granularity settings to metadata backend
 
 ### Requirement: Custom timestamp source
@@ -82,9 +83,10 @@ The system SHALL validate advanced configuration before initialization.
 - **AND** SHALL log descriptive error message
 
 #### Scenario: Incompatible tracking settings
-- **WHEN** `track_byte_level = true` but backend does not support byte tracking
+- **WHEN** `track_byte_level = true` but backend does not support byte delta tracking
 - **THEN** initialization SHALL succeed with warning
-- **AND** byte tracking SHALL be silently disabled
+- **AND** byte delta tracking SHALL be silently disabled
+- **AND** page-level tracking SHALL continue to function
 
 ### Requirement: Device geometry caching
 The system SHALL cache device geometry in advanced tracking structure for efficient access.
@@ -123,3 +125,42 @@ The system SHALL propagate errors from backends and models to callers with clear
 - **WHEN** failure model's `init()` returns `ESP_ERR_NO_MEM`
 - **THEN** `nand_emul_advanced_init()` SHALL return `ESP_ERR_NO_MEM`
 - **AND** SHALL not attempt to initialize metadata backend
+
+### Requirement: Snapshot lifecycle management
+The system SHALL support snapshot save/load operations for wear lifetime simulation.
+
+#### Scenario: Save snapshot during simulation
+- **WHEN** developer calls `nand_emul_save_snapshot()` after operations
+- **THEN** function SHALL delegate to metadata backend's `save_snapshot()` callback
+- **AND** SHALL include current timestamp in snapshot
+- **AND** SHALL return `ESP_OK` on success
+
+#### Scenario: Load snapshot to restore state
+- **WHEN** developer calls `nand_emul_load_snapshot()` with valid snapshot file
+- **THEN** function SHALL delegate to metadata backend's `load_snapshot()` callback
+- **AND** SHALL restore all block, page, and byte delta metadata
+- **AND** SHALL return `ESP_OK` on success
+
+#### Scenario: Snapshot without advanced tracking
+- **WHEN** emulator initialized with `nand_emul_init()` (not advanced)
+- **AND** developer calls `nand_emul_save_snapshot()`
+- **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
+
+#### Scenario: Backend does not support snapshots
+- **WHEN** metadata backend has NULL `save_snapshot` or `load_snapshot` callbacks
+- **THEN** `nand_emul_save_snapshot()` SHALL return `ESP_ERR_NOT_SUPPORTED`
+- **AND** SHALL log descriptive error message
+
+### Requirement: JSON export support
+The system SHALL provide JSON export for analysis and visualization.
+
+#### Scenario: Export metadata to JSON
+- **WHEN** developer calls `nand_emul_export_json()` with filename
+- **THEN** function SHALL delegate to metadata backend's `export_json()` callback
+- **AND** JSON SHALL include device geometry, metadata, and statistics
+- **AND** SHALL return `ESP_OK` on success
+
+#### Scenario: JSON export without advanced tracking
+- **WHEN** emulator initialized without advanced tracking
+- **AND** developer calls `nand_emul_export_json()`
+- **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`

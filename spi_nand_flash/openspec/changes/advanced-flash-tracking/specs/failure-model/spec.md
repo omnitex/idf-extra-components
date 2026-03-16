@@ -70,16 +70,17 @@ The system SHALL allow failure model to corrupt read data to simulate bit flips 
 ### Requirement: Operation context
 The system SHALL provide comprehensive context to failure model for decision making.
 
-#### Scenario: Context includes metadata
+#### Scenario: Context includes metadata and byte deltas
 - **WHEN** failure model callback is invoked
 - **THEN** `nand_operation_context_t` SHALL include current block/page metadata
+- **AND** SHALL include byte deltas if available (for byte-tracked pages)
 - **AND** SHALL include device geometry (total blocks, page size)
 - **AND** SHALL include operation timestamp
 
 #### Scenario: Context without metadata
 - **WHEN** failure model is configured but metadata backend is not
-- **THEN** context SHALL have NULL metadata pointers
-- **AND** failure model SHALL still function with available information
+- **THEN** context SHALL have NULL metadata pointers and byte_deltas
+- **AND** failure model SHALL still function with available information (block/page numbers, timestamps)
 
 ### Requirement: No-op failure model
 The system SHALL provide a built-in no-op failure model that never injects failures.
@@ -124,10 +125,17 @@ The system SHALL provide a built-in probabilistic failure model using Weibull di
 - **WHEN** a block has been erased 100000 times (100% of rated cycles)
 - **THEN** failure probability SHALL be approximately 50%
 
-#### Scenario: Reproducible failures
+#### Scenario: Reproducible failures for testing
 - **WHEN** probabilistic model is initialized with same `random_seed`
 - **THEN** sequence of failure decisions SHALL be identical across runs
 - **AND** tests using fixed seed SHALL be deterministic
+- **AND** different seeds SHALL produce different but statistically equivalent failure patterns
+
+#### Scenario: Byte-level wear consideration
+- **WHEN** probabilistic model receives context with byte deltas
+- **AND** specific bytes have significantly higher write counts (hotspots)
+- **THEN** model MAY increase failure probability for those byte ranges
+- **AND** SHALL use delta information to model localized wear-out
 
 ### Requirement: Bad block detection
 The system SHALL allow failure model to mark blocks as bad based on metadata analysis.

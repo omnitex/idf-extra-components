@@ -45,12 +45,13 @@ The system SHALL provide `nand_emul_get_wear_stats()` function to retrieve aggre
   - Min/max page program counts
   - Count of blocks never erased
   - Count of pages never written
-  - Wear leveling efficiency ratio
+  - Wear leveling variation (lower is better)
 
 #### Scenario: Empty flash statistics
 - **WHEN** `nand_emul_get_wear_stats()` is called on fresh emulator
 - **THEN** SHALL return zeroed statistics
 - **AND** `blocks_never_erased` SHALL equal total block count
+- **AND** `wear_leveling_variation` SHALL be 0.0
 
 ### Requirement: Iterate worn blocks
 The system SHALL provide `nand_emul_iterate_worn_blocks()` function to iterate blocks with metadata.
@@ -89,21 +90,18 @@ The system SHALL provide `nand_emul_mark_bad_block()` function to simulate facto
 - **AND** operation MAY fail if failure model checks bad block flag
 
 ### Requirement: Export wear map
-The system SHALL provide `nand_emul_export_wear_map()` function to export metadata to files.
+The system SHALL provide `nand_emul_export_json()` function to export metadata to JSON for analysis.
 
 #### Scenario: Export to JSON format
-- **WHEN** developer calls `nand_emul_export_wear_map(handle, "wear.json", "json")`
-- **THEN** function SHALL create JSON file with all block metadata
-- **AND** JSON SHALL include block numbers, erase counts, timestamps
+- **WHEN** developer calls `nand_emul_export_json(handle, "wear.json")`
+- **THEN** function SHALL create JSON file with all block metadata, page metadata, and byte deltas
+- **AND** JSON SHALL include aggregate statistics
+- **AND** JSON SHALL be human-readable and suitable for import into plotting tools
 
-#### Scenario: Export to CSV format
-- **WHEN** developer calls `nand_emul_export_wear_map(handle, "wear.csv", "csv")`
-- **THEN** function SHALL create CSV file with columns: block_num, erase_count, first_erase_ts, last_erase_ts
-- **AND** CSV SHALL have header row
-
-#### Scenario: Invalid format
-- **WHEN** `nand_emul_export_wear_map()` is called with unsupported format string
-- **THEN** function SHALL return `ESP_ERR_INVALID_ARG`
+#### Scenario: JSON structure
+- **WHEN** JSON export is created
+- **THEN** JSON SHALL have top-level sections: "device", "blocks", "pages", "byte_deltas", "statistics"
+- **AND** SHALL include timestamps for all tracked operations
 
 ### Requirement: Query without advanced init
 The system SHALL handle query functions gracefully when advanced tracking is not enabled.
@@ -142,3 +140,39 @@ The system SHALL implement query functions with minimal overhead.
 - **WHEN** `nand_emul_get_wear_stats()` is called multiple times without intervening operations
 - **THEN** backend MAY cache aggregate statistics for performance
 - **AND** SHALL invalidate cache on any operation that changes metadata
+
+### Requirement: Query byte-level deltas
+The system SHALL provide `nand_emul_get_byte_deltas()` function to retrieve delta information for a specific page.
+
+#### Scenario: Query page with byte deltas
+- **WHEN** developer calls `nand_emul_get_byte_deltas(handle, page_num, &deltas, &count)`
+- **AND** page has partial programs creating byte-level deltas
+- **THEN** function SHALL return array of byte_delta_metadata_t structures
+- **AND** count SHALL indicate number of bytes with non-zero deltas
+
+#### Scenario: Query page without deltas
+- **WHEN** page was only programmed as full page (no partial writes)
+- **THEN** `nand_emul_get_byte_deltas()` SHALL return empty array
+- **AND** count SHALL be zero
+
+### Requirement: Binary snapshot operations
+The system SHALL provide snapshot save/load functions for wear lifetime simulation.
+
+#### Scenario: Save snapshot
+- **WHEN** developer calls `nand_emul_save_snapshot(handle, "snapshot.bin")`
+- **THEN** function SHALL save all metadata to binary file
+- **AND** SHALL include checksum for integrity
+- **AND** SHALL complete in less than 10ms for 32MB flash
+
+#### Scenario: Load snapshot
+- **WHEN** developer calls `nand_emul_load_snapshot(handle, "snapshot.bin")`
+- **THEN** function SHALL restore metadata from binary file
+- **AND** SHALL verify checksum before loading
+- **AND** SHALL return error if checksum invalid
+- **AND** SHALL complete in less than 20ms for 32MB flash
+
+#### Scenario: Snapshot with operations
+- **WHEN** snapshot is taken after 5000 operations
+- **AND** loaded into fresh emulator
+- **THEN** subsequent queries SHALL return same statistics as before save
+- **AND** wear pattern SHALL be preserved exactly
