@@ -39,23 +39,29 @@ The system SHALL call metadata backend during `nand_emul_write()` when advanced 
 - **THEN** function SHALL call backend's `on_page_program()` for affected pages
 - **AND** SHALL pass page numbers and timestamp
 
-#### Scenario: Detect and track partial page program
-- **WHEN** `nand_emul_write()` writes less than full page size
+#### Scenario: Track byte write ranges (conservative approach)
+- **WHEN** `nand_emul_write()` writes any data
 - **AND** byte-level tracking is enabled
-- **THEN** function SHALL detect partial write
-- **AND** SHALL call backend's `on_byte_delta_write()` with page_num, byte_offset, length
-- **AND** backend SHALL record deltas for affected byte range
+- **THEN** function SHALL call backend's `on_byte_write_range()` for all affected byte ranges
+- **AND** SHALL pass page_num, byte_offset, length for each page touched
+- **AND** backend SHALL determine if deltas are needed (comparing against page program count)
 
-#### Scenario: Track full page write with byte tracking enabled
-- **WHEN** `nand_emul_write()` writes exactly one full page
-- **AND** byte-level tracking is enabled
-- **THEN** function SHALL increment page program_count
-- **AND** SHALL NOT create byte deltas (all bytes written together)
+#### Scenario: Backend optimizes zero-deltas
+- **WHEN** backend receives `on_byte_write_range()` for entire page
+- **AND** all bytes in page have same write count as page program count
+- **THEN** backend SHALL NOT store deltas (zero-delta optimization)
+- **AND** SHALL only store page-level metadata
+
+#### Scenario: Backend creates deltas for outliers
+- **WHEN** backend receives `on_byte_write_range()` for partial page (e.g., 64 bytes)
+- **AND** page has been programmed multiple times
+- **THEN** backend SHALL create deltas for bytes with different write counts
+- **AND** SHALL store delta: actual_write_count - page_program_count
 
 #### Scenario: Track multi-page write
 - **WHEN** write operation spans multiple pages
 - **THEN** metadata tracking SHALL record program operation for each affected page
-- **AND** SHALL detect if first/last pages are partial writes
+- **AND** SHALL call `on_byte_write_range()` with appropriate byte range for each page
 
 ### Requirement: Integrate failure model with erase operations
 The system SHALL check failure model before executing `nand_emul_erase_block()`.

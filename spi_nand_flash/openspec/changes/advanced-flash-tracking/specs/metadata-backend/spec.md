@@ -56,23 +56,28 @@ The system SHALL support optional byte-level delta tracking for partial page pro
 
 #### Scenario: Byte-level tracking disabled
 - **WHEN** advanced emulator is initialized with `track_byte_level = false`
-- **THEN** backend's `on_byte_delta_write()` SHALL NOT be called during write operations
+- **THEN** backend's `on_byte_write_range()` SHALL NOT be called during write operations
 
-#### Scenario: Delta tracking for partial page program
+#### Scenario: Record byte write range (conservative approach)
 - **WHEN** advanced emulator is initialized with `track_byte_level = true`
-- **AND** a page is programmed partially (e.g., only first 64 bytes)
-- **THEN** backend SHALL receive `on_byte_delta_write()` callback with page_num, byte_offset, length
-- **AND** SHALL increment write count delta for affected byte range
-- **AND** SHALL track delta from page-level program count (page written N times, byte written N+K times → delta = +K)
+- **AND** any write operation occurs
+- **THEN** backend SHALL receive `on_byte_write_range()` callback with page_num, byte_offset, length
+- **AND** SHALL track per-byte write counts internally
 
-#### Scenario: Full page program with byte tracking
-- **WHEN** entire page is programmed (all bytes written)
-- **AND** byte-level tracking is enabled
-- **THEN** backend SHALL increment page program_count
-- **AND** SHALL NOT create byte deltas (all bytes written same number of times as page)
+#### Scenario: Backend optimizes zero-deltas away
+- **WHEN** backend compares byte write counts against page program count
+- **AND** all bytes have same count as page (no outliers)
+- **THEN** backend SHALL NOT allocate delta structures
+- **AND** SHALL rely on page-level program_count for those bytes
+
+#### Scenario: Backend stores deltas for outliers
+- **WHEN** specific bytes have different write count than page program count
+- **THEN** backend SHALL store delta: `write_count_delta = byte_write_count - page_program_count`
+- **AND** SHALL only allocate storage for outlier bytes
+- **AND** `get_byte_deltas()` SHALL return only non-zero deltas
 
 #### Scenario: Backend does not support byte tracking
-- **WHEN** backend's `on_byte_delta_write()` returns `ESP_ERR_NOT_SUPPORTED`
+- **WHEN** backend's `on_byte_write_range()` returns `ESP_ERR_NOT_SUPPORTED`
 - **THEN** emulator SHALL continue operation without byte-level tracking
 - **AND** SHALL log a warning message
 
@@ -160,16 +165,18 @@ The metadata backend interface SHALL document that it is designed for single-thr
 ### Requirement: Binary snapshot support
 The system SHALL support saving and loading binary snapshots of metadata for wear simulation.
 
-#### Scenario: Save snapshot
+#### Scenario: Save snapshot with metadata only
 - **WHEN** developer calls backend's `save_snapshot()` with filename and timestamp
 - **THEN** backend SHALL write binary file with header, block metadata, page metadata, and byte deltas
 - **AND** file SHALL include checksum for integrity verification
+- **AND** file SHALL contain metadata ONLY (not flash data contents)
 - **AND** SHALL complete in less than 10ms for 32MB flash simulation
 
-#### Scenario: Load snapshot
+#### Scenario: Load snapshot restores metadata
 - **WHEN** developer calls backend's `load_snapshot()` with snapshot filename
 - **THEN** backend SHALL verify checksum
 - **AND** SHALL restore all block, page, and byte delta metadata
+- **AND** SHALL NOT modify flash data contents (mmap file)
 - **AND** subsequent queries SHALL return metadata from loaded snapshot
 - **AND** SHALL complete in less than 20ms for 32MB flash
 
@@ -177,6 +184,14 @@ The system SHALL support saving and loading binary snapshots of metadata for wea
 - **WHEN** metadata state is saved, cleared, and loaded
 - **THEN** all metadata SHALL match original state exactly
 - **AND** aggregate statistics SHALL be identical
+- **AND** flash data contents remain independent of snapshot
+
+#### Scenario: Use case - wear pattern analysis
+- **WHEN** simulation runs for 5000 cycles and saves snapshot
+- **AND** later loads that snapshot into fresh emulator
+- **THEN** metadata queries show wear state at cycle 5000
+- **AND** flash data is fresh (all 0xFF)
+- **AND** this is expected behavior for wear pattern analysis
 
 ### Requirement: JSON export for analysis
 The system SHALL support exporting metadata to JSON format for external analysis tools.
