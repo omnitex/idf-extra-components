@@ -35,6 +35,14 @@ The system SHALL define `nand_emul_advanced_config_t` structure that extends bas
 - **AND** SHALL use delta encoding for byte tracking (not dense per-byte metadata)
 - **AND** SHALL pass granularity settings to metadata backend
 
+#### Scenario: track_byte_level is the master control for byte tracking
+- **WHEN** `nand_emul_advanced_config_t.track_byte_level = false`
+- **THEN** the emulator SHALL NOT call `on_byte_write_range()` on the backend regardless of the backend's own `track_byte_deltas` configuration flag
+- **AND** no byte-level deltas SHALL be created
+- **WHEN** `track_byte_level = true`
+- **THEN** the emulator SHALL call `on_byte_write_range()` for every write; the backend then decides whether to create delta entries based on its own `track_byte_deltas` flag
+- **AND** if the backend's `track_byte_deltas = false`, the backend SHALL return `ESP_ERR_NOT_SUPPORTED` from `on_byte_write_range()` and the emulator SHALL silently skip byte-level tracking
+
 ### Requirement: Custom timestamp source
 The system SHALL allow developers to provide custom timestamp function for metadata.
 

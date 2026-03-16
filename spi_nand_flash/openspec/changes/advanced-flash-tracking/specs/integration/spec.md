@@ -127,6 +127,12 @@ The system SHALL build comprehensive `nand_operation_context_t` before calling f
 - **THEN** context SHALL have NULL metadata pointers
 - **AND** failure model SHALL still receive operation details
 
+#### Scenario: Single timestamp per operation
+- **WHEN** an operation handler (erase, write, read) begins
+- **THEN** SHALL call `get_timestamp()` exactly once per operation
+- **AND** SHALL reuse that single timestamp for both the failure model context and any subsequent metadata backend calls within the same operation
+- **AND** SHALL NOT call `get_timestamp()` a second time for the metadata update, ensuring the failure model and metadata backend see the same logical operation timestamp
+
 #### Scenario: Core updates metadata when failure model marks block bad
 - **WHEN** failure model's `is_block_bad()` returns true for a block (e.g. before erase or write)
 - **THEN** core SHALL call metadata backend's `set_bad_block(block_num, true)` so metadata reflects the bad block

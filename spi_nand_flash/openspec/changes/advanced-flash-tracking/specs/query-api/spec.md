@@ -29,6 +29,12 @@ The system SHALL provide `nand_emul_get_page_wear()` function to retrieve metada
 - **THEN** function SHALL return `ESP_OK`
 - **AND** `metadata` SHALL contain program count and timestamps
 
+#### Scenario: Embedded byte_deltas pointer lifetime
+- **WHEN** `nand_emul_get_page_wear()` returns `ESP_OK` and byte-level tracking is enabled
+- **THEN** the `byte_deltas` field in the returned `page_metadata_t` struct is a backend-owned pointer (same rule as `nand_emul_get_byte_deltas()`)
+- **AND** the pointer SHALL remain valid only until the next write, erase, snapshot load, or `nand_emul_deinit()`
+- **AND** caller SHALL NOT free the pointer; caller MAY copy the pointed-to data for longer use
+
 #### Scenario: Query unwritten page
 - **WHEN** page has never been written after last block erase
 - **THEN** `nand_emul_get_page_wear()` SHALL return `ESP_OK`
@@ -70,6 +76,29 @@ The system SHALL provide `nand_emul_iterate_worn_blocks()` function to iterate b
 - **WHEN** `nand_emul_iterate_worn_blocks()` is called on fresh emulator
 - **THEN** callback SHALL never be invoked
 - **AND** function SHALL return `ESP_OK`
+
+### Requirement: Iterate worn pages
+The system SHALL provide `nand_emul_iterate_worn_pages()` function to iterate pages with metadata.
+
+#### Scenario: Iterate with callback
+- **WHEN** developer calls `nand_emul_iterate_worn_pages(handle, callback, user_data)`
+- **THEN** function SHALL invoke callback for each page that has non-zero wear (`program_count_total > 0`)
+- **AND** SHALL pass page number, metadata pointer, and user_data to callback
+
+#### Scenario: Stop iteration early
+- **WHEN** callback function returns false
+- **THEN** iteration SHALL stop immediately
+- **AND** remaining pages SHALL not be visited
+
+#### Scenario: No worn pages
+- **WHEN** `nand_emul_iterate_worn_pages()` is called on fresh emulator
+- **THEN** callback SHALL never be invoked
+- **AND** function SHALL return `ESP_OK`
+
+#### Scenario: Without advanced tracking
+- **WHEN** emulator was initialized with `nand_emul_init()` (not advanced)
+- **AND** developer calls `nand_emul_iterate_worn_pages()`
+- **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
 
 ### Requirement: Mark bad blocks
 The system SHALL provide `nand_emul_mark_bad_block()` function to simulate factory bad blocks.

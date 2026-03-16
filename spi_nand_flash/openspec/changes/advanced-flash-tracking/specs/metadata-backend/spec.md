@@ -51,6 +51,8 @@ The system SHALL track program operations at page granularity including program 
 - **THEN** backend SHALL receive `on_page_program()` callback with page number and timestamp
 - **AND** SHALL increment the page's `program_count` (current erase cycle)
 - **AND** SHALL also increment the page's `program_count_total` (lifetime cumulative, never reset)
+- **AND** SHALL increment the parent block's `total_page_programs` (current erase cycle)
+- **AND** SHALL also increment the parent block's `total_page_programs_total` (lifetime cumulative, never reset)
 
 #### Scenario: Multiple writes to same page
 - **WHEN** multiple write operations target the same page without intermediate erase
@@ -61,6 +63,9 @@ The system SHALL track program operations at page granularity including program 
 - **THEN** backend SHALL reset `program_count` and byte deltas for all pages in that block to zero/NULL
 - **AND** SHALL NOT reset `program_count_total` (it persists across erase cycles)
 - **AND** SHALL retain the page metadata entry in the hash table to preserve the lifetime count
+- **AND** SHALL reset the block's `total_page_programs` to zero (per-cycle aggregate)
+- **AND** SHALL accumulate the pre-reset value into `total_page_programs_total` before resetting
+- **AND** SHALL NOT reset `total_page_programs_total` (lifetime aggregate)
 
 ### Requirement: Byte-level tracking (optional)
 The system SHALL support optional byte-level delta tracking for partial page programs when enabled in configuration.

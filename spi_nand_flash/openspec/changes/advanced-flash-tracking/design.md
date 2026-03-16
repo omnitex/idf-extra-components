@@ -50,15 +50,16 @@ typedef struct {
     uint32_t _reserved2;            // Padding to 56 bytes
 } page_metadata_t;
 
-// Block-level metadata (40 bytes)
+// Block-level metadata (44 bytes)
 typedef struct {
-    uint32_t block_num;             // Block number (for iteration/hashing)
-    uint32_t erase_count;           // Number of block erases
+    uint32_t block_num;                   // Block number (for iteration/hashing)
+    uint32_t erase_count;                 // Number of block erases
     uint64_t first_erase_timestamp;
     uint64_t last_erase_timestamp;
-    uint32_t total_page_programs;   // Sum of page programs in this block
-    uint8_t  is_bad_block;          // Boolean: simulated bad block
-    uint8_t  _padding[7];           // Align to 40 bytes
+    uint32_t total_page_programs;         // Sum of page programs in this block for current erase cycle (reset on erase)
+    uint32_t total_page_programs_total;   // Lifetime cumulative sum across all erase cycles (never reset)
+    uint8_t  is_bad_block;                // Boolean: simulated bad block
+    uint8_t  _padding[7];                 // Align to 44 bytes
 } block_metadata_t;
 ```
 
@@ -271,6 +272,10 @@ esp_err_t sparse_hash_on_block_erase(void *backend_handle,
         }
     }
     
+    // Accumulate block-level aggregate into lifetime total, then reset per-cycle
+    meta->total_page_programs_total += meta->total_page_programs;
+    meta->total_page_programs = 0;
+    
     backend->stats_dirty = true;
     return ESP_OK;
 }
@@ -321,7 +326,8 @@ esp_err_t sparse_hash_on_page_program(void *backend_handle,
     hash_node_t *block_node = hash_table_get_or_insert(backend->block_table, block_num);
     if (block_node) {
         block_metadata_t *block_meta = (block_metadata_t*)block_node->data;
-        block_meta->total_page_programs++;
+        block_meta->total_page_programs++;        // per-cycle counter
+        block_meta->total_page_programs_total++;  // lifetime counter
         if (block_meta->erase_count == 0) {
             // Block written before first erase (init case)
             block_meta->block_num = block_num;
@@ -749,7 +755,7 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle,
     
     // Advanced: Failure injection (before write)
     if (emul->advanced && emul->advanced->failure_ops) {
-        uint64_t timestamp = emul->advanced->get_timestamp();
+        uint64_t timestamp = emul->advanced->get_timestamp();  // captured once for this operation
         
         // Build context for failure decision
         nand_operation_context_t ctx = {
@@ -788,8 +794,11 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle,
     memcpy(emul->mem_file_buf + offset, data, len);
     
     // Advanced: Metadata tracking (after successful write)
+    // Reuse timestamp from ctx if failure ops were configured; otherwise capture now
     if (emul->advanced && emul->advanced->metadata_ops) {
-        uint64_t timestamp = emul->advanced->get_timestamp();
+        uint64_t timestamp = emul->advanced->failure_ops 
+                             ? ctx.timestamp   // reuse — same logical operation
+                             : emul->advanced->get_timestamp();
         uint32_t page_size = handle->chip.page_size;
         
         // Calculate affected pages

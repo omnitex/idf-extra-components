@@ -85,12 +85,13 @@ typedef struct {
 
 // Block-level metadata
 typedef struct {
-    uint32_t erase_count;           // Number of block erases
+    uint32_t erase_count;                 // Number of block erases
     uint64_t first_erase_timestamp;
     uint64_t last_erase_timestamp;
-    uint32_t total_page_programs;   // Aggregate across all pages in block
-    uint32_t block_num;             // Block number
-    bool     is_bad_block;          // Simulated bad block flag
+    uint32_t total_page_programs;         // Aggregate page programs in the CURRENT erase cycle (reset to 0 on block erase)
+    uint32_t total_page_programs_total;   // Lifetime cumulative aggregate (never reset; accumulates across all erase cycles)
+    uint32_t block_num;                   // Block number
+    bool     is_bad_block;                // Simulated bad block flag
 } block_metadata_t;
 
 // Aggregate statistics
@@ -257,6 +258,13 @@ esp_err_t nand_emul_iterate_worn_blocks(spi_nand_flash_device_t *handle,
                                                          void *user_data),
                                         void *user_data);
 
+// Iterate over all written pages (pages with program_count_total > 0)
+esp_err_t nand_emul_iterate_worn_pages(spi_nand_flash_device_t *handle,
+                                       bool (*callback)(uint32_t page_num,
+                                                        page_metadata_t *meta,
+                                                        void *user_data),
+                                       void *user_data);
+
 // Mark block as bad (simulated factory defect)
 esp_err_t nand_emul_mark_bad_block(spi_nand_flash_device_t *handle,
                                     uint32_t block_num);
@@ -369,7 +377,7 @@ Header (64 bytes, aligned):
 │ Block metadata offset: uint64_t    8 bytes     │
 │ Page metadata offset: uint64_t     8 bytes     │
 │ Byte delta offset: uint64_t        8 bytes     │
-│ Checksum (CRC32): uint32_t    4 bytes     │  ← CRC32 of entire file
+│ Checksum (CRC32): uint32_t    4 bytes     │  ← CRC32 of header only (bytes 0..59)
 └────────────────────────────────────────────────┘
 
 Block Metadata Section (variable):
@@ -378,10 +386,11 @@ Block Metadata Section (variable):
   - erase_count: uint32_t
   - first_erase_ts: uint64_t
   - last_erase_ts: uint64_t
-  - total_page_programs: uint32_t
+  - total_page_programs: uint32_t       (current erase cycle)
+  - total_page_programs_total: uint32_t (lifetime cumulative)
   - is_bad_block: uint8_t
   - (padding): 3 bytes
-  TOTAL: 40 bytes per block
+  TOTAL: 44 bytes per block
 
 Page Metadata Section (variable):
   For each written page (sparse):
@@ -554,7 +563,7 @@ esp_err_t nand_emul_erase_block(spi_nand_flash_device_t *handle, size_t offset)
     if (emul->advanced && emul->advanced->failure_ops) {
         nand_operation_context_t ctx = {
             .block_num = block_num,
-            .timestamp = emul->advanced->get_timestamp(),
+            .timestamp = emul->advanced->get_timestamp(),  // captured once; reused below
             // ... fill other fields
         };
         
@@ -570,11 +579,13 @@ esp_err_t nand_emul_erase_block(spi_nand_flash_device_t *handle, size_t offset)
     memset(dst_addr, 0xFF, handle->chip.block_size);
     
     // Advanced: Update metadata after successful operation
+    // Reuse the same timestamp captured above (same logical operation)
     if (emul->advanced && emul->advanced->track_block_level 
         && emul->advanced->metadata_ops) {
-        uint64_t timestamp = emul->advanced->get_timestamp();
+        // Note: timestamp was captured before the operation; retrieve it from ctx
+        // In practice, capture timestamp once into a local variable at function entry
         emul->advanced->metadata_ops->on_block_erase(
-            emul->advanced->metadata_handle, block_num, timestamp);
+            emul->advanced->metadata_handle, block_num, ctx.timestamp);
     }
     
     // Existing stats
@@ -957,9 +968,12 @@ printf("Max block erases: %u\n", stats.max_block_erases);
   - **Decision**: `page_metadata_t` SHALL have two counters:
     - `program_count` — number of programs **in the current erase cycle** (reset to 0 when the block is erased)
     - `program_count_total` — **lifetime cumulative** programs across all cycles (never reset)
+  - `block_metadata_t` SHALL have two corresponding aggregate counters:
+    - `total_page_programs` — aggregate page programs across all pages in this block **in the current erase cycle** (reset to 0 when the block is erased)
+    - `total_page_programs_total` — **lifetime cumulative** aggregate across all cycles (never reset)
   - Byte deltas (`byte_deltas`, `byte_delta_count`) track the current erase cycle only (freed and reset to NULL/0 on block erase).
   - `first_program_timestamp` and `last_program_timestamp` track the **current cycle**; lifetime-first and lifetime-last can be derived from block data if needed.
-  - **Rationale**: `program_count` (per-cycle) is what makes delta encoding semantically correct — `write_count_delta` means "this byte was written N more times than the page in this cycle." `program_count_total` adds the historical view requested without breaking the delta math.
+  - **Rationale**: `program_count` (per-cycle) is what makes delta encoding semantically correct — `write_count_delta` means "this byte was written N more times than the page in this cycle." `program_count_total` and `total_page_programs_total` add the historical view without breaking the delta math.
 
 ## Open Questions (For Future Consideration)
 
