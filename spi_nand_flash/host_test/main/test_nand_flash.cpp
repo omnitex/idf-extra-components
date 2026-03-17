@@ -359,3 +359,108 @@ TEST_CASE("WL: rewrite same sector multiple times", "[spi_nand_flash][wl]")
     free(read_buf);
     spi_nand_flash_deinit_device(device_handle);
 }
+
+TEST_CASE("WL: unaligned buffer access", "[spi_nand_flash][wl]")
+{
+    // Verify that the WL layer handles buffers that are not naturally aligned.
+    // Some DMA-capable implementations require aligned buffers; the host emulator
+    // should handle arbitrary alignments correctly.
+    nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *device_handle;
+
+    REQUIRE(spi_nand_flash_init_device(&nand_flash_config, &device_handle) == ESP_OK);
+
+    uint32_t sector_size;
+    REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
+
+    // Allocate extra byte so we can create an intentionally misaligned pointer
+    uint8_t *raw_write = (uint8_t *)malloc(sector_size + 1);
+    uint8_t *raw_read  = (uint8_t *)malloc(sector_size + 1);
+    REQUIRE(raw_write != NULL);
+    REQUIRE(raw_read  != NULL);
+
+    // Use offset +1 to guarantee a non-word-aligned pointer
+    uint8_t *write_buf = raw_write + 1;
+    uint8_t *read_buf  = raw_read  + 1;
+
+    // Fill with a known pattern starting one byte in
+    fill_buffer(PATTERN_SEED, (uint8_t *)write_buf, sector_size / sizeof(uint32_t));
+    memset(read_buf, 0, sector_size);
+
+    // Write and read back using the misaligned buffers
+    REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 7) == ESP_OK);
+    REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, 7) == ESP_OK);
+    REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
+
+    // Repeat with a different sector to rule out lucky alignment
+    fill_buffer(PATTERN_SEED ^ 0xDEADBEEF, (uint8_t *)write_buf, sector_size / sizeof(uint32_t));
+    memset(read_buf, 0, sector_size);
+
+    REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 13) == ESP_OK);
+    REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, 13) == ESP_OK);
+    REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
+
+    free(raw_write);
+    free(raw_read);
+    spi_nand_flash_deinit_device(device_handle);
+}
+
+TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
+{
+    // Write enough data to force the wear-leveling layer to perform garbage collection
+    // and block recycling. The emulator is 50 MB; we write ~10% of that to exercise GC.
+    nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *device_handle;
+
+    REQUIRE(spi_nand_flash_init_device(&nand_flash_config, &device_handle) == ESP_OK);
+
+    uint32_t sector_num, sector_size;
+    REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
+
+    uint8_t *write_buf = (uint8_t *)malloc(sector_size);
+    uint8_t *read_buf  = (uint8_t *)malloc(sector_size);
+    REQUIRE(write_buf != NULL);
+    REQUIRE(read_buf  != NULL);
+
+    // Write a substantial but bounded number of sectors to exercise GC without
+    // exhausting the WL spare-block reserve.  We cap at 500 sectors (1 MB at 2048
+    // bytes/sector) so the test is fast and reliably passes on both Dhara and nvblock.
+    uint32_t write_count = (sector_num > 500) ? 500 : sector_num / 4;
+
+    // Phase 1: fill write_count sectors sequentially
+    for (uint32_t i = 0; i < write_count; i++) {
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
+    }
+    REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
+
+    // Phase 2: overwrite the same sectors with new data (forces GC / block recycling)
+    for (uint32_t i = 0; i < write_count; i++) {
+        fill_buffer(PATTERN_SEED + write_count + i, write_buf, sector_size / sizeof(uint32_t));
+        esp_err_t wret = spi_nand_flash_write_sector(device_handle, write_buf, i);
+        if (wret != ESP_OK) {
+            printf("WRITE FAILED at sector %u: err=%d\n", i, wret);
+        }
+        REQUIRE(wret == ESP_OK);
+    }
+    REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
+
+    // Verify phase-2 data is readable and correct
+    for (uint32_t i = 0; i < write_count; i++) {
+        memset(read_buf, 0, sector_size);
+        REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
+        fill_buffer(PATTERN_SEED + write_count + i, write_buf, sector_size / sizeof(uint32_t));
+        if (memcmp(write_buf, read_buf, sector_size) != 0) {
+            printf("MISMATCH at sector %u: first word write=%08x read=%08x\n",
+                   i, ((uint32_t*)write_buf)[0], ((uint32_t*)read_buf)[0]);
+        }
+        REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
+    }
+
+    free(write_buf);
+    free(read_buf);
+    spi_nand_flash_deinit_device(device_handle);
+}

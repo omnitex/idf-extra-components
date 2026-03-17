@@ -72,10 +72,10 @@
 
 ## 9. Functional Testing - Edge Cases
 
-- [ ] 9.1 Implement test_nvblock_unaligned_access (verify sub-page read/write handling)
-- [ ] 9.2 Implement test_nvblock_capacity_limits (verify behavior at capacity boundaries)
-- [ ] 9.3 Implement test_nvblock_rewrite_same_address (verify wear leveling remapping)
-- [ ] 9.4 Implement test_nvblock_large_sequential_write (stress test with MB-scale writes)
+- [x] 9.1 Implement test_nvblock_unaligned_access (verify sub-page read/write handling)
+- [x] 9.2 Implement test_nvblock_capacity_limits (verify behavior at capacity boundaries)
+- [x] 9.3 Implement test_nvblock_rewrite_same_address (verify wear leveling remapping)
+- [x] 9.4 Implement test_nvblock_large_sequential_write (stress test with MB-scale writes)
 - [ ] 9.5 Run all edge case tests on hardware (verify expected error handling)
 
 ## 10. Bad Block Handling Tests

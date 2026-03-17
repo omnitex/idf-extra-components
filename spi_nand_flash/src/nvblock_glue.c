@@ -294,11 +294,17 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
              bsize, bpg, gcnt, spgcnt);
 
     // Task 4.4: Allocate metadata buffer with runtime sizing
-    // According to nvblock documentation and comprehensive-spec.md:
-    // Metadata size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE)
-    // where NVB_META_DMP_START = 48 bytes (magic + version + epoch + crc + tgt + alt)
-    // and NVB_META_ADDRESS_SIZE = 2 bytes per block address
-    nvb_ctx->meta_buf_size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE);
+    // nvblock reads and writes full pages (bsize bytes) into the meta buffer via
+    // its read/prog callbacks (pb_read/pb_write in nvblock.c). The in-RAM meta
+    // buffer must therefore be exactly bsize bytes.
+    //
+    // The direct-map slot count (meta_dmmsk+1) is derived from bsize, not bpg:
+    //   meta_dmmsk is the largest (2^n - 1) such that
+    //   (bsize - NVB_META_DMP_START) >= 2 * (meta_dmmsk+1) * NVB_META_ADDRESS_SIZE
+    // For bsize=2048 this gives meta_dmmsk=511, requiring 1072 bytes just for the
+    // DMP section — far more than bpg*NVB_META_ADDRESS_SIZE = 128 bytes.
+    // Allocating only bpg*2+header bytes causes a heap overflow on every meta read.
+    nvb_ctx->meta_buf_size = bsize;
     nvb_ctx->meta_buf = calloc(1, nvb_ctx->meta_buf_size);
     if (!nvb_ctx->meta_buf) {
         ESP_LOGE(TAG, "Failed to allocate metadata buffer (%zu bytes)", nvb_ctx->meta_buf_size);
