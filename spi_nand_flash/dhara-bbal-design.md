@@ -389,7 +389,39 @@ void app_init(void)
 
 ---
 
-## 10. Implementation Task List
+## 10. RAM Usage
+
+### Remapping table
+
+The only heap allocation made by the BBAL is `logical_to_phys[]`:
+
+```
+heap bytes = (total_blocks − num_bad) × sizeof(dhara_block_t)
+           = num_logical × 4
+```
+
+Typical figures (assuming ≤ 2 % factory bad blocks, 64 pages/block, 2 KiB pages):
+
+| Chip capacity | Total blocks | Table size |
+|---|---|---|
+| 128 MiB | 1 024 | ≈ 4 KiB |
+| 256 MiB | 2 048 | ≈ 8 KiB |
+| 512 MiB | 4 096 | ≈ 16 KiB |
+| 1 GiB | 8 192 | ≈ 32 KiB |
+
+The `dhara_bbal_t` struct itself is negligible (two pointers, two `uint16_t`s, < 32 bytes). The allocation is resized with `realloc` after the scan so the final size reflects only the good blocks actually found.
+
+### Init scan cost
+
+`dhara_bbal_init()` performs one OOB read per physical block (`dhara_nand_is_bad`) to build the table — an O(N) linear scan on every boot. There is no persistent bad block table (BBT) and no caching across reboots. At typical SPI NAND read latencies (50–200 µs/page) this adds roughly 50–200 ms of blocking init time for a 128 MiB device, scaling linearly with block count.
+
+### Flash writes
+
+The BBAL itself issues no flash writes. `mark_bad` forwards a write initiated by Dhara's journal recovery, not by the BBAL. `dhara_migrate()` writes to the destination map, but only when explicitly called.
+
+---
+
+## 11. Implementation Task List
 
 | # | File | Task |
 |---|------|------|
@@ -402,7 +434,7 @@ void app_init(void)
 
 ---
 
-## 11. Key Constraints
+## 12. Key Constraints
 
 - The upstream `dhara/` submodule is **not modified**.
 - `logical_nand` must be the **first field** of `dhara_bbal_t` to allow the cast-based `bbal_from_nand()` pattern.
