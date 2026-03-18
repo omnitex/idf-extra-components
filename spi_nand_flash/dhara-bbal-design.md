@@ -22,7 +22,8 @@ The goal is to insert a **Bad Block Abstraction Layer (BBAL)** between the raw N
 | Startup OOB scan to build remapping table | A dedicated BBT block / reserved block scheme |
 | 7 HAL callback wrappers | ECC implementation (stays in user HAL) |
 | Logical content migration utility | Raw bit-copy between chips with different bad blocks |
-| Unit test with two sim NAND instances | Multi-chip / interleaved NAND |
+| Image generator + image-load migration test | Multi-chip / interleaved NAND |
+| `preserve_contents` flag on mmap emulator | Persistent BBT across reboots |
 
 ---
 
@@ -430,11 +431,116 @@ The BBAL itself issues no flash writes. `mark_bad` forwards a write initiated by
 | 3 | `migration/dhara_migration.h` | Migration API declaration |
 | 4 | `migration/dhara_migration.c` | `dhara_migrate` implementation |
 | 5 | `CMakeLists.txt` | Add `src/dhara_bbal.c` and `migration/dhara_migration.c` |
-| 6 | `host_test/` | Test: two sim NAND instances with different bad block patterns, migrate, verify all sectors match |
+| 6 | `include/nand_linux_mmap_emul.h` | Add `preserve_contents` flag to `nand_file_mmap_emul_config_t` |
+| 7 | `src/nand_linux_mmap_emul.c` | Skip `memset`/`ftruncate` when `preserve_contents = true` |
+| 8 | `host_test/` | Image generator test case: write deterministic sectors, sync, keep file |
+| 9 | `host_test/` | Migration test case: load image read-only, migrate to bad-block-injected dst, verify |
 
 ---
 
-## 12. Key Constraints
+## 13. Image-Based Host Test
+
+### 13.1 Purpose
+
+The host test verifies that `dhara_migrate()` correctly transfers all logical sectors from a known-good source image into a destination emulated NAND that has bad blocks at arbitrary positions.
+
+### 13.2 Emulator change: `preserve_contents` flag
+
+`nand_emul_mmap_init` currently calls `memset(buf, 0xFF, size)` unconditionally, wiping any existing file contents. A new `preserve_contents` flag suppresses both the `ftruncate` (file is already the right size) and the `memset` (keep existing data):
+
+```c
+typedef struct {
+    char flash_file_name[256];
+    size_t flash_file_size;
+    bool keep_dump;
+    bool preserve_contents;  /* skip 0xFF init — file already contains valid data */
+} nand_file_mmap_emul_config_t;
+```
+
+When `preserve_contents = true` the file is opened `O_RDWR` as before (mmap still requires write access even for a read-only consumer) but the data region is never zeroed. Dhara can call `dhara_map_resume()` on it immediately.
+
+### 13.3 Test geometry
+
+All geometry parameters are `#define`-configurable at the top of the test file so they can be adjusted for debugging without recompiling the full suite:
+
+```c
+#define TEST_PAGE_SIZE      2048          /* bytes */
+#define TEST_LOG2_PAGE_SIZE 11
+#define TEST_LOG2_PPB       5             /* 32 pages/block */
+#define TEST_NUM_BLOCKS     64            /* 64 blocks × 32 pages × 2048 B = 4 MiB */
+#define TEST_GC_RATIO       4
+```
+
+Default image size: 64 blocks × 32 pages/block × (2048 + OOB) bytes/page ≈ **4 MiB** emulated file. Increasing `TEST_NUM_BLOCKS` to 256 gives 16 MiB for less-constrained runs.
+
+### 13.4 Image generator (`TEST_CASE("generate_bbal_source_image")`)
+
+Runs once, produces `/tmp/dhara-bbal-source.bin` (fixed name, not `mkstemp` — reproducible across runs, easy to inspect with a hex editor).
+
+```
+1. nand_file_mmap_emul_config_t { .flash_file_name = "/tmp/dhara-bbal-source.bin",
+                                   .flash_file_size  = TEST_IMAGE_SIZE,
+                                   .keep_dump        = true,
+                                   .preserve_contents = false }   // fresh init
+2. spi_nand_flash_init_device(...)
+3. dhara_bbal_init(src_bbal, src_phys_nand)    // 0 bad blocks → identity mapping
+4. dhara_map_init(src_map, &src_bbal.logical_nand, page_buf, TEST_GC_RATIO)
+5. dhara_map_resume(src_map, ...)              // starts blank journal
+6. for s in 0 .. dhara_map_capacity(src_map) - 1:
+       fill page_buf with deterministic pattern: sector index s repeated
+       dhara_map_write(src_map, s, page_buf, ...)
+7. dhara_map_sync(src_map, ...)
+8. spi_nand_flash_deinit_device(...)           // flushes mmap, file stays on disk
+```
+
+After this the file is a valid, fully-synced Dhara journal with no bad blocks.
+
+### 13.5 Migration test (`TEST_CASE("bbal_migrate_from_image")`)
+
+```
+1. Source device:
+   nand_file_mmap_emul_config_t { .flash_file_name  = "/tmp/dhara-bbal-source.bin",
+                                   .flash_file_size  = TEST_IMAGE_SIZE,
+                                   .keep_dump        = true,
+                                   .preserve_contents = true }    // do NOT wipe
+   spi_nand_flash_init_device(src_handle)
+   dhara_bbal_init(src_bbal, ...)
+   dhara_map_init + dhara_map_resume(src_map)
+
+2. Destination device:
+   nand_file_mmap_emul_config_t { .flash_file_name  = "/tmp/dhara-bbal-dst-XXXXXX",
+                                   .flash_file_size  = TEST_IMAGE_SIZE,
+                                   .keep_dump        = false }     // cleaned up on pass
+   spi_nand_flash_init_device(dst_handle)
+   // inject bad blocks at fixed positions, e.g. blocks 3, 7, 15
+   nand_mark_bad(dst_handle, 3)
+   nand_mark_bad(dst_handle, 7)
+   nand_mark_bad(dst_handle, 15)
+   dhara_bbal_init(dst_bbal, ...)             // non-identity mapping
+   dhara_map_init(dst_map, ...)
+   dhara_map_clear(dst_map)
+   dhara_map_sync(dst_map, ...)               // blank destination
+
+3. dhara_migrate(src_map, dst_map, page_buf, NULL, NULL, &err)
+   REQUIRE(ret == 0)
+
+4. Verify:
+   for s in 0 .. dhara_map_capacity(src_map) - 1:
+       dhara_map_read(dst_map, s, read_buf, ...)
+       REQUIRE(read_buf matches expected pattern for sector s)
+
+5. Cleanup: spi_nand_flash_deinit_device(src_handle, dst_handle)
+   dst file deleted automatically (keep_dump = false)
+   src file left in /tmp for re-use or inspection
+```
+
+### 13.6 Destination filename
+
+The destination uses `mkstemp`-style naming via the existing emulator behaviour: set `flash_file_name` to `"/tmp/dhara-bbal-dst-XXXXXX"` with `keep_dump = false` so the file is removed on a clean test exit. If the test crashes the file is left in `/tmp` for post-mortem.
+
+---
+
+## 14. Key Constraints
 
 - The upstream `dhara/` submodule is **not modified**.
 - `logical_nand` must be the **first field** of `dhara_bbal_t` to allow the cast-based `bbal_from_nand()` pattern.
