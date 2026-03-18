@@ -381,13 +381,11 @@ void app_init(void)
 
 ### What works
 
-- **1:1 logical migration between different chips** via `dhara_migrate()`. Each chip has its own BBAL that hides its bad blocks. Content is transferred sector by sector at the logical level.
-- **Backup/restore to the same chip**: since bad blocks are at the same locations, the OOB markers survive and the remapping table is reconstructed identically on restore.
-- **Same-lot chips with identical bad block patterns**: a raw bit-copy of the NAND data region (excluding OOB) combined with scanning will produce the same logical view.
+- **Logical migration between any two chips** via `dhara_migrate()`. Each chip has its own BBAL that hides its bad blocks. Content is transferred sector by sector at the logical level, so the bad block layout of source and destination are irrelevant.
 
 ### What does NOT work
 
-- **Raw bit-copy between chips with different bad block patterns**: the physical page addresses embedded in Dhara's radix-tree metadata point to logical pages on chip A. On chip B with a different bad block layout, the BBAL produces a different `logical_to_phys` table, so those embedded page numbers refer to different physical locations. The metadata becomes inconsistent. **Use `dhara_migrate()` instead.**
+- **Any form of raw bit-copy of flash contents between chips** (even chips from the same lot, same SKU, or the same physical chip after a new bad block develops): all `dhara_page_t` values stored in Dhara's radix-tree metadata and journal checkpoints are logical BBAL addresses, not raw physical addresses. The BBAL's `logical_to_phys` table is rebuilt from OOB bad-block markers at every `dhara_bbal_init()`. If the bad block layout changes at all — a new runtime bad block, a different chip, a reflash — the table will differ and every stored page pointer will silently refer to the wrong physical location. **Always use `dhara_migrate()` to move content between any two BBAL-managed devices.**
 
 ---
 
