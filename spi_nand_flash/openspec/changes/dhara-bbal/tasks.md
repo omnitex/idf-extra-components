@@ -1,6 +1,6 @@
 ## 1. BBAL Header and Core Implementation
 
-- [ ] 1.1 Create `include/dhara_bbal.h` with `dhara_bbal_t` struct definition (`logical_nand` as first field, `phys_nand`, `logical_to_phys`, `num_logical`, `num_bad`)
+- [x] 1.1 Create `include/dhara_bbal.h` with `dhara_bbal_t` struct definition (`logical_nand` as first field, `phys_nand`, `logical_to_phys`, `num_logical`, `num_bad`)
 - [ ] 1.2 Add `dhara_bbal_init` and `dhara_bbal_deinit` declarations to `include/dhara_bbal.h` with full doc-comments
 - [ ] 1.3 Create `src/dhara_bbal.c` with `dhara_bbal_init`: malloc, OOB scan loop, realloc, and `logical_nand` geometry setup
 - [ ] 1.4 Implement `dhara_bbal_deinit` in `src/dhara_bbal.c`
