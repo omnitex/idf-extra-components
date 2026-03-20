@@ -29,10 +29,20 @@ static esp_err_t nand_emul_mmap_init(nand_mmap_emul_handle_t *emul_handle)
     }
 
     // Create or open file
+    bool file_is_new = false;
     if (emul_handle->file_mmap_ctrl.flash_file_name[0] != '\0') {
         emul_handle->mem_file_fd = open(emul_handle->file_mmap_ctrl.flash_file_name, O_RDWR | O_CREAT, 0600);
+        if (emul_handle->mem_file_fd != -1) {
+            struct stat st;
+            if (fstat(emul_handle->mem_file_fd, &st) == 0) {
+                file_is_new = (st.st_size == 0);
+            } else {
+                file_is_new = true;
+            }
+        }
     } else {
         emul_handle->mem_file_fd = mkstemp(emul_handle->file_mmap_ctrl.flash_file_name);
+        file_is_new = true;
     }
 
     if (emul_handle->mem_file_fd == -1) {
@@ -41,7 +51,7 @@ static esp_err_t nand_emul_mmap_init(nand_mmap_emul_handle_t *emul_handle)
         return ESP_ERR_NOT_FOUND;
     }
 
-    // Set file size
+    // Set file size (no-op if file already has correct size)
     if (ftruncate(emul_handle->mem_file_fd, emul_handle->file_mmap_ctrl.flash_file_size) != 0) {
         ESP_LOGE(TAG, "Failed to set NAND file size: %s", strerror(errno));
         close(emul_handle->mem_file_fd);
@@ -58,8 +68,12 @@ static esp_err_t nand_emul_mmap_init(nand_mmap_emul_handle_t *emul_handle)
         return ESP_ERR_NO_MEM;
     }
 
-    // Initialize with 0xFF (erased state)
-    memset(emul_handle->mem_file_buf, 0xFF, emul_handle->file_mmap_ctrl.flash_file_size);
+    // Initialize with 0xFF (erased state) only for new/empty files.
+    // Existing files retain their content to support power-loss simulation
+    // across deinit/reinit cycles.
+    if (file_is_new) {
+        memset(emul_handle->mem_file_buf, 0xFF, emul_handle->file_mmap_ctrl.flash_file_size);
+    }
 
     ESP_LOGI(TAG, "NAND flash emulation initialized: %s (size: %zu bytes)",
              emul_handle->file_mmap_ctrl.flash_file_name,

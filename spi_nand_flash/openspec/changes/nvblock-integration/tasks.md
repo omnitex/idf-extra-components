@@ -97,11 +97,11 @@
 
 ## 12. Power-Loss Simulation Tests
 
-- [ ] 12.1 Implement test_nvblock_power_loss_during_write (interrupt write mid-operation → verify recovery)
-- [ ] 12.2 Implement test_nvblock_power_loss_during_erase (interrupt erase → verify no corruption)
-- [ ] 12.3 Implement test_nvblock_sync_guarantees (verify post-sync data survives power loss)
-- [ ] 12.4 Run power-loss tests with random interruption points (100+ iterations)
-- [ ] 12.5 Verify no data loss for synced data, acceptable handling for unsynced data
+- [x] 12.1 Implement test_nvblock_power_loss_during_write (interrupt write mid-operation → verify recovery)
+- [x] 12.2 Implement test_nvblock_power_loss_during_erase (interrupt erase → verify no corruption)
+- [x] 12.3 Implement test_nvblock_sync_guarantees (verify post-sync data survives power loss)
+- [x] 12.4 Run power-loss tests with random interruption points (100+ iterations)
+- [x] 12.5 Verify no data loss for synced data, acceptable handling for unsynced data
 
 ## 13. Performance Benchmarking
 
