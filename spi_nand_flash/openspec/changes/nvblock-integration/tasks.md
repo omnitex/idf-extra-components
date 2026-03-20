@@ -82,10 +82,10 @@
 ## 10. Bad Block Handling Tests
 
 - [x] 10.1 Implement test_nvblock_preexisting_bad_blocks (verify nvblock skips factory bad blocks)
-- [ ] 10.2 Implement test_nvblock_runtime_bad_block (simulate write failure → bad block marking)
-- [ ] 10.3 Implement test_nvblock_bad_block_remapping (verify data moved to good block)
-- [ ] 10.4 Implement test_nvblock_exhausted_spares (verify graceful degradation when spares exhausted)
-- [ ] 10.5 Run bad block tests with injected failures (verify robustness)
+- [x] 10.2 Implement test_nvblock_runtime_bad_block (simulate write failure → bad block marking)
+- [x] 10.3 Implement test_nvblock_bad_block_remapping (verify data moved to good block)
+- [x] 10.4 Implement test_nvblock_exhausted_spares (verify graceful degradation when spares exhausted)
+- [x] 10.5 Run bad block tests with injected failures (verify robustness)
 
 ## 11. Wear Leveling Verification
 

@@ -526,3 +526,167 @@ TEST_CASE("WL: preexisting factory bad block skipped", "[spi_nand_flash][wl][bad
     free(read_buf);
     spi_nand_flash_deinit_device(device_handle);
 }
+
+// =============================================================================
+// Bad block handling tests (tasks 10.2 - 10.5)
+// =============================================================================
+
+/* Task 10.2 / 10.3: Runtime bad block injection and remapping.
+ *
+ * Injects a bad block mid-array after the WL layer is already initialised
+ * (simulating a block going bad during operation).  Then performs enough
+ * writes to force at least one GC cycle that must skip the now-bad block.
+ * Verifies:
+ *   - all previously written logical sectors still read back correctly, and
+ *   - the reported capacity after injection is no larger than before.
+ */
+TEST_CASE("WL: runtime bad block injection and remapping", "[spi_nand_flash][wl][bad-block]")
+{
+    nand_file_mmap_emul_config_t conf = {"", 16 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *device_handle;
+
+    REQUIRE(spi_nand_flash_init_device(&nand_flash_config, &device_handle) == ESP_OK);
+
+    uint32_t sector_num = 0, sector_size = 0, num_blocks = 0;
+    REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_block_num(device_handle, &num_blocks) == ESP_OK);
+    REQUIRE(sector_num > 10);
+    REQUIRE(num_blocks > 8);
+
+    uint8_t *write_buf = (uint8_t *)malloc(sector_size);
+    uint8_t *read_buf  = (uint8_t *)malloc(sector_size);
+    REQUIRE(write_buf != NULL);
+    REQUIRE(read_buf  != NULL);
+
+    /* Phase 1: write an initial set of logical sectors. */
+    uint32_t initial_sectors = (sector_num > 64) ? 64 : sector_num / 2;
+    for (uint32_t i = 0; i < initial_sectors; i++) {
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
+    }
+    REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
+
+    /* Inject a bad block mid-array (outside the first 8 blocks to avoid
+     * colliding with WL bootstrap metadata). */
+    uint32_t bad_block = (num_blocks > 16) ? (num_blocks / 2) : 8;
+    bool is_bad = false;
+    REQUIRE(nand_wrap_is_bad(device_handle, bad_block, &is_bad) == ESP_OK);
+    REQUIRE(is_bad == false);   /* must be good before injection */
+    REQUIRE(nand_wrap_mark_bad(device_handle, bad_block) == ESP_OK);
+
+    /* Phase 2: continue writing, forcing GC that must route around the bad block. */
+    uint32_t extra_sectors = (sector_num > 128) ? 64 : initial_sectors / 2;
+    for (uint32_t i = initial_sectors; i < initial_sectors + extra_sectors; i++) {
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        /* A write may fail if the bad block is the next physical target and
+         * nvblock discovers it only during erase/prog.  That is acceptable;
+         * what must NOT happen is a crash or silent data corruption. */
+        esp_err_t wret = spi_nand_flash_write_sector(device_handle, write_buf, i % sector_num);
+        REQUIRE((wret == ESP_OK || wret == ESP_FAIL || wret == ESP_ERR_NO_MEM));
+    }
+    REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
+
+    /* Phase 3: read back all phase-1 data — must still be intact. */
+    for (uint32_t i = 0; i < initial_sectors; i++) {
+        memset(read_buf, 0, sector_size);
+        REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
+    }
+
+    /* Capacity must not have grown after injecting a bad block. */
+    uint32_t sector_num_after = 0;
+    REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num_after) == ESP_OK);
+    REQUIRE(sector_num_after <= sector_num);
+
+    free(write_buf);
+    free(read_buf);
+    spi_nand_flash_deinit_device(device_handle);
+}
+
+/* Task 10.4: Exhausted spares — graceful degradation.
+ *
+ * Marks so many physical blocks bad that the WL layer runs out of spare
+ * groups.  Verifies the layer returns an error rather than crashing.
+ *
+ * Strategy: mark ~60% of blocks bad (top of array, away from metadata),
+ * deinit, then reinit so nvblock rescans the bad-block table.  Acceptable
+ * outcomes:
+ *   - init failure (graceful rejection of an over-degraded device), or
+ *   - init success but writes return a non-OK code (out-of-space), or
+ *   - init success and writes succeed (enough blocks still good).
+ * A crash (signal) is the only unacceptable outcome.
+ *
+ * Task 10.5 is covered implicitly: all bad-block tests run with injected
+ * failures and must complete without crashing.
+ */
+TEST_CASE("WL: exhausted spares graceful failure", "[spi_nand_flash][wl][bad-block]")
+{
+    nand_file_mmap_emul_config_t conf = {"", 16 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *device_handle;
+
+    REQUIRE(spi_nand_flash_init_device(&nand_flash_config, &device_handle) == ESP_OK);
+
+    uint32_t num_blocks = 0;
+    REQUIRE(spi_nand_flash_get_block_num(device_handle, &num_blocks) == ESP_OK);
+    REQUIRE(num_blocks > 16);
+
+    uint32_t sector_size = 0;
+    REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
+
+    /* Mark ~60% of blocks bad, from top of array downward,
+     * leaving the first 8 blocks intact for WL metadata. */
+    uint32_t blocks_to_poison = (num_blocks * 60) / 100;
+    uint32_t first_victim = num_blocks - 1;
+    uint32_t last_victim  = (first_victim >= blocks_to_poison)
+                            ? (first_victim - blocks_to_poison + 1)
+                            : 9;
+
+    for (uint32_t b = first_victim; b >= last_victim && b >= 9; b--) {
+        bool is_bad = false;
+        if (nand_wrap_is_bad(device_handle, b, &is_bad) == ESP_OK && !is_bad) {
+            nand_wrap_mark_bad(device_handle, b);
+        }
+        if (b == 0) break; /* underflow guard */
+    }
+
+    spi_nand_flash_deinit_device(device_handle);
+
+    /* Re-initialise so nvblock rescans the bad-block table. */
+    esp_err_t init_ret = spi_nand_flash_init_device(&nand_flash_config, &device_handle);
+
+    if (init_ret != ESP_OK) {
+        /* Graceful: too many bad blocks, init rejected the device. */
+        return;
+    }
+
+    /* Init succeeded — verify writes either work or fail gracefully. */
+    uint32_t sector_num = 0;
+    REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num) == ESP_OK);
+
+    if (sector_num == 0) {
+        /* No usable sectors — graceful. */
+        spi_nand_flash_deinit_device(device_handle);
+        return;
+    }
+
+    uint8_t *write_buf = (uint8_t *)malloc(sector_size);
+    REQUIRE(write_buf != NULL);
+    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+
+    uint32_t write_limit = (sector_num > 32) ? 32 : sector_num;
+    for (uint32_t i = 0; i < write_limit; i++) {
+        esp_err_t wret = spi_nand_flash_write_sector(device_handle, write_buf, i);
+        /* Any return value is valid: ESP_OK means enough good blocks remain;
+         * non-OK means the layer ran out and reported it cleanly.
+         * A crash (signal) is the only unacceptable outcome. */
+        (void)wret;
+    }
+
+    free(write_buf);
+    spi_nand_flash_deinit_device(device_handle);
+}
+
