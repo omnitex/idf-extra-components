@@ -113,8 +113,51 @@ typedef struct {
     uint32_t blocks_never_erased;
     uint32_t pages_never_written;
     double   wear_leveling_variation;  // (max - min) / avg erase counts (lower is better)
+
+    // Write amplification (host-test analytics; see §1a)
+    uint64_t logical_write_bytes_recorded; /**< Sum of nbytes from nand_emul_record_logical_write(); 0 if never used */
+    double   write_amplification;        /**< total_bytes_written / logical when logical > 0; else 0.0 (not NAN) */
 } nand_wear_stats_t;
+
+// --- Wear analytics: histograms (optional; computed on demand) ---
+
+#define NAND_WEAR_HIST_MAX_BINS 32
+
+/**
+ * Uniform linear histogram with one overflow bucket.
+ * Caller sets @c n_bins (>= 2, <= NAND_WEAR_HIST_MAX_BINS) and @c bin_width (> 0) before query.
+ * For sample value @c v: bin @c i for @c i < @c n_bins - 1 counts @c i * bin_width <= v < (i+1) * bin_width;
+ * bin @c n_bins - 1 counts @c v >= (n_bins - 1) * bin_width.
+ */
+typedef struct {
+    uint32_t bin_width;
+    uint16_t n_bins;
+    uint16_t reserved;
+    uint64_t count[NAND_WEAR_HIST_MAX_BINS];
+} nand_wear_histogram_t;
+
+/** Pair of histograms filled by @c nand_emul_get_wear_histograms() / backend @c get_histograms(). */
+typedef struct {
+    nand_wear_histogram_t block_erase_count;           /**< Samples: erase_count per block in block table */
+    nand_wear_histogram_t page_lifetime_programs;    /**< Samples: program_count_total+program_count per written page */
+} nand_wear_histograms_t;
 ```
+
+#### 1a. Histograms and write amplification
+
+**Histograms** summarize wear **distribution** (hotspots, tails) without exporting every block/page. They are **optional**: backends MAY implement `get_histograms()`; if NULL, `nand_emul_get_wear_histograms()` returns `ESP_ERR_NOT_SUPPORTED`.
+
+- **Computation**: On each query, the sparse backend **iterates** its block and page tables and increments bins (**O(metadata entries)**). No extra persistent structure is required; histograms need not appear in binary snapshots unless explicitly extended later.
+- **Block erase histogram**: One sample per **block metadata entry** (blocks that have been tracked, typically after at least one erase).
+- **Page lifetime program histogram**: One sample per **page** with `program_count_total + program_count > 0`. Pages with only read activity are **excluded** from this histogram (programs-only metric).
+
+**Write amplification (WAF)** is defined here as **physical bytes programmed** divided by **logical bytes** the test attributes to the workload:
+
+- **Physical numerator**: `total_bytes_written` (cumulative successful program payload bytes, same as today’s aggregate).
+- **Logical denominator**: `logical_write_bytes_recorded`, incremented only when the test calls `nand_emul_record_logical_write(handle, nbytes)` at the layer that represents “user / filesystem logical bytes” (e.g. after a simulated `write()` of application data). The emulator cannot infer logical traffic from NAND ops alone; **double-counting is the caller’s responsibility**.
+- **Ratio**: `write_amplification = total_bytes_written / logical_write_bytes_recorded` when `logical_write_bytes_recorded > 0`; otherwise `0.0`.
+
+`nand_emul_record_logical_write()` is a no-op (returns `ESP_ERR_NOT_SUPPORTED`) when advanced tracking is disabled.
 
 #### Operation Context (for failure models)
 
@@ -179,6 +222,9 @@ typedef struct nand_metadata_backend_ops {
     
     // Aggregate statistics
     esp_err_t (*get_stats)(void *backend_handle, nand_wear_stats_t *out);
+
+    // Optional (NULL): fill @c out using caller-initialized bin_width / n_bins per sub-histogram
+    esp_err_t (*get_histograms)(void *backend_handle, nand_wear_histograms_t *out);
     
     // Binary snapshot (optimized for wear lifetime simulation)
     esp_err_t (*save_snapshot)(void *backend_handle, const char *filename, uint64_t timestamp);
@@ -259,6 +305,13 @@ esp_err_t nand_emul_get_page_wear(spi_nand_flash_device_t *handle,
 esp_err_t nand_emul_get_wear_stats(spi_nand_flash_device_t *handle,
                                     nand_wear_stats_t *out);
 
+// Fill wear histograms; caller sets bin_width and n_bins for each sub-histogram before the call
+esp_err_t nand_emul_get_wear_histograms(spi_nand_flash_device_t *handle,
+                                        nand_wear_histograms_t *out);
+
+// Record logical host bytes for WAF (see §1a); cumulative for the emulator lifetime until reset/deinit
+esp_err_t nand_emul_record_logical_write(spi_nand_flash_device_t *handle, size_t nbytes);
+
 // Iterate over all written blocks
 esp_err_t nand_emul_iterate_worn_blocks(spi_nand_flash_device_t *handle,
                                         bool (*callback)(uint32_t block_num, 
@@ -307,6 +360,8 @@ typedef struct {
     size_t initial_capacity;  // Initial hash table size (0 = auto)
     float  load_factor;       // Rehash threshold (default 0.75)
     bool   track_byte_deltas; // Enable byte-level delta tracking
+    // When true, backend exposes non-NULL get_histograms (same iteration cost as a full stats sweep)
+    bool   enable_histogram_query;
 } sparse_hash_backend_config_t;
 
 // Registration
@@ -550,6 +605,9 @@ typedef struct {
         uint32_t total_blocks;
         uint32_t pages_per_block;
         uint32_t page_size;
+
+        // Write amplification: logical bytes (see nand_emul_record_logical_write)
+        uint64_t logical_write_bytes_recorded;
     } *advanced;  // NULL if not using advanced features
 } nand_mmap_emul_handle_t;
 ```
@@ -713,7 +771,9 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 - Implement `nand_emul_get_block_wear()`
 - Implement `nand_emul_get_page_wear()`
 - Implement `nand_emul_get_byte_deltas()`
-- Implement `nand_emul_get_wear_stats()`
+- Implement `nand_emul_get_wear_stats()` (including WAF fields and `logical_write_bytes_recorded`)
+- Implement `nand_emul_get_wear_histograms()` and sparse `get_histograms()` when `enable_histogram_query`
+- Implement `nand_emul_record_logical_write()` on the mmap handle (merged into stats on `get_wear_stats`)
 - Implement `nand_emul_iterate_worn_blocks()`
 - Implement `nand_emul_mark_bad_block()`
 - Implement binary snapshot save/load functions
@@ -751,6 +811,7 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 
 ### Phase 8: Optional Extensions (Future)
 
+- JSON / snapshot export of histogram bins (optional; query API is sufficient for host analysis)
 - SQLite-based metadata backend (persistent, queryable)
 - Real-time wear visualization (web dashboard)
 - Machine learning-based failure prediction

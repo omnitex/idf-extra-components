@@ -11,6 +11,14 @@ Use this list when implementing or reviewing the read-count extension:
 5. [ ] Tests: multi-page read counts, erase fold, snapshot roundtrip for read fields, read-disturb BER trend
 6. [ ] Docs: `proposal.md` / `design.md` / delta specs kept in sync (this checklist is secondary to those sources)
 
+## Checklist: histograms & write amplification (this change)
+
+1. [ ] Headers: `nand_wear_histogram_t`, `nand_wear_histograms_t`, `NAND_WEAR_HIST_MAX_BINS`; extend `nand_wear_stats_t` with `logical_write_bytes_recorded`, `write_amplification`; optional `get_histograms` in `nand_metadata_backend_ops_t`
+2. [ ] Sparse backend: `enable_histogram_query` in config; implement `get_histograms` sweep; register NULL when disabled
+3. [ ] Core: `nand_emul_get_wear_histograms`, `nand_emul_record_logical_write`; `advanced->logical_write_bytes_recorded`; merge into `nand_emul_get_wear_stats`
+4. [ ] Tests: binning math (known distribution), invalid n_bins/bin_width, NOT_SUPPORTED path, WAF ratio after mixed logical + physical traffic
+5. [ ] Docs/specs: query-api + metadata-backend delta specs (done in repo); `nand_emul_advanced.h` when implementing
+
 ## Phase 1: Core Infrastructure
 
 **Goal**: Foundation for advanced tracking system - data structures, interfaces, initialization
@@ -29,7 +37,7 @@ Use this list when implementing or reviewing the read-count extension:
   - Define `nand_metadata_backend_ops_t` vtable structure
   - Add lifecycle methods: `init()`, `deinit()`
   - Add operation callbacks: `on_block_erase()`, `on_page_program()`, `on_page_read()` (optional), `on_byte_write_range()`
-  - Add query methods: `get_block_info()`, `get_page_info()`, `get_byte_deltas()`
+  - Add query methods: `get_block_info()`, `get_page_info()`, `get_byte_deltas()`, optional `get_histograms()`
   - Add iteration methods: `iterate_blocks()`, `iterate_pages()`
   - Add snapshot methods: `save_snapshot()`, `load_snapshot()`
   - Add export method: `export_json()`
@@ -310,8 +318,18 @@ Use this list when implementing or reviewing the read-count extension:
 
 - [ ] P4.T4: Implement `nand_emul_get_wear_stats()`
   - Complexity: Low | Dependencies: P2.T15 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
-  - Validate handle; check if advanced tracking enabled; call backend `get_stats()`; return aggregate statistics
-  - Acceptance: Unit test: perform mixed operations, get stats, verify correctness
+  - Validate handle; check if advanced tracking enabled; call backend `get_stats()`; merge `logical_write_bytes_recorded` from advanced context; set `write_amplification` from `total_bytes_written` and logical counter
+  - Acceptance: Unit test: perform mixed operations, get stats, verify correctness; WAF 0 when no logical bytes
+
+- [ ] P4.T4a: Implement `nand_emul_get_wear_histograms()` and sparse `get_histograms()`
+  - Complexity: Medium | Dependencies: P4.T4, P2.T15 | Files: `src/nand_linux_mmap_emul.c`, `src/backends/sparse_hash_backend.c`, `include/nand_emul_advanced.h`
+  - Honor `enable_histogram_query`; validate caller `n_bins` / `bin_width`; sweep block/page tables per `proposal.md` §1a
+  - Acceptance: Unit tests for known distributions, invalid args, `ESP_ERR_NOT_SUPPORTED` when disabled or NULL op
+
+- [ ] P4.T4b: Implement `nand_emul_record_logical_write()`
+  - Complexity: Low | Dependencies: P1.T5 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
+  - Increment `advanced->logical_write_bytes_recorded`; `ESP_ERR_NOT_SUPPORTED` without advanced init
+  - Acceptance: Unit test: record logical bytes, verify stats field and WAF ratio
 
 - [ ] P4.T5: Implement `nand_emul_iterate_worn_blocks()`
   - Complexity: Low | Dependencies: P2.T13 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`

@@ -120,8 +120,25 @@ typedef struct {
     // Statistics cache (updated lazily)
     nand_wear_stats_t cached_stats;
     bool stats_dirty;              // Recompute on next get_stats call
+
+    bool enable_histogram_query;   // If false, get_histograms op is NULL at registration time
 } sparse_hash_backend_t;
 ```
+
+### Histogram computation (`get_histograms`)
+
+When `enable_histogram_query` is true, the sparse backend registers a non-NULL `get_histograms` that:
+
+1. **Zeroes** all `count[]` arrays in `out->block_erase_count` and `out->page_lifetime_programs`.
+2. **Validates** each sub-histogram: `n_bins` in `[2, NAND_WEAR_HIST_MAX_BINS]`, `bin_width > 0`; on violation return `ESP_ERR_INVALID_ARG`.
+3. **Iterates** the block hash table: for each entry, increment the bin for `erase_count` using the uniform rule in `proposal.md` §1a.
+4. **Iterates** the page hash table: for each page with `program_count_total + program_count > 0`, increment the bin for that lifetime program count.
+
+Histograms are **not** folded into `cached_stats`; each query performs a full metadata sweep (same order of work as recomputing min/max if those were not cached). If future work caches min/max erase/program on each mutation, histograms can either stay on-demand or reuse a shared “full scan” helper.
+
+### Write amplification accounting
+
+`logical_write_bytes_recorded` lives in the **mmap emulator handle** (`advanced->logical_write_bytes_recorded`), not in the sparse backend: logical traffic is a test-harness concept. `nand_emul_record_logical_write()` increments this field; `nand_emul_get_wear_stats()` copies it into `nand_wear_stats_t.logical_write_bytes_recorded` and sets `write_amplification` from `total_bytes_written` (from backend `get_stats`) and that counter. The backend continues to own `total_bytes_written` / physical byte aggregates as today.
 
 ## Sparse Hash Backend Implementation
 

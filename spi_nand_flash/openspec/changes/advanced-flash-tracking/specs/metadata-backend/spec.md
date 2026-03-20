@@ -170,6 +170,24 @@ The system SHALL compute aggregate wear statistics across all blocks including m
 - **THEN** SHALL set `wear_leveling_variation` to 0.0
 - **AND** SHALL NOT divide by zero; 0.0 denotes no spread
 
+### Requirement: Optional wear histograms
+The metadata backend MAY expose `get_histograms()` to fill `nand_wear_histograms_t` on demand.
+
+#### Scenario: Valid bin parameters
+- **WHEN** `get_histograms()` is called with `out->block_erase_count.n_bins` and `out->page_lifetime_programs.n_bins` each in the range `[2, NAND_WEAR_HIST_MAX_BINS]`
+- **AND** both `bin_width` fields are greater than zero
+- **THEN** backend SHALL return `ESP_OK` and SHALL fill `count[]` with sample frequencies
+
+#### Scenario: Invalid bin parameters
+- **WHEN** `n_bins` or `bin_width` violates the constraints above
+- **THEN** backend SHALL return `ESP_ERR_INVALID_ARG`
+- **AND** implementation SHOULD either leave all `count[]` unchanged or zero them entirely before returning (no misleading partial frequencies)
+
+#### Scenario: No-op backend without histograms
+- **WHEN** backend does not support histograms
+- **THEN** `get_histograms` function pointer MAY be NULL
+- **AND** emulator `nand_emul_get_wear_histograms()` SHALL surface `ESP_ERR_NOT_SUPPORTED`
+
 ### Requirement: Block iteration
 The system SHALL allow iteration over all blocks that have been erased or written.
 

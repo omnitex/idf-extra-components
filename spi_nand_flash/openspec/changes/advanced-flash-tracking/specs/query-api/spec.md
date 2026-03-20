@@ -52,12 +52,53 @@ The system SHALL provide `nand_emul_get_wear_stats()` function to retrieve aggre
   - Count of blocks never erased
   - Count of pages never written
   - Wear leveling variation (lower is better)
+  - `logical_write_bytes_recorded` and `write_amplification` (see logical-write recording requirement)
 
 #### Scenario: Empty flash statistics
 - **WHEN** `nand_emul_get_wear_stats()` is called on fresh emulator
 - **THEN** SHALL return zeroed statistics
 - **AND** `blocks_never_erased` SHALL equal total block count
 - **AND** `wear_leveling_variation` SHALL be 0.0
+- **AND** `write_amplification` SHALL be 0.0
+
+#### Scenario: Write amplification when logical bytes recorded
+- **WHEN** developer has called `nand_emul_record_logical_write()` with a positive total
+- **AND** `nand_emul_get_wear_stats(handle, &stats)` is called
+- **THEN** `stats.logical_write_bytes_recorded` SHALL equal the cumulative sum passed to `nand_emul_record_logical_write()`
+- **AND** `stats.write_amplification` SHALL equal `stats.total_bytes_written / stats.logical_write_bytes_recorded` (as floating point)
+- **AND** when `logical_write_bytes_recorded` is 0, `write_amplification` SHALL be 0.0 (no division by zero)
+
+### Requirement: Wear histograms
+The system SHALL provide `nand_emul_get_wear_histograms()` to retrieve uniform histograms of block erase counts and per-page lifetime program counts when the metadata backend supports it.
+
+#### Scenario: Caller-defined binning
+- **WHEN** developer sets `out->block_erase_count.n_bins`, `out->block_erase_count.bin_width`, `out->page_lifetime_programs.n_bins`, and `out->page_lifetime_programs.bin_width` to valid values (see metadata-backend spec)
+- **AND** calls `nand_emul_get_wear_histograms(handle, &out)`
+- **AND** backend has histogram support enabled
+- **THEN** function SHALL return `ESP_OK`
+- **AND** each `count[]` entry SHALL hold the number of samples in that bin per `proposal.md` §1a rules
+
+#### Scenario: Page program histogram excludes read-only pages
+- **WHEN** a page has read activity but zero lifetime programs
+- **THEN** that page SHALL NOT contribute a sample to `page_lifetime_programs`
+
+#### Scenario: Histograms not supported
+- **WHEN** metadata backend does not implement `get_histograms` (NULL) or histograms are disabled in backend config
+- **AND** developer calls `nand_emul_get_wear_histograms()`
+- **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
+
+### Requirement: Logical write recording for WAF
+The system SHALL provide `nand_emul_record_logical_write(handle, nbytes)` so tests can attribute logical host bytes for write-amplification analysis.
+
+#### Scenario: Record cumulative logical bytes
+- **WHEN** advanced tracking is enabled
+- **AND** developer calls `nand_emul_record_logical_write(handle, nbytes)` one or more times
+- **THEN** subsequent `nand_emul_get_wear_stats()` SHALL expose the cumulative sum in `logical_write_bytes_recorded`
+
+#### Scenario: Without advanced tracking
+- **WHEN** emulator was initialized with `nand_emul_init()` only
+- **AND** developer calls `nand_emul_record_logical_write()`
+- **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
 
 ### Requirement: Iterate worn blocks
 The system SHALL provide `nand_emul_iterate_worn_blocks()` function to iterate blocks with metadata.
