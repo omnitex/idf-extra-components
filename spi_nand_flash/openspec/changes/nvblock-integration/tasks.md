@@ -134,11 +134,11 @@
 
 ## 16. Code Quality & Review
 
-- [ ] 16.1 Run static analysis (cppcheck, clang-tidy) on nvblock_glue.c
-- [ ] 16.2 Verify zero new warnings/errors introduced
-- [ ] 16.3 Add comprehensive comments to nvblock_glue.c (explain HAL mappings, error handling)
-- [ ] 16.4 Verify code style consistency with existing codebase
-- [ ] 16.5 Self-review checklist: error handling, resource cleanup, edge cases
+- [x] 16.1 Run static analysis (cppcheck, clang-tidy) on nvblock_glue.c
+- [x] 16.2 Verify zero new warnings/errors introduced
+- [x] 16.3 Add comprehensive comments to nvblock_glue.c (explain HAL mappings, error handling)
+- [x] 16.4 Verify code style consistency with existing codebase
+- [x] 16.5 Self-review checklist: error handling, resource cleanup, edge cases
 - [ ] 16.6 Request peer review (if team workflow requires)
 
 ## 17. Integration Validation

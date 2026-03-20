@@ -48,9 +48,9 @@ static inline bool nvb_should_log(void)
 #endif
 }
 
-// Task 5.7: Error code mapping (nvblock uses negative errno values)
-#define NVB_EIO     5   // I/O error
-#define NVB_EFAULT  14  // Bad address (already defined in nvblock.h as NVB_EFAULT)
+// Error code mapping (nvblock uses negative errno values)
+#define NVB_EIO     5   // I/O error (maps to EIO)
+#define NVB_EFAULT  14  // Bad address / bad block (maps to EFAULT)
 
 /**
  * @brief nvblock context structure
@@ -80,7 +80,7 @@ typedef struct {
 /**
  * @brief nvblock read callback - read a virtual block (page)
  * 
- * Task 5.1: Read a page from NAND flash.
+ * Read a page from NAND flash.
  * 
  * @param cfg nvblock configuration
  * @param p Virtual block location (absolute NAND page number)
@@ -91,10 +91,10 @@ static int nvb_read_cb(const struct nvb_config *cfg, uint32_t p, void *buffer)
 {
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
-    uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
     uint32_t op = s_nvb_op_count++;
 
     if (nvb_should_log()) {
+        uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
         ESP_LOGI(TAG, "[op=%"PRIu32"] nvb_read_cb: page=%"PRIu32
                  " (block=%"PRIu32" pg_in_blk=%"PRIu32")",
                  op, p, p / pages_per_block, p % pages_per_block);
@@ -113,7 +113,7 @@ static int nvb_read_cb(const struct nvb_config *cfg, uint32_t p, void *buffer)
 /**
  * @brief nvblock program callback - write a virtual block (page)
  * 
- * Task 5.2: Write a page to NAND flash.
+ * Write a page to NAND flash.
  * nvblock expects the callback to handle erase-before-write if needed
  * (erase when writing first page of a group/block).
  * 
@@ -172,7 +172,7 @@ static int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buf
 /**
  * @brief nvblock move callback - optimized page copy
  * 
- * Task 5.6: Copy a page from one location to another.
+ * Copy a page from one location to another.
  * nvblock uses this for wear leveling block moves.
  * 
  * @param cfg nvblock configuration
@@ -228,7 +228,7 @@ static int nvb_move_cb(const struct nvb_config *cfg, uint32_t pf, uint32_t pt)
 /**
  * @brief nvblock is-bad callback - check if a virtual block is in a bad block
  * 
- * Task 5.4: Check if the page belongs to a factory-marked bad block.
+ * Check if the page belongs to a factory-marked bad block.
  * 
  * @param cfg nvblock configuration
  * @param p Virtual block location (page)
@@ -273,7 +273,6 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
 {
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
-    uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
     uint32_t op = s_nvb_op_count++;
 
     bool is_free = false;
@@ -286,6 +285,7 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
     }
 
     if (nvb_should_log()) {
+        uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
         ESP_LOGI(TAG, "[op=%"PRIu32"] nvb_isfree_cb: page=%"PRIu32
                  " (block=%"PRIu32" pg_in_blk=%"PRIu32") -> %s",
                  op, p, p / pages_per_block, p % pages_per_block,
@@ -298,7 +298,7 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
 /**
  * @brief nvblock mark-bad callback - mark a virtual block's parent block as bad
  * 
- * Task 5.5: Mark the NAND block containing this page as bad.
+ * Mark the NAND block containing this page as bad.
  * 
  * @param cfg nvblock configuration
  * @param p Virtual block location (page)
@@ -324,6 +324,14 @@ static void nvb_markbad_cb(const struct nvb_config *cfg, uint32_t p)
 
 /**
  * @brief Initialize nvblock wear leveling layer
+ *
+ * Allocates the nvblock context, computes configuration parameters from the
+ * chip descriptor, allocates the metadata buffer, wires up HAL callbacks, and
+ * calls nvb_init() to scan/resume the on-flash wear leveling state.
+ *
+ * @param handle Device handle (chip params must be populated before calling)
+ * @return ESP_OK on success, ESP_ERR_NO_MEM if allocation fails,
+ *         ESP_ERR_INVALID_ARG / ESP_FAIL if nvb_init fails
  */
 static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
 {
@@ -339,39 +347,38 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
     handle->ops_priv_data = nvb_ctx;
     nvb_ctx->parent_handle = handle;
 
-    // Task 4.3: Calculate nvblock configuration from chip parameters
+    // Calculate nvblock configuration from chip parameters.
     // Map nvblock terminology to NAND flash:
-    // - bsize (virtual block size) = NAND page size
-    // - bpg (blocks per group) = NAND pages per block
-    // - gcnt (total groups) = NAND total blocks
-    // - spgcnt (spare groups) = calculated from gc_factor
-    
-    uint32_t bsize = handle->chip.page_size;                  // e.g., 2048 bytes
-    uint32_t bpg = 1 << handle->chip.log2_ppb;                // e.g., 64 pages/block
-    uint32_t gcnt = handle->chip.num_blocks;                  // e.g., 1024 blocks
-    
-    // Calculate spare group count for wear leveling
-    // gc_factor is percentage (e.g., 4 means 4% spare)
-    // Minimum 2 spare groups for wear leveling to function
+    //   bsize  (virtual block size)   = NAND page size (e.g. 2048 bytes)
+    //   bpg    (blocks per group)     = NAND pages per block (e.g. 64)
+    //   gcnt   (total groups)         = NAND total blocks (e.g. 1024)
+    //   spgcnt (spare groups)         = derived from gc_factor percentage
+    uint32_t bsize = handle->chip.page_size;
+    uint32_t bpg = 1 << handle->chip.log2_ppb;
+    uint32_t gcnt = handle->chip.num_blocks;
+
+    // gc_factor is a percentage (e.g. 4 means 4% spare).
+    // Minimum 2 spare groups for wear leveling to function correctly.
     uint32_t spgcnt = (gcnt * handle->config.gc_factor) / 100;
     if (spgcnt < 2) {
-        spgcnt = 2;  // Ensure minimum spare blocks
+        spgcnt = 2;
     }
-    
+
     ESP_LOGI(TAG, "nvblock config: bsize=%lu, bpg=%lu, gcnt=%lu, spgcnt=%lu",
              bsize, bpg, gcnt, spgcnt);
 
-    // Task 4.4: Allocate metadata buffer with runtime sizing
-    // nvblock reads and writes full pages (bsize bytes) into the meta buffer via
-    // its read/prog callbacks (pb_read/pb_write in nvblock.c). The in-RAM meta
-    // buffer must therefore be exactly bsize bytes.
+    // Allocate the metadata buffer.
     //
-    // The direct-map slot count (meta_dmmsk+1) is derived from bsize, not bpg:
-    //   meta_dmmsk is the largest (2^n - 1) such that
+    // nvblock reads and writes full pages (bsize bytes) into the meta buffer
+    // via its internal pb_read/pb_write functions. The buffer must be exactly
+    // bsize bytes — NOT just the header + address-table size.
+    //
+    // The direct-map slot count (meta_dmmsk+1) is derived from bsize:
+    //   meta_dmmsk = largest (2^n - 1) such that
     //   (bsize - NVB_META_DMP_START) >= 2 * (meta_dmmsk+1) * NVB_META_ADDRESS_SIZE
-    // For bsize=2048 this gives meta_dmmsk=511, requiring 1072 bytes just for the
-    // DMP section — far more than bpg*NVB_META_ADDRESS_SIZE = 128 bytes.
-    // Allocating only bpg*2+header bytes causes a heap overflow on every meta read.
+    // For bsize=2048 this requires ~1072 bytes for the DMP section alone,
+    // far exceeding a naive bpg*NVB_META_ADDRESS_SIZE estimate (128 bytes).
+    // Under-sizing the buffer causes a heap overflow on every metadata read.
     nvb_ctx->meta_buf_size = bsize;
     nvb_ctx->meta_buf = calloc(1, nvb_ctx->meta_buf_size);
     if (!nvb_ctx->meta_buf) {
@@ -380,10 +387,10 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
         handle->ops_priv_data = NULL;
         return ESP_ERR_NO_MEM;
     }
-    
+
     ESP_LOGI(TAG, "Allocated metadata buffer: %zu bytes", nvb_ctx->meta_buf_size);
 
-    // Configure nvblock structure
+    // Configure nvblock instance
     memset(&nvb_ctx->nvb_config, 0, sizeof(struct nvb_config));
     nvb_ctx->nvb_config.context = nvb_ctx;
     nvb_ctx->nvb_config.meta = nvb_ctx->meta_buf;
@@ -391,28 +398,27 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
     nvb_ctx->nvb_config.bpg = bpg;
     nvb_ctx->nvb_config.gcnt = gcnt;
     nvb_ctx->nvb_config.spgcnt = spgcnt;
-    
-    // Task 5.7: Wire up nvblock HAL callbacks
+
+    // Wire up HAL callbacks (see callbacks section above for details)
     nvb_ctx->nvb_config.read = nvb_read_cb;
     nvb_ctx->nvb_config.prog = nvb_prog_cb;
     nvb_ctx->nvb_config.move = nvb_move_cb;
     nvb_ctx->nvb_config.is_bad = nvb_isbad_cb;
     nvb_ctx->nvb_config.is_free = nvb_isfree_cb;
     nvb_ctx->nvb_config.mark_bad = nvb_markbad_cb;
-    nvb_ctx->nvb_config.sync = NULL;  // Optional - not needed for SPI NAND
-    nvb_ctx->nvb_config.comp = NULL;  // Optional - not implemented
-    nvb_ctx->nvb_config.init = NULL;  // Optional - not needed
-    nvb_ctx->nvb_config.lock = NULL;  // Optional - not using thread locking
-    nvb_ctx->nvb_config.unlock = NULL; // Optional - not using thread locking
-    
-    // Task 6.1: Initialize nvblock
+    nvb_ctx->nvb_config.sync = NULL;    // Optional: not needed (SPI NAND is synchronous)
+    nvb_ctx->nvb_config.comp = NULL;    // Optional: compression not implemented
+    nvb_ctx->nvb_config.init = NULL;    // Optional: no per-group init needed
+    nvb_ctx->nvb_config.lock = NULL;    // Optional: thread locking handled by spi_nand_flash layer
+    nvb_ctx->nvb_config.unlock = NULL;  // Optional: see lock above
+
+    // Initialize nvblock — scans flash to build in-RAM state
     int ret = nvb_init(&nvb_ctx->nvb_info, &nvb_ctx->nvb_config);
     if (ret != 0) {
         ESP_LOGE(TAG, "nvb_init failed: %d", ret);
         free(nvb_ctx->meta_buf);
         free(nvb_ctx);
         handle->ops_priv_data = NULL;
-        // Map nvblock error to ESP error
         if (ret == -NVB_EINVAL) {
             return ESP_ERR_INVALID_ARG;
         } else if (ret == -NVB_ENOSPC) {
@@ -448,7 +454,7 @@ static esp_err_t nvblock_deinit(spi_nand_flash_device_t *handle)
 /**
  * @brief Read a sector through nvblock
  * 
- * Task 6.2: Read logical sector via nvblock wear leveling layer.
+ * Read logical sector via nvblock wear leveling layer.
  * nvblock manages logical-to-physical translation.
  * 
  * @param handle Device handle
@@ -488,7 +494,7 @@ static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, 
 /**
  * @brief Write a sector through nvblock
  * 
- * Task 6.3: Write logical sector via nvblock wear leveling layer.
+ * Write logical sector via nvblock wear leveling layer.
  * nvblock handles wear leveling, bad block remapping, and physical allocation.
  * 
  * @param handle Device handle
@@ -529,10 +535,15 @@ static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *b
 
 /**
  * @brief Erase the entire chip
- * 
- * Erase all blocks and reinitialize nvblock.
- * This is used for factory reset or switching wear leveling implementations.
- * 
+ *
+ * Erase all physical blocks and reinitialize nvblock state from scratch.
+ * Required when switching from Dhara to nvblock (or resetting the device),
+ * because the on-flash metadata formats are incompatible.
+ *
+ * Note: nvblock does NOT have a separate erase callback. Block erasing is
+ * handled internally inside nvb_prog_cb when writing the first page of a
+ * group (pg_in_blk == 0). This function is only for a full chip wipe.
+ *
  * @param handle Device handle
  * @return ESP_OK on success, error code otherwise
  */
@@ -572,7 +583,7 @@ static esp_err_t nvblock_erase_block(spi_nand_flash_device_t *handle, uint32_t b
 /**
  * @brief Trim a sector (mark as no longer needed)
  * 
- * Task 6.4: Implement trim using nvb_write with NULL data.
+ * Trim a sector (mark as no longer needed) using nvb_write with NULL data.
  * According to nvblock documentation, writing NULL deletes blocks.
  * 
  * @param handle Device handle
@@ -606,7 +617,7 @@ static esp_err_t nvblock_trim(spi_nand_flash_device_t *handle, uint32_t sector_i
 /**
  * @brief Sync/flush pending operations
  * 
- * Task 6.5: Flush nvblock state to ensure persistence.
+ * Flush nvblock state to ensure persistence.
  * Uses nvblock's IOCTL interface with NVB_CMD_CTRL_SYNC command.
  * 
  * @param handle Device handle
@@ -635,7 +646,7 @@ static esp_err_t nvblock_sync(spi_nand_flash_device_t *handle)
 /**
  * @brief Copy a sector
  * 
- * Task 6.7: Copy data from one logical sector to another.
+ * Copy data from one logical sector to another.
  * Implemented as read + write operation.
  * 
  * @param handle Device handle
@@ -683,7 +694,7 @@ static esp_err_t nvblock_copy_sector(spi_nand_flash_device_t *handle, uint32_t s
 /**
  * @brief Get capacity in sectors
  * 
- * Task 6.6: Query nvblock capacity and convert to sector count.
+ * Query nvblock capacity and convert to sector count.
  * Uses nvblock's IOCTL interface with NVB_CMD_GET_BLK_COUNT command.
  * 
  * @param handle Device handle
@@ -724,16 +735,16 @@ static esp_err_t nvblock_get_capacity(spi_nand_flash_device_t *handle, uint32_t 
 // ============================================================================
 
 const spi_nand_ops nvblock_ops = {
-    .init = nvblock_init,
-    .deinit = nvblock_deinit,
-    .read = nvblock_read,
-    .write = nvblock_write,
-    .erase_chip = nvblock_erase_chip,
-    .erase_block = nvblock_erase_block,
-    .trim = nvblock_trim,
-    .sync = nvblock_sync,
-    .copy_sector = nvblock_copy_sector,
-    .get_capacity = nvblock_get_capacity,
+    .init = &nvblock_init,
+    .deinit = &nvblock_deinit,
+    .read = &nvblock_read,
+    .write = &nvblock_write,
+    .erase_chip = &nvblock_erase_chip,
+    .erase_block = &nvblock_erase_block,
+    .trim = &nvblock_trim,
+    .sync = &nvblock_sync,
+    .copy_sector = &nvblock_copy_sector,
+    .get_capacity = &nvblock_get_capacity,
 };
 
 // ============================================================================
@@ -751,7 +762,8 @@ esp_err_t nand_register_dev(spi_nand_flash_device_t *handle)
 
 esp_err_t nand_unregister_dev(spi_nand_flash_device_t *handle)
 {
-    free(handle->ops_priv_data);
+    // Use nvblock_deinit to properly free all nested allocations (meta_buf, context)
+    nvblock_deinit(handle);
     handle->ops = NULL;
     return ESP_OK;
 }
