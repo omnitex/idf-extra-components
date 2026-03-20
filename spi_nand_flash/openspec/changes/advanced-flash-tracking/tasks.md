@@ -1,12 +1,23 @@
 # Advanced Flash Tracking - Implementation Tasks
 
+## Checklist: page read counts & read-disturb (this change)
+
+Use this list when implementing or reviewing the read-count extension:
+
+1. [ ] Headers: `page_metadata_t.read_count`, `read_count_total`; `nand_wear_stats_t.min_page_reads`, `max_page_reads`; optional `on_page_read` in `nand_metadata_backend_ops_t`
+2. [ ] Sparse backend: `sparse_hash_on_page_read`, fold reads on `sparse_hash_on_block_erase`, snapshot save/load fields, `get_stats` min/max reads
+3. [ ] Core: `nand_emul_read()` — `should_fail_read` before memcpy; then `on_page_read` per overlapped page; refresh context; `corrupt_read_data`
+4. [ ] Probabilistic model: config fields + combine read-disturb term in `corrupt_read_data` (monotonic in lifetime reads)
+5. [ ] Tests: multi-page read counts, erase fold, snapshot roundtrip for read fields, read-disturb BER trend
+6. [ ] Docs: `proposal.md` / `design.md` / delta specs kept in sync (this checklist is secondary to those sources)
+
 ## Phase 1: Core Infrastructure
 
 **Goal**: Foundation for advanced tracking system - data structures, interfaces, initialization
 
 - [x] P1.T1: Define Core Data Structures
   - Complexity: Low | Files: Create `include/nand_emul_advanced.h`
-  - Define `byte_delta_metadata_t`, `page_metadata_t`, `block_metadata_t`
+  - Define `byte_delta_metadata_t`, `page_metadata_t` (including `read_count`, `read_count_total`), `block_metadata_t`
   - Define `nand_wear_stats_t` for aggregate statistics
   - Define `nand_operation_context_t` for failure models
   - Add explicit padding for cross-platform compatibility
@@ -17,7 +28,7 @@
   - Complexity: Low | Dependencies: P1.T1 | Files: `include/nand_emul_advanced.h`
   - Define `nand_metadata_backend_ops_t` vtable structure
   - Add lifecycle methods: `init()`, `deinit()`
-  - Add operation callbacks: `on_block_erase()`, `on_page_program()`, `on_byte_write_range()`
+  - Add operation callbacks: `on_block_erase()`, `on_page_program()`, `on_page_read()` (optional), `on_byte_write_range()`
   - Add query methods: `get_block_info()`, `get_page_info()`, `get_byte_deltas()`
   - Add iteration methods: `iterate_blocks()`, `iterate_pages()`
   - Add snapshot methods: `save_snapshot()`, `load_snapshot()`
@@ -167,8 +178,14 @@
   - Update parent block's total_page_programs; set stats dirty flag
   - Acceptance: Unit test: program page, verify count incremented; verify block aggregate updated
 
+- [ ] P2.T11b: Implement Page Read Tracking
+  - Complexity: Low | Dependencies: P2.T11 | Files: `src/backends/sparse_hash_backend.c`, `include/nand_emul_advanced.h`
+  - Implement `sparse_hash_on_page_read()`; increment `read_count`; ensure `page_num` field set; register in `nand_sparse_hash_backend` ops
+  - Extend `sparse_hash_on_block_erase()` to fold `read_count_total += read_count` and reset `read_count` for pages in the erased block (per `design.md`)
+  - Acceptance: Unit test: read page 3 times, verify `read_count==3`; erase block, verify `read_count` reset and `read_count_total` preserved
+
 - [ ] P2.T12: Implement Page Query
-  - Complexity: Low | Dependencies: P2.T11 | Files: `src/backends/sparse_hash_backend.c`
+  - Complexity: Low | Dependencies: P2.T11b | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_get_page_info()`
   - Lookup page in hash table; if not found, return zeros; if found, copy metadata to output
   - Acceptance: Unit test: query never-programmed page, verify zeros; program page, query, verify count=1
@@ -189,13 +206,13 @@
   - Complexity: Medium | Dependencies: P2.T13, P2.T14 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_get_stats()`
   - Check if stats are dirty, recompute if needed
-  - Iterate blocks: calculate min/max/avg erase counts; iterate pages: calculate min/max program counts
+  - Iterate blocks: calculate min/max/avg erase counts; iterate pages: calculate min/max program counts and min/max lifetime reads (`read_count_total + read_count`)
   - Calculate `wear_leveling_variation = (max - min) / avg`; cache results, clear dirty flag
-  - Acceptance: Unit test: erase blocks with varying counts, verify min/max/avg; verify wear_leveling_variation formula
+  - Acceptance: Unit test: erase blocks with varying counts, verify min/max/avg; verify wear_leveling_variation formula; verify min/max page reads after repeated reads
 
 - [ ] P2.T16: Write Comprehensive Backend Unit Tests
   - Complexity: Medium | Dependencies: P2.T15 | Files: Create `host_test/test_sparse_hash_backend.c`
-  - Test: Init/deinit lifecycle; block erase tracking (single, multiple, repeated); page program tracking
+  - Test: Init/deinit lifecycle; block erase tracking (single, multiple, repeated); page program tracking; page read counting and read fold on erase
   - Test: Block/page query; iteration (blocks, pages, early termination); statistics; memory efficiency (sparse storage)
   - Acceptance: All tests pass; no memory leaks
 
@@ -244,18 +261,23 @@
   - For each affected page, calculate byte range within page; call `on_byte_write_range()` with page_num, byte_offset, length
   - Acceptance: Unit test: write full page then partial, verify backend tracks correctly; multi-page, verify byte ranges calculated correctly
 
-- [ ] P3.T7: Modify `nand_emul_read()` - Failure Check
+- [ ] P3.T7: Modify `nand_emul_read()` - Failure Check (before buffer fill)
   - Complexity: Low | Dependencies: P1.T6 | Files: `src/nand_linux_mmap_emul.c`
-  - After read operation, check if `advanced` is set
-  - If failure model present, build `nand_operation_context_t`; call `should_fail_read()`
-  - If true, log warning and return `ESP_ERR_FLASH_OP_FAIL`
-  - Acceptance: Unit test: configure failure model to fail reads, verify error
+  - Before copying flash data, if failure model present, build `nand_operation_context_t`; call `should_fail_read()`
+  - If true, log warning and return `ESP_ERR_FLASH_OP_FAIL` without writing the destination buffer
+  - Acceptance: Unit test: configure failure model to fail reads, verify error and unchanged caller buffer
+
+- [ ] P3.T7b: Modify `nand_emul_read()` - Page read metadata
+  - Complexity: Low | Dependencies: P3.T7, P2 (sparse `on_page_read`) | Files: `src/nand_linux_mmap_emul.c`
+  - After successful `memcpy` from emulated flash, if `track_page_level` and `metadata_ops->on_page_read` are set, iterate overlapped pages and call `on_page_read(page_num, timestamp)` once per page
+  - Reuse the same single timestamp captured at the start of the read operation
+  - Acceptance: Unit test: read spanning N pages, verify each page's `read_count` increments by 1; read-only pages may gain sparse metadata entries
 
 - [ ] P3.T8: Modify `nand_emul_read()` - Data Corruption
-  - Complexity: Low | Dependencies: P3.T7 | Files: `src/nand_linux_mmap_emul.c`
-  - After read (before returning), if failure model present, call `corrupt_read_data(data, len)`
-  - Model modifies data buffer in-place (bit flips)
-  - Acceptance: Unit test: configure probabilistic model, verify some reads have bit errors
+  - Complexity: Low | Dependencies: P3.T7b | Files: `src/nand_linux_mmap_emul.c`
+  - After read and optional `on_page_read`, refresh `nand_operation_context_t` metadata (`get_block_info` / `get_page_info`) when available, then call `corrupt_read_data(ctx, data, len)`
+  - Model modifies data buffer in-place (bit flips); read-disturb models use updated `page_meta` read counts
+  - Acceptance: Unit test: configure probabilistic model with read-disturb enabled, verify corruption rate increases with repeated reads to the same page
 
 - [ ] P3.T9: Write Integration Tests
   - Complexity: Medium | Dependencies: P3.T3, P3.T6, P3.T8 | Files: Create `host_test/test_integration.c`
@@ -313,14 +335,14 @@
   - Implement `sparse_hash_save_snapshot()`; write header with placeholders
   - Iterate blocks, write block metadata section; iterate pages, write page metadata section
   - Accumulate byte deltas, write byte delta section; calculate CRC32; rewrite header with correct offsets and checksum
-  - Acceptance: Unit test: save empty snapshot, verify header correct; erase blocks, program pages, save snapshot, verify file size
+  - Acceptance: Unit test: save empty snapshot, verify header correct; erase blocks, program pages, perform reads, save snapshot, verify file size; page records include `read_count` / `read_count_total` per `design.md`
 
 - [ ] P4.T9: Implement Snapshot Load (Sparse Hash Backend)
   - Complexity: High | Dependencies: P4.T8 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_load_snapshot()`; read header, validate magic and CRC32
   - Clear existing metadata; read block metadata section; read byte deltas; read page metadata, reconstruct byte delta pointers
   - Set stats dirty flag
-  - Acceptance: Unit test: save then load, verify metadata identical; load corrupted snapshot, verify error
+  - Acceptance: Unit test: save then load, verify metadata identical (including read counters); load corrupted snapshot, verify error
 
 - [ ] P4.T10: Implement `nand_emul_save_snapshot()`
   - Complexity: Low | Dependencies: P4.T8 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
@@ -382,7 +404,7 @@
 
 - [ ] P5.T5: Implement Probabilistic Model Structure
   - Complexity: Low | Dependencies: P1.T3 | Files: Create `src/failure_models/probabilistic_failure_model.c`
-  - Define `probabilistic_failure_config_t` (rated_cycles, shape, BER, seed)
+  - Define `probabilistic_failure_config_t` (rated_cycles, shape, BER, seed, read-disturb fields per `proposal.md`)
   - Define internal state (config + PRNG state); declare `nand_probabilistic_failure_model` ops variable
   - Acceptance: Structure compiles
 
@@ -409,13 +431,13 @@
 - [ ] P5.T9: Implement Bit Flip Injection
   - Complexity: Medium | Dependencies: P5.T8 | Files: `src/failure_models/probabilistic_failure_model.c`
   - Implement `probabilistic_corrupt_read_data(data, len)`
-  - Calculate BER based on wear (increases with erase count); for each byte, flip bits with probability = BER
-  - Acceptance: Unit test: fresh block, verify BER ≈ base_bit_error_rate; worn block (50K erases), verify BER > base; fixed seed, verify reproducible bit flips
+  - Calculate BER based on wear (increases with erase count) and optional read-disturb term from `page_meta` read counts (`read_count_total + read_count`); for each byte, flip bits with probability = BER
+  - Acceptance: Unit test: fresh block, verify BER ≈ base_bit_error_rate; worn block (50K erases), verify BER > base; repeated reads to same page with read-disturb enabled, verify BER increases; fixed seed, verify reproducible bit flips
 
 - [ ] P5.T10: Write Probabilistic Model Unit Tests
   - Complexity: Medium | Dependencies: P5.T9 | Files: `host_test/test_probabilistic_failure_model.c`
   - Test: Weibull distribution formula; failure probability increases with wear; reproducibility with fixed seed
-  - Test: Bit error rate increases with wear; bit flip injection corrupts data
+  - Test: Bit error rate increases with wear and (when enabled) with page read count; bit flip injection corrupts data
   - Acceptance: All tests pass
 
 ---

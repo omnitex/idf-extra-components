@@ -73,6 +73,20 @@ The system SHALL allow failure model to corrupt read data to simulate bit flips 
 - **THEN** data buffer SHALL remain unchanged
 - **AND** caller SHALL receive original flash contents
 
+### Requirement: Read-disturb aware corruption (optional models)
+Built-in and custom probabilistic models MAY increase read corruption probability as a function of per-page read counts to simulate read disturb and related effects.
+
+#### Scenario: Same-page read stress
+- **WHEN** probabilistic model is configured with read-disturb parameters (`rated_read_disturb_reads` > 0)
+- **AND** `page_meta` includes `read_count` and `read_count_total`
+- **THEN** model SHALL use lifetime reads `read_count_total + read_count` (after the current read has been recorded) as an input to corruption probability
+- **AND** SHALL treat higher read counts as monotonically non-decreasing stress for fixed configuration
+
+#### Scenario: Neighbor-aware read stress
+- **WHEN** model sets `read_disturb_use_neighbors` true
+- **THEN** model MAY query adjacent pages' metadata (e.g. `page_num ± 1`) via backend APIs available to the implementation
+- **AND** SHALL document which neighbor geometry is approximated (same-plane ±1 page unless extended in a future change)
+
 ### Requirement: Operation context
 The system SHALL provide comprehensive context to failure model for decision making.
 

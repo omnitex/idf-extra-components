@@ -82,7 +82,7 @@ The system SHALL provide `nand_emul_iterate_worn_pages()` function to iterate pa
 
 #### Scenario: Iterate with callback
 - **WHEN** developer calls `nand_emul_iterate_worn_pages(handle, callback, user_data)`
-- **THEN** function SHALL invoke callback for each page that has non-zero wear (`program_count_total > 0`)
+- **THEN** function SHALL invoke callback for each page that has non-zero program wear (`program_count_total + program_count > 0`) or non-zero read activity (`read_count_total + read_count > 0`)
 - **AND** SHALL pass page number, metadata pointer, and user_data to callback
 
 #### Scenario: Stop iteration early

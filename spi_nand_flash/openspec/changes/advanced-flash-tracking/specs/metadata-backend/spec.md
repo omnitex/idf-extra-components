@@ -67,6 +67,35 @@ The system SHALL track program operations at page granularity including program 
 - **AND** SHALL accumulate the pre-reset value into `total_page_programs_total` before resetting
 - **AND** SHALL NOT reset `total_page_programs_total` (lifetime aggregate)
 
+### Requirement: Page read tracking (read-disturb inputs)
+The system SHALL count successful host read operations per page when page-level tracking is enabled, using the same per-cycle vs lifetime split as program counters.
+
+#### Scenario: Record page read
+- **WHEN** `nand_emul_read()` successfully copies data from flash for a byte range
+- **AND** page-level tracking is enabled
+- **AND** backend provides `on_page_read`
+- **THEN** the emulator SHALL call `on_page_read()` once for each distinct page overlapped by the read range
+- **AND** each call SHALL increment that page's `read_count` (current erase cycle)
+
+#### Scenario: Multi-page read
+- **WHEN** a single read spans multiple pages
+- **THEN** backend SHALL receive one `on_page_read` per overlapped page
+- **AND** each page's `read_count` SHALL increment independently
+
+#### Scenario: read_count folds on block erase
+- **WHEN** a block is erased
+- **THEN** for each page in that block with stored metadata, backend SHALL execute `read_count_total += read_count` before resetting `read_count` to zero
+- **AND** SHALL NOT reset `read_count_total` (lifetime folded component)
+
+#### Scenario: Lifetime reads formula
+- **WHEN** a consumer needs total reads for a page
+- **THEN** lifetime reads SHALL be computed as `read_count_total + read_count`
+
+#### Scenario: Read-only metadata entry
+- **WHEN** a page is read but never written in the current design
+- **THEN** backend MAY create a sparse page metadata entry solely to record read counts
+- **AND** `program_count` MAY remain zero while `read_count` increases
+
 ### Requirement: Byte-level tracking (optional)
 The system SHALL support optional byte-level delta tracking for partial page programs when enabled in configuration.
 
@@ -95,7 +124,7 @@ The system SHALL support optional byte-level delta tracking for partial page pro
 #### Scenario: Pointer lifetime for byte deltas and page metadata
 - **WHEN** backend returns pointers in `get_page_info()` (e.g. `byte_deltas`) or `get_byte_deltas()`
 - **THEN** those pointers SHALL be owned by the backend
-- **AND** SHALL remain valid until the next call to any backend operation that may modify metadata (e.g. on_block_erase, on_page_program, on_byte_write_range, load_snapshot), or until backend deinit
+- **AND** SHALL remain valid until the next call to any backend operation that may modify metadata (e.g. on_block_erase, on_page_program, on_page_read, on_byte_write_range, load_snapshot), or until backend deinit
 - **AND** caller SHALL NOT free the pointers; caller MAY copy or use the data only within that scope
 
 #### Scenario: Backend does not support byte tracking

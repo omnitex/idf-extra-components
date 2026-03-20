@@ -12,7 +12,7 @@ The existing `nand_linux_mmap_emul.c` provides basic NAND flash emulation with o
 
 1. **Granular tracking**: Cannot track per-block, per-page, or per-byte wear patterns
 2. **History**: No timestamp or state transition history for forensic analysis
-3. **Failure modeling**: No ability to simulate realistic NAND failures (bit flips, block wear-out, program disturb)
+3. **Failure modeling**: No ability to simulate realistic NAND failures (bit flips, block wear-out, program disturb, read disturb)
 4. **Wear analysis**: Cannot identify hotspots or validate wear leveling algorithms
 5. **Memory efficiency**: Any tracking would require dense arrays (wasteful for sparse write patterns)
 
@@ -75,13 +75,17 @@ typedef struct {
 // Page-level metadata
 typedef struct {
     uint32_t program_count;         // Number of programs in the CURRENT erase cycle (reset to 0 on block erase)
-    uint32_t program_count_total;   // Lifetime total programs (never reset; accumulates across all erase cycles)
-    uint64_t first_program_timestamp; 
+    uint32_t program_count_total;   // Folded from program_count on each block erase (lifetime component)
+    uint32_t read_count;            // Successful host reads touching this page in the CURRENT erase cycle
+    uint32_t read_count_total;      // Folded from read_count on each block erase (lifetime component)
+    uint64_t first_program_timestamp;
     uint64_t last_program_timestamp;
     uint32_t page_num;              // Page number (for iteration)
     uint16_t byte_delta_count;      // Number of bytes with non-zero deltas in the current erase cycle
     byte_delta_metadata_t *byte_deltas; // Sparse array of byte-level deltas (NULL if none; reset on block erase)
 } page_metadata_t;
+// Lifetime programs for a page: program_count_total + program_count
+// Lifetime reads for a page:     read_count_total + read_count
 
 // Block-level metadata
 typedef struct {
@@ -102,8 +106,10 @@ typedef struct {
     uint32_t min_block_erases;
     uint32_t max_block_erases;
     uint32_t avg_block_erases;
-    uint32_t min_page_programs;      // Based on program_count_total (lifetime)
-    uint32_t max_page_programs;      // Based on program_count_total (lifetime)
+    uint32_t min_page_programs;      // Based on program_count_total + program_count (lifetime)
+    uint32_t max_page_programs;      // Based on program_count_total + program_count (lifetime)
+    uint32_t min_page_reads;         // Min lifetime reads among pages with metadata (read_count_total + read_count)
+    uint32_t max_page_reads;         // Max lifetime reads among pages with metadata
     uint32_t blocks_never_erased;
     uint32_t pages_never_written;
     double   wear_leveling_variation;  // (max - min) / avg erase counts (lower is better)
@@ -151,6 +157,8 @@ typedef struct nand_metadata_backend_ops {
     
     // Page operations
     esp_err_t (*on_page_program)(void *backend_handle, uint32_t page_num, uint64_t timestamp);
+    // Optional (NULL = not tracked): called after a successful read, once per page overlapped by the read
+    esp_err_t (*on_page_read)(void *backend_handle, uint32_t page_num, uint64_t timestamp);
     esp_err_t (*get_page_info)(void *backend_handle, uint32_t page_num, page_metadata_t *out);
     
     // Byte delta operations (optional, may return ESP_ERR_NOT_SUPPORTED)
@@ -313,7 +321,7 @@ extern const nand_metadata_backend_ops_t nand_sparse_hash_backend;
   - Byte at offset 0x10 written 53 times → store delta: `{offset: 0x10, delta: +6}`
 - Memory usage: 
   - Block metadata: O(written_blocks) ≈ 64 bytes/block
-  - Page metadata: O(written_pages) ≈ 32 bytes/page
+  - Page metadata: O(written_pages) ≈ 40–56 bytes/page (layout includes read counters; exact size is `sizeof(page_metadata_t)`)
   - Byte deltas: O(outlier_bytes) ≈ 12 bytes/outlier
   - **32MB flash**: ~512KB (blocks) + ~512KB (pages) + ~50KB (deltas) ≈ **1.1MB** (3% of flash size)
   - **128MB flash**: ~2MB (blocks) + ~2MB (pages) + ~200KB (deltas) ≈ **4.2MB** (3% of flash size)
@@ -346,12 +354,18 @@ typedef struct {
     double   wear_out_shape;       // Weibull shape parameter (2.0 = bathtub curve)
     double   base_bit_error_rate;  // BER for fresh cells (e.g., 1e-8)
     uint32_t random_seed;          // For reproducible failures
+    // Read disturb (optional): extra corruption pressure from accumulated page reads
+    uint32_t rated_read_disturb_reads; // Effective reads at ~63% read-disturb saturation (0 = disable extra term)
+    double   read_disturb_shape;       // Weibull shape for read-disturb term (e.g. 1.0–2.0)
+    bool     read_disturb_use_neighbors; // If true, model MAY consult adjacent pages via get_page_info (±1)
 } probabilistic_failure_config_t;
 
 extern const nand_failure_model_ops_t nand_probabilistic_failure_model;
 ```
 
-**Formula**: `P(fail) = 1 - exp(-((erase_count / rated_cycles) ^ wear_out_shape))`
+**Formula (erase / wear-out)**: `P(fail) = 1 - exp(-((erase_count / rated_cycles) ^ wear_out_shape))`
+
+**Read-disturb contribution** (combined in `corrupt_read_data`, not necessarily as a hard fail): let `R` be the effective read count the model uses for the victim page — typically `page_meta->read_count_total + page_meta->read_count` after the current read has been recorded, or a sum of neighbor pages’ lifetime reads if `read_disturb_use_neighbors` is true. With `rated_read_disturb_reads > 0`, define `P_rd = 1 - exp(-((R / rated_read_disturb_reads) ^ read_disturb_shape))` and scale bit-flip probability (e.g. multiply effective BER or draw an extra corruption pass). Exact combination is implementation-defined but SHALL be monotonic in `R` for fixed configuration.
 
 ### 6. Binary Snapshot Format
 
@@ -396,14 +410,14 @@ Page Metadata Section (variable):
   For each written page (sparse):
   - page_num: uint32_t
   - program_count: uint32_t       (current erase cycle)
-  - program_count_total: uint32_t (lifetime cumulative)
-  - (padding): 4 bytes
+  - read_count: uint32_t          (current erase cycle)
+  - read_count_total: uint32_t     (folded lifetime component; see design.md)
   - first_program_ts: uint64_t
   - last_program_ts: uint64_t
   - byte_delta_count: uint16_t
   - byte_delta_offset: uint32_t (relative offset in byte delta section)
   - (padding): 2 bytes
-  TOTAL: 40 bytes per page
+  TOTAL: 40 bytes per page on-disk record (program_count_total remains in-memory in sparse backend; see design.md snapshot serialization)
 
 Byte Delta Section (variable):
   For each outlier byte (compressed):
@@ -975,6 +989,11 @@ printf("Max block erases: %u\n", stats.max_block_erases);
   - `first_program_timestamp` and `last_program_timestamp` track the **current cycle**; lifetime-first and lifetime-last can be derived from block data if needed.
   - **Rationale**: `program_count` (per-cycle) is what makes delta encoding semantically correct — `write_count_delta` means "this byte was written N more times than the page in this cycle." `program_count_total` and `total_page_programs_total` add the historical view without breaking the delta math.
 
+13. **Page read counting and read-disturb inputs**
+  - **Question**: How should the emulator represent read stress for failure models (read disturb, retention vs read)?
+  - **Decision**: `page_metadata_t` SHALL include `read_count` and `read_count_total` using the **same fold-on-erase rule** as program counters: each successful read that overlaps a page increments `read_count`; on `on_block_erase`, `read_count_total += read_count` then `read_count = 0`. Lifetime reads for a page are `read_count_total + read_count`. The metadata backend SHALL expose `on_page_read()` (optional NULL). The core SHALL call it once per overlapped page after a successful read and when page-level tracking is enabled. Failure models MAY use same-page lifetime reads only, or consult neighbor pages via `get_page_info()` when `read_disturb_use_neighbors` is set. Neighbor/word-line geometry beyond ±1 page is **not** modeled in metadata (future extension).
+  - **Rationale**: Monotonic read stress signal without per-byte read storage; aligns with existing erase-cycle bookkeeping; enables probabilistic read-disturb in `corrupt_read_data`.
+
 ## Open Questions (For Future Consideration)
 
 1. **ECC simulation**: Should we track ECC errors separately from bit flips?
@@ -997,4 +1016,5 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 
 - **2026-03-16**: Initial proposal
 - **2026-03-16**: Updated with delta-encoded byte tracking, binary snapshot format, and wear simulation design
+- **2026-03-20**: Added per-page read counters (`read_count` / `read_count_total`), `on_page_read` backend hook, aggregate read stats, optional probabilistic read-disturb parameters, and snapshot fields for read totals
 

@@ -22,6 +22,7 @@ This document provides the detailed implementation design for the advanced flash
 - **Performance**: <15% operation overhead with full tracking enabled
 - **Correctness**: Accurate metadata even with complex write patterns
 - **Simplicity**: Conservative tracking approach, backend handles optimization
+- **Read stress visibility**: Per-page read counts (and optional read-disturb modeling) without storing per-byte read history
 
 ## Data Structure Layouts
 
@@ -36,18 +37,19 @@ typedef struct {
     uint32_t _reserved;            // For 16-byte alignment
 } byte_delta_metadata_t;
 
-// Page-level metadata (56 bytes with pointer)
+// Page-level metadata (56 bytes with pointer on 64-bit)
 typedef struct {
     uint32_t page_num;              // Page number (for iteration/hashing)
     uint32_t program_count;         // Programs in current erase cycle (reset to 0 on block erase)
-    uint32_t program_count_total;   // Lifetime total programs (never reset)
-    uint32_t _reserved;             // Padding
+    uint32_t program_count_total;   // Folded from program_count on each block erase (lifetime)
+    uint32_t read_count;            // Reads in current erase cycle (reset to 0 on block erase)
+    uint32_t read_count_total;      // Folded from read_count on each block erase (lifetime)
     uint64_t first_program_timestamp; // First program in current erase cycle
     uint64_t last_program_timestamp;  // Last program in current erase cycle
     uint16_t byte_delta_count;      // Number of entries in byte_deltas array (current cycle)
     uint16_t byte_delta_capacity;   // Allocated capacity (for realloc tracking)
     byte_delta_metadata_t *byte_deltas; // Dynamic array (current cycle), NULL if no deltas
-    uint32_t _reserved2;            // Padding to 56 bytes
+    uint32_t _reserved2;            // Padding for stable alignment / future use
 } page_metadata_t;
 
 // Block-level metadata (44 bytes)
@@ -67,6 +69,7 @@ typedef struct {
 - Explicit padding ensures consistent struct sizes across platforms
 - `page_num` and `block_num` stored in metadata for hash table iteration
 - Pointers are platform-sized (8 bytes on 64-bit systems)
+- **Read counters** mirror program counters: each successful read increments `read_count`; on block erase, `read_count_total += read_count` then `read_count = 0`. **Lifetime reads** for a page are `read_count_total + read_count` (same pattern as `program_count_total + program_count`). This gives failure models a monotonic wear signal for read-disturb and retention stress without dense per-byte read tracking
 
 ### Hash Table Structure
 
@@ -260,9 +263,11 @@ esp_err_t sparse_hash_on_block_erase(void *backend_handle,
             
             // Accumulate into lifetime total before resetting
             page_meta->program_count_total += page_meta->program_count;
+            page_meta->read_count_total += page_meta->read_count;
             
-            // Reset per-cycle counters (preserve lifetime total and page_num)
+            // Reset per-cycle counters (preserve lifetime totals and page_num)
             page_meta->program_count = 0;
+            page_meta->read_count = 0;
             page_meta->byte_delta_count = 0;
             page_meta->byte_delta_capacity = 0;
             page_meta->first_program_timestamp = 0;
@@ -338,6 +343,45 @@ esp_err_t sparse_hash_on_page_program(void *backend_handle,
     return ESP_OK;
 }
 ```
+
+### Page read tracking
+
+Each host read that successfully copies flash data into the caller buffer SHALL increment read counters for every page that overlaps the read range. This matches how write tracking iterates affected pages.
+
+```c
+esp_err_t sparse_hash_on_page_read(void *backend_handle,
+                                    uint32_t page_num,
+                                    uint64_t timestamp) {
+    (void)timestamp;  // Reserved for future (e.g. last_read_timestamp)
+    sparse_hash_backend_t *backend = backend_handle;
+
+    hash_node_t *node = hash_table_get_or_insert(backend->page_table, page_num);
+    if (!node) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    page_metadata_t *meta = (page_metadata_t *)node->data;
+    meta->page_num = page_num;
+
+    meta->read_count++;
+    backend->stats_dirty = true;
+    return ESP_OK;
+}
+```
+
+**Semantics**:
+- `read_count` counts successful reads that included this page in the operation range (one increment per page per `nand_emul_read`, not per byte).
+- Reads to pages that have never been programmed still create or update a sparse page entry when read tracking is enabled, so “read-heavy cold” pages appear in metadata and snapshots.
+- Failure models that need **neighbor** read-disturb (stress on adjacent pages when page *P* is read) can use `get_page_info(P ± 1)` inside `corrupt_read_data()`; this design does not duplicate neighbor aggregates in `page_metadata_t`.
+
+### Read-disturb modeling (failure layer)
+
+Physical read disturb is dominated by repeated reads of **other** pages in the same block (and word-line neighbors in real arrays). This metadata layer exposes **per-page read counts** so models can:
+
+1. **Same-page simplification**: increase `corrupt_read_data` bit-flip probability with `read_count_total + read_count` for the page being read (cheap, conservative stress test).
+2. **Neighbor-aware model**: on read of page `P`, fetch metadata for `P−1`, `P+1` (and optionally same-block pages) and scale corruption from their accumulated read counts.
+
+The built-in probabilistic model SHOULD combine existing Weibull wear (erase/program) with an optional read-disturb term driven by these counters (see `proposal.md`).
 
 ## Delta Encoding Algorithm
 
@@ -568,6 +612,8 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
             struct {
                 uint32_t page_num;
                 uint32_t program_count;
+                uint32_t read_count;
+                uint32_t read_count_total;
                 uint64_t first_program_ts;
                 uint64_t last_program_ts;
                 uint16_t byte_delta_count;
@@ -576,6 +622,8 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
             } __attribute__((packed)) page_record = {
                 .page_num = meta->page_num,
                 .program_count = meta->program_count,
+                .read_count = meta->read_count,
+                .read_count_total = meta->read_count_total,
                 .first_program_ts = meta->first_program_timestamp,
                 .last_program_ts = meta->last_program_timestamp,
                 .byte_delta_count = meta->byte_delta_count,
@@ -676,6 +724,8 @@ esp_err_t sparse_hash_load_snapshot(void *backend_handle,
         struct {
             uint32_t page_num;
             uint32_t program_count;
+            uint32_t read_count;
+            uint32_t read_count_total;
             uint64_t first_program_ts;
             uint64_t last_program_ts;
             uint16_t byte_delta_count;
@@ -691,6 +741,8 @@ esp_err_t sparse_hash_load_snapshot(void *backend_handle,
         
         meta->page_num = page_record.page_num;
         meta->program_count = page_record.program_count;
+        meta->read_count = page_record.read_count;
+        meta->read_count_total = page_record.read_count_total;
         meta->first_program_timestamp = page_record.first_program_ts;
         meta->last_program_timestamp = page_record.last_program_ts;
         meta->byte_delta_count = page_record.byte_delta_count;
@@ -840,7 +892,9 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle,
 }
 ```
 
-### Read Handler Integration (Data Corruption)
+### Read Handler Integration (metadata + data corruption)
+
+**Ordering contract** (align with `specs/integration/spec.md`): `should_fail_read()` runs **before** copying flash data to the caller buffer; only if it returns false does the core perform `memcpy`. After a successful read, the core updates read metadata (if enabled), rebuilds `nand_operation_context_t` with fresh `page_meta` / `block_meta`, then calls `corrupt_read_data()` so read-disturb models can use counts that include the current access.
 
 ```c
 esp_err_t nand_emul_read(spi_nand_flash_device_t *handle,
@@ -854,43 +908,61 @@ esp_err_t nand_emul_read(spi_nand_flash_device_t *handle,
     if (offset + len > emul->file_mmap_ctrl.flash_file_size) {
         return ESP_ERR_INVALID_SIZE;
     }
-    
-    // Perform read
-    memcpy(data, emul->mem_file_buf + offset, len);
-    
-    // Advanced: Failure injection (after read, modify data)
+
+    uint64_t timestamp = (emul->advanced && emul->advanced->get_timestamp)
+                             ? emul->advanced->get_timestamp()
+                             : 0;
+
+    /* Failure model: fail before touching caller buffer (integration spec) */
     if (emul->advanced && emul->advanced->failure_ops) {
-        uint64_t timestamp = emul->advanced->get_timestamp();
-        
-        nand_operation_context_t ctx = {
-            .block_num = offset / handle->chip.block_size,
-            .page_num = offset / handle->chip.page_size,
-            .byte_offset = offset % handle->chip.page_size,
-            .operation_size = len,
-            .timestamp = timestamp
-            // ... (fill other fields as in write handler)
-        };
-        
-        // Check for read failure
+        nand_operation_context_t ctx = { /* block_num, page_num, offsets, timestamp, geometry */ };
+        /* Optionally fill ctx.block_meta / ctx.page_meta via get_*_info (pre-read counts) */
         if (emul->advanced->failure_ops->should_fail_read(
                 emul->advanced->failure_handle, &ctx)) {
             ESP_LOGW(TAG, "Simulated read failure at offset 0x%zx", offset);
             return ESP_ERR_FLASH_OP_FAIL;
         }
-        
-        // Inject bit errors (corrupts data buffer in-place)
+    }
+
+    memcpy(data, emul->mem_file_buf + offset, len);
+
+    /* Metadata: one increment per overlapping page (after successful memcpy) */
+    if (emul->advanced && emul->advanced->metadata_ops && emul->advanced->track_page_level) {
+        uint32_t page_size = handle->chip.page_size;
+        uint32_t first_page = offset / page_size;
+        uint32_t last_page = (offset + len - 1) / page_size;
+        for (uint32_t page_num = first_page; page_num <= last_page; page_num++) {
+            if (emul->advanced->metadata_ops->on_page_read) {
+                emul->advanced->metadata_ops->on_page_read(
+                    emul->advanced->metadata_handle, page_num, timestamp);
+            }
+        }
+    }
+
+    if (emul->advanced && emul->advanced->failure_ops) {
+        nand_operation_context_t ctx = { /* same geometry; refresh metadata */ };
+        if (emul->advanced->metadata_ops) {
+            emul->advanced->metadata_ops->get_block_info(
+                emul->advanced->metadata_handle, ctx.block_num, &block_meta);
+            emul->advanced->metadata_ops->get_page_info(
+                emul->advanced->metadata_handle, ctx.page_num, &page_meta);
+            ctx.block_meta = &block_meta;
+            ctx.page_meta = &page_meta;
+        }
         emul->advanced->failure_ops->corrupt_read_data(
             emul->advanced->failure_handle, &ctx, data, len);
     }
-    
+
 #ifdef CONFIG_NAND_ENABLE_STATS
     emul->stats.read_ops++;
     emul->stats.read_bytes += len;
 #endif
-    
+
     return ESP_OK;
 }
 ```
+
+**Note**: If `on_page_read` is NULL (minimal backend), read counting is skipped; failure models that depend on read counts SHOULD use a backend that implements `on_page_read`.
 
 ## Memory Management Strategy
 
@@ -899,7 +971,7 @@ esp_err_t nand_emul_read(spi_nand_flash_device_t *handle,
 For high-performance scenarios, consider using memory pools:
 
 ```c
-// Pool for page metadata (fixed size 48 bytes)
+// Pool for page metadata (fixed size sizeof(page_metadata_t), typically 56 bytes on 64-bit)
 typedef struct {
     page_metadata_t *free_list;
     size_t capacity;

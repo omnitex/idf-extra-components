@@ -63,6 +63,22 @@ The system SHALL call metadata backend during `nand_emul_write()` when advanced 
 - **THEN** metadata tracking SHALL record program operation for each affected page
 - **AND** SHALL call `on_byte_write_range()` with appropriate byte range for each page
 
+### Requirement: Integrate metadata tracking with read operations
+The system SHALL call metadata backend during `nand_emul_read()` when advanced tracking is enabled, after data has been successfully read from emulated flash.
+
+#### Scenario: Track page reads
+- **WHEN** `nand_emul_read()` successfully copies flash data into the caller buffer
+- **AND** advanced tracking is enabled with metadata backend
+- **AND** page-level tracking is enabled
+- **AND** backend's `on_page_read` is non-NULL
+- **THEN** function SHALL call `on_page_read()` once per page overlapped by the read
+- **AND** SHALL pass the same timestamp used for the logical read operation (single timestamp per operation)
+
+#### Scenario: Read without page read callback
+- **WHEN** backend leaves `on_page_read` NULL
+- **THEN** emulator SHALL skip read-count updates
+- **AND** SHALL continue operation without error
+
 ### Requirement: Integrate failure model with erase operations
 The system SHALL check failure model before executing `nand_emul_erase_block()`.
 
@@ -100,9 +116,12 @@ The system SHALL check failure model during `nand_emul_read()` to inject failure
 
 #### Scenario: Inject bit errors on read
 - **WHEN** failure model's `should_fail_read()` returns false
-- **AND** `corrupt_read_data()` is called after read
+- **AND** flash data has been copied to the caller buffer
+- **AND** page read metadata has been updated when `on_page_read` is configured
+- **AND** `corrupt_read_data()` is called with refreshed metadata context when available
 - **THEN** failure model MAY flip bits in read buffer
 - **AND** caller SHALL receive potentially corrupted data
+- **AND** read-disturb aware models MAY use `page_meta` read counters (including the current read) per `proposal.md`
 
 #### Scenario: Read without failure model
 - **WHEN** no failure model is configured
