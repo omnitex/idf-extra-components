@@ -419,7 +419,6 @@ TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
     uint32_t sector_num, sector_size;
     REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num) == ESP_OK);
     REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
-    printf("sector_num: %u, sector_size: %u\n", sector_num, sector_size);
 
     uint8_t *write_buf = (uint8_t *)malloc(sector_size);
     uint8_t *read_buf  = (uint8_t *)malloc(sector_size);
@@ -429,9 +428,7 @@ TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
     // Write a substantial but bounded number of sectors to exercise GC without
     // exhausting the WL spare-block reserve.  We cap at 500 sectors (1 MB at 2048
     // bytes/sector) so the test is fast and reliably passes on both Dhara and nvblock.
-    // TODO nvblock breaks on 32+ sectors written
-    uint32_t write_count = (sector_num > 500) ? 33 : sector_num / 4;
-    printf("write_count: %u\n", write_count);
+    uint32_t write_count = (sector_num > 500) ? 500 : sector_num / 4;
 
     // Phase 1: fill write_count sectors sequentially
     for (uint32_t i = 0; i < write_count; i++) {
