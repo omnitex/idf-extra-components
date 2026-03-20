@@ -467,3 +467,65 @@ TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
     free(read_buf);
     spi_nand_flash_deinit_device(device_handle);
 }
+
+/**
+ * Wear-leveling must treat HAL-reported bad blocks as unusable. On Linux the
+ * emulator marks bad blocks via OOB (see nand_mark_bad). We mark one physical
+ * block after WL init and before any spi_nand_flash_* data I/O — equivalent to
+ * a factory defect present before application use — then verify logical
+ * read/write still succeed (FTL skips the bad physical block).
+ */
+TEST_CASE("WL: preexisting factory bad block skipped", "[spi_nand_flash][wl][bad-block]")
+{
+    nand_file_mmap_emul_config_t conf = {"", 16 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *device_handle;
+
+    REQUIRE(spi_nand_flash_init_device(&nand_flash_config, &device_handle) == ESP_OK);
+
+    uint32_t num_blocks = 0;
+    REQUIRE(spi_nand_flash_get_block_num(device_handle, &num_blocks) == ESP_OK);
+    REQUIRE(num_blocks > 4);
+
+    /* Mid-array block: less likely to collide with WL metadata at very low offsets. */
+    uint32_t factory_bad = (num_blocks > 24) ? (num_blocks / 2) : 8;
+    REQUIRE(factory_bad < num_blocks);
+
+    bool is_bad = false;
+    REQUIRE(nand_wrap_is_bad(device_handle, factory_bad, &is_bad) == ESP_OK);
+    REQUIRE(is_bad == false);
+    REQUIRE(nand_wrap_mark_bad(device_handle, factory_bad) == ESP_OK);
+    REQUIRE(nand_wrap_is_bad(device_handle, factory_bad, &is_bad) == ESP_OK);
+    REQUIRE(is_bad == true);
+
+    uint32_t sector_num = 0;
+    uint32_t sector_size = 0;
+    REQUIRE(spi_nand_flash_get_capacity(device_handle, &sector_num) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_sector_size(device_handle, &sector_size) == ESP_OK);
+
+    uint8_t *write_buf = (uint8_t *)malloc(sector_size);
+    uint8_t *read_buf = (uint8_t *)malloc(sector_size);
+    REQUIRE(write_buf != NULL);
+    REQUIRE(read_buf != NULL);
+
+    /* Enough logical sectors to exercise GC/spares alongside one factory bad block.
+     * Same order of magnitude as WL: large sequential write stress test (500-cap);
+     * intentionally not reduced for nvblock — a failing build must be fixed, not masked. */
+    uint32_t test_sectors = (sector_num > 500) ? 500 : sector_num;
+    for (uint32_t i = 0; i < test_sectors; i++) {
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
+    }
+    REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
+
+    for (uint32_t i = 0; i < test_sectors; i++) {
+        memset(read_buf, 0, sector_size);
+        REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
+        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
+    }
+
+    free(write_buf);
+    free(read_buf);
+    spi_nand_flash_deinit_device(device_handle);
+}
