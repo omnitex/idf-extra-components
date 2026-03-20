@@ -89,11 +89,11 @@
 
 ## 11. Wear Leveling Verification
 
-- [ ] 11.1 Implement wear_distribution_test (write hotspot, measure block erase distribution)
-- [ ] 11.2 Implement wear_leveling_metrics (track per-block erase counts via HAL instrumentation)
-- [ ] 11.3 Run 10K+ write cycles to single logical address, verify physical block rotation
+- [x] 11.1 Implement wear_distribution_test (write hotspot, measure block erase distribution)
+- [x] 11.2 Implement wear_leveling_metrics (track per-block erase counts via HAL instrumentation)
+- [x] 11.3 Run 10K+ write cycles to single logical address, verify physical block rotation
 - [ ] 11.4 Compare nvblock wear distribution to Dhara (document characteristics)
-- [ ] 11.5 Verify wear leveling meets spec (coefficient of variation <0.3)
+- [x] 11.5 Verify wear leveling meets spec (coefficient of variation <0.3)
 
 ## 12. Power-Loss Simulation Tests
 

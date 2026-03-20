@@ -27,6 +27,15 @@ esp_err_t nand_wrap_read(spi_nand_flash_device_t *handle, uint32_t p, size_t off
 esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
 esp_err_t nand_wrap_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page);
 
+/**
+ * @brief Get the number of pages per block (1 << log2_ppb).
+ *
+ * @param handle  Device handle.
+ * @param ppb     Output: pages per block.
+ * @return ESP_OK on success.
+ */
+esp_err_t nand_wrap_get_pages_per_block(spi_nand_flash_device_t *handle, uint32_t *ppb);
+
 #ifdef __cplusplus
 }
 #endif

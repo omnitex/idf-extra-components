@@ -91,3 +91,12 @@ esp_err_t nand_wrap_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t pag
     xSemaphoreGive(handle->mutex);
     return ret;
 }
+
+esp_err_t nand_wrap_get_pages_per_block(spi_nand_flash_device_t *handle, uint32_t *ppb)
+{
+    if (ppb == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *ppb = 1u << handle->chip.log2_ppb;
+    return ESP_OK;
+}
