@@ -226,7 +226,13 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
                         TAG, "Error in nand_copy %d", ret);
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, (size_t)dst_offset, (void *)handle->read_buffer, handle->chip.page_size),
                         TAG, "Error in nand_copy %d", ret);
-
+    // Mark the destination page as used (matching nand_prog behaviour).
+    // Without this, nand_is_free() returns true for copied pages, causing
+    // nvblock's head-positioning logic to treat written pages as empty.
+    uint16_t used_marker = 0;
+    ESP_RETURN_ON_ERROR(nand_emul_write(handle, dst_offset + handle->chip.page_size + 2,
+                                        (uint8_t *)&used_marker, 2),
+                        TAG, "Error in nand_copy (used_marker) %d", ret);
     return ret;
 }
 

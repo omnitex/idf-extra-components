@@ -61,13 +61,15 @@ static int nvb_read_cb(const struct nvb_config *cfg, uint32_t p, void *buffer)
 {
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
+    uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
     
-    ESP_LOGD(TAG, "nvb_read_cb: page=%lu", p);
+    ESP_LOGD(TAG, "nvb_read_cb: page=%"PRIu32" (block=%"PRIu32" pg_in_blk=%"PRIu32")",
+             p, p / pages_per_block, p % pages_per_block);
     
     // Read the page via HAL (offset=0, length=full page)
     esp_err_t ret = nand_read(dev_handle, p, 0, dev_handle->chip.page_size, buffer);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "nand_read failed for page %lu: %d", p, ret);
+        ESP_LOGE(TAG, "nvb_read_cb FAILED: page=%"PRIu32" ret=%d", p, ret);
         return -NVB_EIO;  // I/O error
     }
     
@@ -91,21 +93,23 @@ static int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buf
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
     uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
+    uint32_t block = p / pages_per_block;
+    uint32_t pg_in_blk = p % pages_per_block;
     
-    ESP_LOGD(TAG, "nvb_prog_cb: page=%lu", p);
+    ESP_LOGD(TAG, "nvb_prog_cb: page=%"PRIu32" (block=%"PRIu32" pg_in_blk=%"PRIu32")",
+             p, block, pg_in_blk);
     
     // Check if this is the first page in a block (needs erase first)
-    if ((p % pages_per_block) == 0) {
-        uint32_t block = p / pages_per_block;
-        ESP_LOGD(TAG, "Erasing block %lu before programming", block);
+    if (pg_in_blk == 0) {
+        ESP_LOGD(TAG, "nvb_prog_cb: erasing block=%"PRIu32" before first-page program", block);
         
         esp_err_t ret = nand_erase_block(dev_handle, block);
         if (ret == ESP_ERR_NOT_FINISHED) {
             // Bad block detected during erase
-            ESP_LOGW(TAG, "Bad block detected: %lu", block);
+            ESP_LOGW(TAG, "nvb_prog_cb: bad block detected at block=%"PRIu32, block);
             return -NVB_EFAULT;
         } else if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "nand_erase_block failed for block %lu: %d", block, ret);
+            ESP_LOGE(TAG, "nvb_prog_cb: nand_erase_block FAILED block=%"PRIu32" ret=%d", block, ret);
             return -NVB_EIO;
         }
     }
@@ -114,10 +118,10 @@ static int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buf
     esp_err_t ret = nand_prog(dev_handle, p, buffer);
     if (ret == ESP_ERR_NOT_FINISHED) {
         // Bad block detected during program
-        ESP_LOGW(TAG, "Bad block detected during prog: page %lu", p);
+        ESP_LOGW(TAG, "nvb_prog_cb: bad block on prog page=%"PRIu32" block=%"PRIu32, p, block);
         return -NVB_EFAULT;
     } else if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "nand_prog failed for page %lu: %d", p, ret);
+        ESP_LOGE(TAG, "nvb_prog_cb: nand_prog FAILED page=%"PRIu32" ret=%d", p, ret);
         return -NVB_EIO;
     }
     
@@ -140,20 +144,23 @@ static int nvb_move_cb(const struct nvb_config *cfg, uint32_t pf, uint32_t pt)
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
     uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
+    uint32_t dst_block = pt / pages_per_block;
+    uint32_t dst_pg_in_blk = pt % pages_per_block;
     
-    ESP_LOGD(TAG, "nvb_move_cb: from=%lu to=%lu", pf, pt);
+    ESP_LOGD(TAG, "nvb_move_cb: src_page=%"PRIu32" -> dst_page=%"PRIu32
+             " (dst_block=%"PRIu32" dst_pg_in_blk=%"PRIu32")",
+             pf, pt, dst_block, dst_pg_in_blk);
     
     // If writing to first page of block, need to erase first
-    if ((pt % pages_per_block) == 0) {
-        uint32_t block = pt / pages_per_block;
-        ESP_LOGD(TAG, "Erasing block %lu before move", block);
+    if (dst_pg_in_blk == 0) {
+        ESP_LOGD(TAG, "nvb_move_cb: erasing dst block=%"PRIu32" before first-page move", dst_block);
         
-        esp_err_t ret = nand_erase_block(dev_handle, block);
+        esp_err_t ret = nand_erase_block(dev_handle, dst_block);
         if (ret == ESP_ERR_NOT_FINISHED) {
-            ESP_LOGW(TAG, "Bad block detected: %lu", block);
+            ESP_LOGW(TAG, "nvb_move_cb: bad block at dst block=%"PRIu32, dst_block);
             return -NVB_EFAULT;
         } else if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "nand_erase_block failed: %d", ret);
+            ESP_LOGE(TAG, "nvb_move_cb: nand_erase_block FAILED block=%"PRIu32" ret=%d", dst_block, ret);
             return -NVB_EIO;
         }
     }
@@ -161,10 +168,10 @@ static int nvb_move_cb(const struct nvb_config *cfg, uint32_t pf, uint32_t pt)
     // Use optimized HAL copy operation
     esp_err_t ret = nand_copy(dev_handle, pf, pt);
     if (ret == ESP_ERR_NOT_FINISHED) {
-        ESP_LOGW(TAG, "Bad block detected during copy: src=%lu dst=%lu", pf, pt);
+        ESP_LOGW(TAG, "nvb_move_cb: bad block on copy src=%"PRIu32" dst=%"PRIu32, pf, pt);
         return -NVB_EFAULT;
     } else if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "nand_copy failed: %d", ret);
+        ESP_LOGE(TAG, "nvb_move_cb: nand_copy FAILED src=%"PRIu32" dst=%"PRIu32" ret=%d", pf, pt, ret);
         return -NVB_EIO;
     }
     
@@ -187,14 +194,19 @@ static bool nvb_isbad_cb(const struct nvb_config *cfg, uint32_t p)
     uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
     uint32_t block = p / pages_per_block;
     
-    ESP_LOGD(TAG, "nvb_isbad_cb: page=%lu (block=%lu)", p, block);
-    
     bool is_bad = false;
     esp_err_t ret = nand_is_bad(dev_handle, block, &is_bad);
     if (ret != ESP_OK) {
         // On error, assume bad for safety
-        ESP_LOGW(TAG, "nand_is_bad check failed for block %lu, assuming bad", block);
+        ESP_LOGW(TAG, "nvb_isbad_cb: nand_is_bad FAILED page=%"PRIu32" block=%"PRIu32" ret=%d, assuming bad",
+                 p, block, ret);
         return true;
+    }
+    
+    if (is_bad) {
+        ESP_LOGW(TAG, "nvb_isbad_cb: page=%"PRIu32" block=%"PRIu32" is BAD", p, block);
+    } else {
+        ESP_LOGD(TAG, "nvb_isbad_cb: page=%"PRIu32" block=%"PRIu32" is good", p, block);
     }
     
     return is_bad;
@@ -213,16 +225,18 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
 {
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)cfg->context;
     spi_nand_flash_device_t *dev_handle = nvb_ctx->parent_handle;
-    
-    ESP_LOGD(TAG, "nvb_isfree_cb: page=%lu", p);
+    uint32_t pages_per_block = 1 << dev_handle->chip.log2_ppb;
     
     bool is_free = false;
     esp_err_t ret = nand_is_free(dev_handle, p, &is_free);
     if (ret != ESP_OK) {
         // On error, assume not free
-        ESP_LOGW(TAG, "nand_is_free check failed for page %lu, assuming not free", p);
+        ESP_LOGW(TAG, "nvb_isfree_cb: nand_is_free FAILED page=%"PRIu32" ret=%d, assuming not free", p, ret);
         return false;
     }
+    
+    ESP_LOGD(TAG, "nvb_isfree_cb: page=%"PRIu32" (block=%"PRIu32" pg_in_blk=%"PRIu32") -> %s",
+             p, p / pages_per_block, p % pages_per_block, is_free ? "FREE" : "used");
     
     return is_free;
 }
@@ -390,7 +404,7 @@ static esp_err_t nvblock_deinit(spi_nand_flash_device_t *handle)
  */
 static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, uint32_t sector_id)
 {
-    ESP_LOGD(TAG, "nvblock_read: sector=%lu", sector_id);
+    ESP_LOGD(TAG, "nvblock_read: sector=%"PRIu32, sector_id);
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
     
     if (!nvb_ctx) {
@@ -402,7 +416,8 @@ static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, 
     // Read 1 block starting at sector_id
     int ret = nvb_read(&nvb_ctx->nvb_info, buffer, sector_id, 1);
     if (ret != 0) {
-        ESP_LOGE(TAG, "nvb_read failed for sector %lu: %d", sector_id, ret);
+        ESP_LOGE(TAG, "nvblock_read FAILED: sector=%"PRIu32" nvb_ret=%d (head=%"PRIu32" gc_head=%"PRIu32")",
+                 sector_id, ret, nvb_ctx->nvb_info.head, nvb_ctx->nvb_info.gc_head);
         // Map nvblock errors to ESP errors
         if (ret == -NVB_EINVAL) {
             return ESP_ERR_INVALID_ARG;
@@ -429,7 +444,7 @@ static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, 
  */
 static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *buffer, uint32_t sector_id)
 {
-    ESP_LOGD(TAG, "nvblock_write: sector=%lu", sector_id);
+    ESP_LOGD(TAG, "nvblock_write: sector=%"PRIu32, sector_id);
     nvblock_context_t *nvb_ctx = (nvblock_context_t *)handle->ops_priv_data;
     
     if (!nvb_ctx) {
@@ -441,7 +456,8 @@ static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *b
     // Write 1 block starting at sector_id
     int ret = nvb_write(&nvb_ctx->nvb_info, buffer, sector_id, 1);
     if (ret != 0) {
-        ESP_LOGE(TAG, "nvb_write failed for sector %lu: %d", sector_id, ret);
+        ESP_LOGE(TAG, "nvblock_write FAILED: sector=%"PRIu32" nvb_ret=%d (head=%"PRIu32" gc_head=%"PRIu32" epoch=%"PRIu32")",
+                 sector_id, ret, nvb_ctx->nvb_info.head, nvb_ctx->nvb_info.gc_head, nvb_ctx->nvb_info.epoch);
         // Map nvblock errors to ESP errors
         if (ret == -NVB_EINVAL) {
             return ESP_ERR_INVALID_ARG;

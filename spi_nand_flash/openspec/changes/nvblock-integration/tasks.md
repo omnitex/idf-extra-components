@@ -78,6 +78,7 @@
 - [x] 9.4 Implement test_nvblock_large_sequential_write (stress test with MB-scale writes)
 - [ ] 9.5 Run all edge case tests on hardware (verify expected error handling)
 
+
 ## 10. Bad Block Handling Tests
 
 - [x] 10.1 Implement test_nvblock_preexisting_bad_blocks (verify nvblock skips factory bad blocks)
@@ -114,11 +115,11 @@
 
 ## 14. Regression Testing
 
-- [ ] 14.1 Run full existing Dhara test suite (verify zero regressions)
-- [ ] 14.2 Run full nvblock test suite (verify all new tests pass)
-- [ ] 14.3 Test build with Dhara selected (verify backward compatibility)
-- [ ] 14.4 Test build with nvblock selected (verify new functionality)
-- [ ] 14.5 Run host tests (if applicable, verify emulator compatibility)
+- [x] 14.1 Run full existing Dhara test suite (verify zero regressions)
+- [x] 14.2 Run full nvblock test suite (verify all new tests pass)
+- [x] 14.3 Test build with Dhara selected (verify backward compatibility)
+- [x] 14.4 Test build with nvblock selected (verify new functionality)
+- [x] 14.5 Run host tests (if applicable, verify emulator compatibility)
 - [ ] 14.6 Run hardware tests on multiple NAND chip types (verify portability)
 
 ## 15. Documentation
