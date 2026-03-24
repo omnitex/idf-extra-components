@@ -39,29 +39,9 @@ The system SHALL call metadata backend during `nand_emul_write()` when advanced 
 - **THEN** function SHALL call backend's `on_page_program()` for affected pages
 - **AND** SHALL pass page numbers and timestamp
 
-#### Scenario: Track byte write ranges (conservative approach)
-- **WHEN** `nand_emul_write()` writes any data
-- **AND** byte-level tracking is enabled
-- **THEN** function SHALL call backend's `on_byte_write_range()` for all affected byte ranges
-- **AND** SHALL pass page_num, byte_offset, length for each page touched
-- **AND** backend SHALL determine if deltas are needed (comparing against page program count)
-
-#### Scenario: Backend optimizes zero-deltas
-- **WHEN** backend receives `on_byte_write_range()` for entire page
-- **AND** all bytes in page have same write count as page program count
-- **THEN** backend SHALL NOT store deltas (zero-delta optimization)
-- **AND** SHALL only store page-level metadata
-
-#### Scenario: Backend creates deltas for outliers
-- **WHEN** backend receives `on_byte_write_range()` for partial page (e.g., 64 bytes)
-- **AND** page has been programmed multiple times
-- **THEN** backend SHALL create deltas for bytes with different write counts
-- **AND** SHALL store delta: actual_write_count - page_program_count
-
 #### Scenario: Track multi-page write
 - **WHEN** write operation spans multiple pages
-- **THEN** metadata tracking SHALL record program operation for each affected page
-- **AND** SHALL call `on_byte_write_range()` with appropriate byte range for each page
+- **THEN** metadata tracking SHALL record a program operation for each affected page via `on_page_program()`
 
 ### Requirement: Integrate metadata tracking with read operations
 The system SHALL call metadata backend during `nand_emul_read()` when advanced tracking is enabled, after data has been successfully read from emulated flash.
@@ -189,12 +169,6 @@ The system SHALL limit performance impact of advanced tracking to acceptable lev
 #### Scenario: Block+page tracking overhead
 - **WHEN** emulator is configured with block and page level tracking
 - **THEN** operation performance SHALL degrade by less than 5% compared to no tracking
-
-#### Scenario: Byte-level delta tracking overhead
-- **WHEN** byte-level delta tracking is enabled
-- **THEN** write performance degradation SHALL be less than 15%
-- **AND** overhead SHALL be proportional to number of partial page programs (not total bytes)
-- **AND** full page programs SHALL have minimal overhead
 
 #### Scenario: No-op model overhead
 - **WHEN** using no-op failure model

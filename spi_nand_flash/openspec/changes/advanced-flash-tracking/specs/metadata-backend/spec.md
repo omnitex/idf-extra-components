@@ -16,7 +16,7 @@ The system SHALL define an abstract interface `nand_metadata_backend_ops_t` that
 - **AND** SHALL NOT initialize the emulator
 
 ### Requirement: Hierarchical metadata organization
-The system SHALL maintain three levels of metadata: block-level, page-level, and byte-level, matching NAND flash architecture.
+The system SHALL maintain block-level and page-level metadata for wear and read-stress accounting.
 
 #### Scenario: Query block metadata
 - **WHEN** developer calls backend's `get_block_info()` for a block that has been erased
@@ -60,7 +60,7 @@ The system SHALL track program operations at page granularity including program 
 
 #### Scenario: program_count resets on block erase
 - **WHEN** a block is erased
-- **THEN** backend SHALL reset `program_count` and byte deltas for all pages in that block to zero/NULL
+- **THEN** backend SHALL reset `program_count` for all pages in that block to zero (per-cycle component)
 - **AND** SHALL NOT reset `program_count_total` (it persists across erase cycles)
 - **AND** SHALL retain the page metadata entry in the hash table to preserve the lifetime count
 - **AND** SHALL reset the block's `total_page_programs` to zero (per-cycle aggregate)
@@ -96,44 +96,8 @@ The system SHALL count successful host read operations per page when page-level 
 - **THEN** backend MAY create a sparse page metadata entry solely to record read counts
 - **AND** `program_count` MAY remain zero while `read_count` increases
 
-### Requirement: Byte-level tracking (optional)
-The system SHALL support optional byte-level delta tracking for partial page programs when enabled in configuration.
-
-#### Scenario: Byte-level tracking disabled
-- **WHEN** advanced emulator is initialized with `track_byte_level = false`
-- **THEN** backend's `on_byte_write_range()` SHALL NOT be called during write operations
-
-#### Scenario: Record byte write range (conservative approach)
-- **WHEN** advanced emulator is initialized with `track_byte_level = true`
-- **AND** any write operation occurs
-- **THEN** backend SHALL receive `on_byte_write_range()` callback with page_num, byte_offset, length
-- **AND** SHALL track per-byte write counts internally
-
-#### Scenario: Backend optimizes zero-deltas away
-- **WHEN** backend compares byte write counts against page program count
-- **AND** all bytes have same count as page (no outliers)
-- **THEN** backend SHALL NOT allocate delta structures
-- **AND** SHALL rely on page-level program_count for those bytes
-
-#### Scenario: Backend stores deltas for outliers
-- **WHEN** specific bytes have different write count than page program count
-- **THEN** backend SHALL store delta: `write_count_delta = byte_write_count - page_program_count`
-- **AND** SHALL only allocate storage for outlier bytes
-- **AND** `get_byte_deltas()` SHALL return only non-zero deltas
-
-#### Scenario: Pointer lifetime for byte deltas and page metadata
-- **WHEN** backend returns pointers in `get_page_info()` (e.g. `byte_deltas`) or `get_byte_deltas()`
-- **THEN** those pointers SHALL be owned by the backend
-- **AND** SHALL remain valid until the next call to any backend operation that may modify metadata (e.g. on_block_erase, on_page_program, on_page_read, on_byte_write_range, load_snapshot), or until backend deinit
-- **AND** caller SHALL NOT free the pointers; caller MAY copy or use the data only within that scope
-
-#### Scenario: Backend does not support byte tracking
-- **WHEN** backend's `on_byte_write_range()` returns `ESP_ERR_NOT_SUPPORTED`
-- **THEN** emulator SHALL continue operation without byte-level tracking
-- **AND** SHALL log a warning message
-
 ### Requirement: Sparse storage implementation
-The default sparse hash backend SHALL only allocate metadata for blocks/pages that have been written or erased, and SHALL use delta encoding for byte-level tracking.
+The default sparse hash backend SHALL only allocate metadata for blocks and pages that have been touched (erased, programmed, or read when read-counting creates an entry).
 
 #### Scenario: Unwritten blocks consume no metadata memory
 - **WHEN** emulator is initialized with 1024 blocks
@@ -141,15 +105,9 @@ The default sparse hash backend SHALL only allocate metadata for blocks/pages th
 - **THEN** sparse backend SHALL allocate metadata for only 10 blocks
 - **AND** SHALL NOT allocate 1024 block metadata structures
 
-#### Scenario: Delta encoding efficiency
-- **WHEN** workload has 10% partial page programs (e.g., OOB area rewrites)
-- **THEN** byte deltas SHALL only be stored for bytes with different write counts
-- **AND** most bytes SHALL inherit page-level program count implicitly
-
 #### Scenario: Memory efficiency measurement
-- **WHEN** workload writes to 10% of total flash capacity with 1% byte outliers
-- **THEN** metadata memory usage SHALL be less than 5% of flash size
-- **AND** SHALL be approximately 95% less than dense byte tracking would require
+- **WHEN** workload writes to a sparse subset of flash (e.g. 10% of blocks)
+- **THEN** metadata memory usage SHALL be less than 5% of emulated flash size for typical sparsity
 
 ### Requirement: Aggregate statistics
 The system SHALL compute aggregate wear statistics across all blocks including min/max/average erase counts and wear variation.
@@ -241,7 +199,7 @@ The system SHALL support saving and loading binary snapshots of metadata for wea
 
 #### Scenario: Save snapshot with metadata only
 - **WHEN** developer calls backend's `save_snapshot()` with filename and timestamp
-- **THEN** backend SHALL write binary file with header, block metadata, page metadata, and byte deltas
+- **THEN** backend SHALL write binary file with header, block metadata, and page metadata
 - **AND** file header SHALL include CRC32 checksum computed over **the header only** (excluding the checksum field itself) for integrity verification
 - **AND** file SHALL contain metadata ONLY (not flash data contents)
 - **AND** SHALL complete in less than 10ms for 32MB flash simulation
@@ -249,7 +207,7 @@ The system SHALL support saving and loading binary snapshots of metadata for wea
 #### Scenario: Load snapshot restores metadata
 - **WHEN** developer calls backend's `load_snapshot()` with snapshot filename
 - **THEN** backend SHALL verify CRC32 over the header (excluding checksum field); on mismatch SHALL return error and SHALL NOT modify backend state
-- **AND** SHALL restore all block, page, and byte delta metadata
+- **AND** SHALL restore all block and page metadata
 - **AND** SHALL NOT modify flash data contents (mmap file)
 - **AND** subsequent queries SHALL return metadata from loaded snapshot
 - **AND** SHALL complete in less than 20ms for 32MB flash
@@ -278,11 +236,11 @@ The system SHALL support exporting metadata to JSON format for external analysis
 #### Scenario: Export to JSON
 - **WHEN** developer calls backend's `export_json()` with filename
 - **THEN** backend SHALL create human-readable JSON file
-- **AND** JSON SHALL include block metadata, page metadata, byte deltas, and aggregate statistics
+- **AND** JSON SHALL include block metadata, page metadata, and aggregate statistics
 - **AND** JSON format SHALL be suitable for import into plotting/graphing tools
 
 #### Scenario: JSON completeness
 - **WHEN** JSON export is generated
-- **THEN** JSON SHALL include all tracked metadata (blocks, pages, deltas)
+- **THEN** JSON SHALL include all tracked metadata (blocks, pages)
 - **AND** SHALL include device geometry information
 - **AND** SHALL include timestamp of export

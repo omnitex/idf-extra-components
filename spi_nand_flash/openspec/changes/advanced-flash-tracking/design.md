@@ -5,12 +5,11 @@
 1. [Overview](#overview)
 2. [Data Structure Layouts](#data-structure-layouts)
 3. [Sparse Hash Backend Implementation](#sparse-hash-backend-implementation)
-4. [Delta Encoding Algorithm](#delta-encoding-algorithm)
-5. [Binary Snapshot Format](#binary-snapshot-format)
-6. [Integration with Core Operations](#integration-with-core-operations)
-7. [Memory Management Strategy](#memory-management-strategy)
-8. [Performance Considerations](#performance-considerations)
-9. [Error Handling](#error-handling)
+4. [Binary Snapshot Format](#binary-snapshot-format)
+5. [Integration with Core Operations](#integration-with-core-operations)
+6. [Memory Management Strategy](#memory-management-strategy)
+7. [Performance Considerations](#performance-considerations)
+8. [Error Handling](#error-handling)
 
 ## Overview
 
@@ -29,15 +28,7 @@ This document provides the detailed implementation design for the advanced flash
 ### Core Metadata Types (Memory Layout)
 
 ```c
-// Byte-level metadata (16 bytes, tightly packed)
-typedef struct {
-    uint16_t byte_offset;          // 0-4095 for 4KB page
-    int16_t  write_count_delta;    // Delta from page program_count
-    uint64_t last_write_timestamp; // Last write to this specific byte
-    uint32_t _reserved;            // For 16-byte alignment
-} byte_delta_metadata_t;
-
-// Page-level metadata (56 bytes with pointer on 64-bit)
+// Page-level metadata (no per-byte tracking; wear is block + page granularity)
 typedef struct {
     uint32_t page_num;              // Page number (for iteration/hashing)
     uint32_t program_count;         // Programs in current erase cycle (reset to 0 on block erase)
@@ -46,10 +37,7 @@ typedef struct {
     uint32_t read_count_total;      // Folded from read_count on each block erase (lifetime)
     uint64_t first_program_timestamp; // First program in current erase cycle
     uint64_t last_program_timestamp;  // Last program in current erase cycle
-    uint16_t byte_delta_count;      // Number of entries in byte_deltas array (current cycle)
-    uint16_t byte_delta_capacity;   // Allocated capacity (for realloc tracking)
-    byte_delta_metadata_t *byte_deltas; // Dynamic array (current cycle), NULL if no deltas
-    uint32_t _reserved2;            // Padding for stable alignment / future use
+    uint32_t _reserved;             // Padding for stable alignment / future use
 } page_metadata_t;
 
 // Block-level metadata (44 bytes)
@@ -109,7 +97,6 @@ typedef struct {
     hash_table_t *page_table;      // page_num → page_metadata_t
     
     // Configuration
-    bool track_byte_deltas;
     float load_factor;
     
     // Device geometry (cached for calculations)
@@ -168,7 +155,6 @@ esp_err_t sparse_hash_init(void **backend_handle, const void *config) {
         cfg->load_factor ? cfg->load_factor : 0.75f
     );
     
-    backend->track_byte_deltas = cfg->track_byte_deltas;
     backend->stats_dirty = true;
     
     *backend_handle = backend;
@@ -272,12 +258,6 @@ esp_err_t sparse_hash_on_block_erase(void *backend_handle,
         if (page_node) {
             page_metadata_t *page_meta = (page_metadata_t*)page_node->data;
             
-            // Free byte deltas — they belong to the current erase cycle
-            if (page_meta->byte_deltas) {
-                free(page_meta->byte_deltas);
-                page_meta->byte_deltas = NULL;
-            }
-            
             // Accumulate into lifetime total before resetting
             page_meta->program_count_total += page_meta->program_count;
             page_meta->read_count_total += page_meta->read_count;
@@ -285,8 +265,6 @@ esp_err_t sparse_hash_on_block_erase(void *backend_handle,
             // Reset per-cycle counters (preserve lifetime totals and page_num)
             page_meta->program_count = 0;
             page_meta->read_count = 0;
-            page_meta->byte_delta_count = 0;
-            page_meta->byte_delta_capacity = 0;
             page_meta->first_program_timestamp = 0;
             page_meta->last_program_timestamp = 0;
             
@@ -337,7 +315,6 @@ esp_err_t sparse_hash_on_page_program(void *backend_handle,
     if (meta->program_count == 0) {
         meta->page_num = page_num;
         meta->first_program_timestamp = timestamp;
-        // byte_deltas is already NULL/zeroed (set to NULL on erase or by calloc)
     }
     
     meta->program_count++;
@@ -400,134 +377,6 @@ Physical read disturb is dominated by repeated reads of **other** pages in the s
 
 The built-in probabilistic model SHOULD combine existing Weibull wear (erase/program) with an optional read-disturb term driven by these counters (see `proposal.md`).
 
-## Delta Encoding Algorithm
-
-### Conservative Byte Range Tracking
-
-The write handler calls `on_byte_write_range()` for ALL writes when byte tracking is enabled:
-
-```c
-esp_err_t sparse_hash_on_byte_write_range(void *backend_handle,
-                                           uint32_t page_num,
-                                           uint16_t byte_offset,
-                                           size_t len,
-                                           uint64_t timestamp) {
-    sparse_hash_backend_t *backend = backend_handle;
-    
-    if (!backend->track_byte_deltas) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-    
-    hash_node_t *node = hash_table_get(backend->page_table, page_num);
-    if (!node) {
-        // Page not yet tracked, will be created by on_page_program
-        return ESP_OK;
-    }
-    
-    page_metadata_t *meta = (page_metadata_t*)node->data;
-    
-    // Update byte deltas for range
-    for (size_t i = 0; i < len; i++) {
-        uint16_t offset = byte_offset + i;
-        update_byte_delta(meta, offset, timestamp);
-    }
-    
-    return ESP_OK;
-}
-```
-
-### Delta Update Logic
-
-```c
-// Update single byte delta (creates or updates existing delta)
-static void update_byte_delta(page_metadata_t *page_meta, 
-                               uint16_t byte_offset,
-                               uint64_t timestamp) {
-    // Search existing deltas
-    for (size_t i = 0; i < page_meta->byte_delta_count; i++) {
-        if (page_meta->byte_deltas[i].byte_offset == byte_offset) {
-            // Found existing delta, increment
-            page_meta->byte_deltas[i].write_count_delta++;
-            page_meta->byte_deltas[i].last_write_timestamp = timestamp;
-            return;
-        }
-    }
-    
-    // Not found, create new delta entry
-    if (page_meta->byte_delta_count >= page_meta->byte_delta_capacity) {
-        // Grow array (start with 8, double each time)
-        size_t new_capacity = page_meta->byte_delta_capacity ? 
-            page_meta->byte_delta_capacity * 2 : 8;
-        
-        byte_delta_metadata_t *new_array = realloc(
-            page_meta->byte_deltas,
-            new_capacity * sizeof(byte_delta_metadata_t)
-        );
-        
-        if (!new_array) {
-            // Allocation failed, can't track this delta
-            ESP_LOGW(TAG, "Failed to allocate byte delta for page %u", 
-                     page_meta->page_num);
-            return;
-        }
-        
-        page_meta->byte_deltas = new_array;
-        page_meta->byte_delta_capacity = new_capacity;
-    }
-    
-    // Add new delta (starts at delta = 1, since page was programmed once already).
-    // Invariant: only deltas with write_count_delta != 0 are ever stored.
-    // This ensures the internal array can be returned directly without filtering.
-    byte_delta_metadata_t *delta = &page_meta->byte_deltas[page_meta->byte_delta_count++];
-    delta->byte_offset = byte_offset;
-    delta->write_count_delta = 1;
-    delta->last_write_timestamp = timestamp;
-}
-```
-
-### Zero-Delta Optimization
-
-The backend optimizes away deltas when querying:
-
-```c
-esp_err_t sparse_hash_get_byte_deltas(void *backend_handle,
-                                       uint32_t page_num,
-                                       byte_delta_metadata_t **out_deltas,
-                                       uint16_t *out_count) {
-    sparse_hash_backend_t *backend = backend_handle;
-    
-    hash_node_t *node = hash_table_get(backend->page_table, page_num);
-    if (!node) {
-        *out_deltas = NULL;
-        *out_count = 0;
-        return ESP_OK;
-    }
-    
-    page_metadata_t *meta = (page_metadata_t*)node->data;
-    
-    // Return pointer into backend-owned storage. Caller MUST NOT free the pointer.
-    // Pointer is valid until the next call that modifies metadata (write, erase,
-    // snapshot load) or until deinit. Caller must copy data if longer lifetime needed.
-    //
-    // Note: The backend stores only non-zero deltas internally; all entries in
-    // meta->byte_deltas already have write_count_delta != 0 (zero-deltas were
-    // never inserted). So we return the internal array directly.
-    
-    *out_deltas = meta->byte_deltas;          // backend-owned, caller must NOT free
-    *out_count = meta->byte_delta_count;
-    return ESP_OK;
-}
-```
-
-**Memory Efficiency**:
-- Most bytes written together during page program → no deltas stored
-- Only outlier bytes (partial writes, overwrites) create delta entries
-- Expected: <1% of bytes become outliers
-- 32MB flash, 4KB pages = 8192 pages
-- If 1% bytes are outliers: 8192 × 4096 × 0.01 = ~335K outlier bytes
-- Storage: 335K × 16 bytes = ~5.2MB worst case
-- Typical: Much lower (<1MB) due to clustered partial writes
-
 ## Binary Snapshot Format
 
 ### File Layout
@@ -541,9 +390,6 @@ esp_err_t sparse_hash_get_byte_deltas(void *backend_handle,
 ├─────────────────────────────────────────────────────────────┤
 │              PAGE METADATA SECTION (variable)                │
 │  [page_0_data][page_1_data][page_128_data]...               │
-├─────────────────────────────────────────────────────────────┤
-│              BYTE DELTA SECTION (variable)                   │
-│  [delta_0][delta_1][delta_2]...                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -553,7 +399,7 @@ esp_err_t sparse_hash_get_byte_deltas(void *backend_handle,
 typedef struct __attribute__((packed)) {
     uint32_t magic;                // 0x4E414E44 ("NAND")
     uint8_t  version;              // 0x01
-    uint8_t  flags;                // Bit 0: block tracking, Bit 1: page, Bit 2: byte
+    uint8_t  flags;                // Bit 0: block tracking, Bit 1: page
     uint16_t reserved;
     uint64_t timestamp;
     uint32_t total_blocks;
@@ -561,10 +407,9 @@ typedef struct __attribute__((packed)) {
     uint32_t page_size;
     uint32_t block_metadata_count;
     uint32_t page_metadata_count;
-    uint32_t byte_delta_count;
     uint64_t block_metadata_offset; // Offset in file
     uint64_t page_metadata_offset;
-    uint64_t byte_delta_offset;
+    uint32_t reserved2[2];         // Reserved for future format extensions
     uint32_t checksum;             // CRC32 of header (bytes 0..59, excluding this field)
 } snapshot_header_t;
 
@@ -586,14 +431,14 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
     snapshot_header_t header = {
         .magic = 0x4E414E44,
         .version = 1,
-        .flags = 0x07,  // All tracking enabled
+        .flags = 0x03,  // Block + page tracking
         .timestamp = timestamp,
         .total_blocks = backend->total_blocks,
         .pages_per_block = backend->pages_per_block,
         .page_size = backend->page_size,
         .block_metadata_count = backend->block_table->count,
         .page_metadata_count = backend->page_table->count,
-        .byte_delta_count = 0  // Calculate during iteration
+        .reserved2 = {0, 0},
     };
     
     fseek(fp, sizeof(header), SEEK_SET);
@@ -613,19 +458,14 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
         }
     }
     
-    // 3. Write page metadata section (with byte delta references)
+    // 3. Write page metadata section
     header.page_metadata_offset = ftell(fp);
-    
-    // Build byte delta section simultaneously
-    byte_delta_metadata_t *all_deltas = NULL;
-    size_t total_delta_count = 0;
     
     for (size_t i = 0; i < backend->page_table->capacity; i++) {
         hash_node_t *node = backend->page_table->buckets[i];
         while (node) {
             page_metadata_t *meta = (page_metadata_t*)node->data;
             
-            // Write page metadata (without pointer, use offset instead)
             struct {
                 uint32_t page_num;
                 uint32_t program_count;
@@ -633,9 +473,8 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
                 uint32_t read_count_total;
                 uint64_t first_program_ts;
                 uint64_t last_program_ts;
-                uint16_t byte_delta_count;
-                uint32_t byte_delta_file_offset;  // Offset in byte delta section
-                uint16_t _padding;
+                uint32_t program_count_total;
+                uint32_t _reserved_pad;
             } __attribute__((packed)) page_record = {
                 .page_num = meta->page_num,
                 .program_count = meta->program_count,
@@ -643,40 +482,21 @@ esp_err_t sparse_hash_save_snapshot(void *backend_handle,
                 .read_count_total = meta->read_count_total,
                 .first_program_ts = meta->first_program_timestamp,
                 .last_program_ts = meta->last_program_timestamp,
-                .byte_delta_count = meta->byte_delta_count,
-                .byte_delta_file_offset = total_delta_count * sizeof(byte_delta_metadata_t)
+                .program_count_total = meta->program_count_total,
+                ._reserved_pad = 0,
             };
             
             fwrite(&page_record, sizeof(page_record), 1, fp);
-            
-            // Accumulate byte deltas for later writing
-            if (meta->byte_delta_count > 0) {
-                all_deltas = realloc(all_deltas, 
-                    (total_delta_count + meta->byte_delta_count) * sizeof(byte_delta_metadata_t));
-                memcpy(&all_deltas[total_delta_count], 
-                       meta->byte_deltas, 
-                       meta->byte_delta_count * sizeof(byte_delta_metadata_t));
-                total_delta_count += meta->byte_delta_count;
-            }
             
             node = node->next;
         }
     }
     
-    // 4. Write byte delta section
-    header.byte_delta_offset = ftell(fp);
-    header.byte_delta_count = total_delta_count;
-    
-    if (total_delta_count > 0) {
-        fwrite(all_deltas, sizeof(byte_delta_metadata_t), total_delta_count, fp);
-        free(all_deltas);
-    }
-    
-    // 5. Calculate CRC32 checksum of header (excluding checksum field)
+    // 4. Calculate CRC32 checksum of header (excluding checksum field)
     header.checksum = crc32(0, (uint8_t*)&header, 
                             offsetof(snapshot_header_t, checksum));
     
-    // 6. Write final header
+    // 5. Write final header
     fseek(fp, 0, SEEK_SET);
     fwrite(&header, sizeof(header), 1, fp);
     
@@ -727,14 +547,7 @@ esp_err_t sparse_hash_load_snapshot(void *backend_handle,
         memcpy(node->data, &block_data, sizeof(block_data));
     }
     
-    // 4. Load byte deltas into memory buffer first
-    fseek(fp, header.byte_delta_offset, SEEK_SET);
-    byte_delta_metadata_t *all_deltas = malloc(
-        header.byte_delta_count * sizeof(byte_delta_metadata_t));
-    fread(all_deltas, sizeof(byte_delta_metadata_t), 
-          header.byte_delta_count, fp);
-    
-    // 5. Load page metadata and reconstruct byte delta pointers
+    // 4. Load page metadata
     fseek(fp, header.page_metadata_offset, SEEK_SET);
     
     for (uint32_t i = 0; i < header.page_metadata_count; i++) {
@@ -745,9 +558,8 @@ esp_err_t sparse_hash_load_snapshot(void *backend_handle,
             uint32_t read_count_total;
             uint64_t first_program_ts;
             uint64_t last_program_ts;
-            uint16_t byte_delta_count;
-            uint32_t byte_delta_file_offset;
-            uint16_t _padding;
+            uint32_t program_count_total;
+            uint32_t _reserved_pad;
         } __attribute__((packed)) page_record;
         
         fread(&page_record, sizeof(page_record), 1, fp);
@@ -760,27 +572,11 @@ esp_err_t sparse_hash_load_snapshot(void *backend_handle,
         meta->program_count = page_record.program_count;
         meta->read_count = page_record.read_count;
         meta->read_count_total = page_record.read_count_total;
+        meta->program_count_total = page_record.program_count_total;
         meta->first_program_timestamp = page_record.first_program_ts;
         meta->last_program_timestamp = page_record.last_program_ts;
-        meta->byte_delta_count = page_record.byte_delta_count;
-        meta->byte_delta_capacity = page_record.byte_delta_count;
-        
-        // Reconstruct byte delta array
-        if (page_record.byte_delta_count > 0) {
-            meta->byte_deltas = malloc(
-                page_record.byte_delta_count * sizeof(byte_delta_metadata_t));
-            
-            size_t delta_index = page_record.byte_delta_file_offset / 
-                                 sizeof(byte_delta_metadata_t);
-            memcpy(meta->byte_deltas, 
-                   &all_deltas[delta_index],
-                   page_record.byte_delta_count * sizeof(byte_delta_metadata_t));
-        } else {
-            meta->byte_deltas = NULL;
-        }
     }
     
-    free(all_deltas);
     fclose(fp);
     
     backend->stats_dirty = true;
@@ -880,22 +676,6 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle,
                 emul->advanced->metadata_ops->on_page_program(
                     emul->advanced->metadata_handle, page_num, timestamp);
             }
-            
-            // Track byte-level writes (conservative approach)
-            if (emul->advanced->track_byte_level) {
-                size_t page_start = page_num * page_size;
-                size_t write_start = (offset > page_start) ? offset : page_start;
-                size_t write_end = ((offset + len) < (page_start + page_size)) 
-                                   ? (offset + len) : (page_start + page_size);
-                
-                uint16_t byte_offset_in_page = write_start - page_start;
-                size_t write_len = write_end - write_start;
-                
-                // Backend decides whether to create deltas
-                emul->advanced->metadata_ops->on_byte_write_range(
-                    emul->advanced->metadata_handle, 
-                    page_num, byte_offset_in_page, write_len, timestamp);
-            }
         }
     }
     
@@ -988,36 +768,20 @@ esp_err_t nand_emul_read(spi_nand_flash_device_t *handle,
 For high-performance scenarios, consider using memory pools:
 
 ```c
-// Pool for page metadata (fixed size sizeof(page_metadata_t), typically 56 bytes on 64-bit)
+// Pool for page metadata (fixed size sizeof(page_metadata_t)); illustrative only
 typedef struct {
-    page_metadata_t *free_list;
-    size_t capacity;
-    size_t allocated;
+    page_metadata_t **blocks;   // ring of recycled pointers, or NULL to always calloc
+    size_t n_free;
 } page_metadata_pool_t;
 
-// Allocate from pool (O(1))
 page_metadata_t* pool_alloc_page_metadata(page_metadata_pool_t *pool) {
-    if (pool->free_list) {
-        page_metadata_t *meta = pool->free_list;
-        pool->free_list = (page_metadata_t*)meta->byte_deltas; // Reuse pointer field
-        memset(meta, 0, sizeof(*meta));
-        return meta;
-    }
-    
-    // Pool exhausted, fallback to malloc
+    (void)pool;
     return calloc(1, sizeof(page_metadata_t));
 }
 
-// Return to pool (O(1))
 void pool_free_page_metadata(page_metadata_pool_t *pool, page_metadata_t *meta) {
-    // Free byte deltas if present
-    if (meta->byte_deltas) {
-        free(meta->byte_deltas);
-    }
-    
-    // Add to free list
-    meta->byte_deltas = (byte_delta_metadata_t*)pool->free_list;
-    pool->free_list = meta;
+    (void)pool;
+    free(meta);
 }
 ```
 
@@ -1027,7 +791,6 @@ void pool_free_page_metadata(page_metadata_pool_t *pool, page_metadata_t *meta) 
 typedef struct {
     size_t block_metadata_bytes;
     size_t page_metadata_bytes;
-    size_t byte_delta_bytes;
     size_t hash_table_overhead_bytes;
     size_t total_bytes;
 } memory_usage_t;
@@ -1042,25 +805,12 @@ esp_err_t sparse_hash_get_memory_usage(void *backend_handle,
     out->page_metadata_bytes = backend->page_table->count * 
         (sizeof(hash_node_t) + sizeof(page_metadata_t));
     
-    // Calculate byte delta memory
-    size_t delta_bytes = 0;
-    for (size_t i = 0; i < backend->page_table->capacity; i++) {
-        hash_node_t *node = backend->page_table->buckets[i];
-        while (node) {
-            page_metadata_t *meta = (page_metadata_t*)node->data;
-            delta_bytes += meta->byte_delta_capacity * sizeof(byte_delta_metadata_t);
-            node = node->next;
-        }
-    }
-    out->byte_delta_bytes = delta_bytes;
-    
     out->hash_table_overhead_bytes = 
         (backend->block_table->capacity + backend->page_table->capacity) * 
         sizeof(hash_node_t*);
     
     out->total_bytes = out->block_metadata_bytes + 
                        out->page_metadata_bytes + 
-                       out->byte_delta_bytes + 
                        out->hash_table_overhead_bytes;
     
     return ESP_OK;
@@ -1078,10 +828,10 @@ esp_err_t sparse_hash_get_memory_usage(void *backend_handle,
 
 **With full tracking**:
 - Read: +2-3 μs (failure check + context build)
-- Write: +5-10 μs (page update + byte range tracking + hash lookup)
-- Erase: +100-500 μs (iterate pages in block, free deltas)
+- Write: +3-8 μs (page update + hash lookup)
+- Erase: +50-300 μs (iterate pages in block, fold counters)
 
-**Overhead**: ~10-15% for write-heavy workloads
+**Overhead**: ~5-10% for write-heavy workloads
 
 ### Hash Table Performance
 
@@ -1090,29 +840,6 @@ esp_err_t sparse_hash_get_memory_usage(void *backend_handle,
 - **Iteration**: O(capacity + count) - must visit all buckets
 
 **Optimization**: Keep load factor at 0.75 to minimize collisions
-
-### Byte Delta Growth Control
-
-To prevent unbounded memory growth, consider:
-
-```c
-#define MAX_BYTE_DELTAS_PER_PAGE 512  // 12.5% of 4KB page
-
-static void update_byte_delta(page_metadata_t *page_meta, 
-                               uint16_t byte_offset,
-                               uint64_t timestamp) {
-    // ... (search existing deltas)
-    
-    // Limit check before creating new delta
-    if (page_meta->byte_delta_count >= MAX_BYTE_DELTAS_PER_PAGE) {
-        ESP_LOGW(TAG, "Page %u exceeded max byte deltas (%u), ignoring",
-                 page_meta->page_num, MAX_BYTE_DELTAS_PER_PAGE);
-        return;
-    }
-    
-    // ... (create new delta)
-}
-```
 
 ## Error Handling
 
@@ -1147,11 +874,11 @@ static void update_byte_delta(page_metadata_t *page_meta,
 #define TAG "nand_advanced"
 
 // Info: Normal operations
-ESP_LOGI(TAG, "Advanced init: %u blocks, %u pages, byte_tracking=%d",
-         total_blocks, total_pages, cfg->track_byte_level);
+ESP_LOGI(TAG, "Advanced init: %u blocks, %u pages",
+         total_blocks, total_pages);
 
 // Warning: Non-fatal issues
-ESP_LOGW(TAG, "Failed to allocate byte delta for page %u", page_num);
+ESP_LOGW(TAG, "Metadata allocation failed for page %u", page_num);
 
 // Error: Fatal issues
 ESP_LOGE(TAG, "Snapshot corrupted: CRC mismatch (expected=0x%08x, got=0x%08x)",
@@ -1166,11 +893,10 @@ This design provides:
 
 1. **Concrete data structures** with explicit sizes and padding
 2. **Hash table implementation** with collision handling and rehashing
-3. **Delta encoding algorithm** with zero-delta optimization
-4. **Binary snapshot format** with CRC32 integrity checking
-5. **Integration hooks** in read/write/erase handlers
-6. **Memory management** with tracking and limits
-7. **Performance analysis** with overhead estimates
-8. **Error handling** with graceful degradation
+3. **Binary snapshot format** with CRC32 integrity checking
+4. **Integration hooks** in read/write/erase handlers
+5. **Memory management** with usage tracking
+6. **Performance analysis** with overhead estimates
+7. **Error handling** with graceful degradation
 
 Next step: Create `tasks.md` to break down implementation into concrete work items.

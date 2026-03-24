@@ -25,7 +25,7 @@ Use this list when implementing or reviewing the read-count extension:
 
 - [x] P1.T1: Define Core Data Structures
   - Complexity: Low | Files: Create `include/nand_emul_advanced.h`
-  - Define `byte_delta_metadata_t`, `page_metadata_t` (including `read_count`, `read_count_total`), `block_metadata_t`
+  - Define `page_metadata_t` (including `read_count`, `read_count_total`), `block_metadata_t`
   - Define `nand_wear_stats_t` for aggregate statistics
   - Define `nand_operation_context_t` for failure models
   - Add explicit padding for cross-platform compatibility
@@ -36,8 +36,8 @@ Use this list when implementing or reviewing the read-count extension:
   - Complexity: Low | Dependencies: P1.T1 | Files: `include/nand_emul_advanced.h`
   - Define `nand_metadata_backend_ops_t` vtable structure
   - Add lifecycle methods: `init()`, `deinit()`
-  - Add operation callbacks: `on_block_erase()`, `on_page_program()`, `on_page_read()` (optional), `on_byte_write_range()`
-  - Add query methods: `get_block_info()`, `get_page_info()`, `get_byte_deltas()`, optional `get_histograms()`
+  - Add operation callbacks: `on_block_erase()`, `on_page_program()`, `on_page_read()` (optional)
+  - Add query methods: `get_block_info()`, `get_page_info()`, optional `get_histograms()`
   - Add iteration methods: `iterate_blocks()`, `iterate_pages()`
   - Add snapshot methods: `save_snapshot()`, `load_snapshot()`
   - Add export method: `export_json()`
@@ -57,7 +57,7 @@ Use this list when implementing or reviewing the read-count extension:
   - Define `nand_emul_advanced_config_t`
   - Include base config (`nand_file_mmap_emul_config_t`)
   - Add backend and failure model pointers
-  - Add tracking flags (block/page/byte level)
+  - Add tracking flags (block/page level)
   - Add optional timestamp function pointer
   - Acceptance: Config struct compiles; default values documented
 
@@ -150,7 +150,7 @@ Use this list when implementing or reviewing the read-count extension:
   - Complexity: Low | Dependencies: P2.T1 | Files: Create `src/backends/sparse_hash_backend.c`
   - Define `sparse_hash_backend_t` structure
   - Include `block_table`, `page_table` pointers
-  - Include configuration (track_byte_deltas, load_factor); cached device geometry; cached statistics and dirty flag
+  - Include configuration (load_factor, enable_histogram_query); cached device geometry; cached statistics and dirty flag
   - Acceptance: Structure compiles
 
 - [ ] P2.T7: Implement Sparse Hash Backend Init
@@ -163,14 +163,14 @@ Use this list when implementing or reviewing the read-count extension:
 - [ ] P2.T8: Implement Sparse Hash Backend Deinit
   - Complexity: Medium | Dependencies: P2.T7 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_deinit()` function
-  - Free all byte delta arrays in page table; destroy page hash table; destroy block hash table; free backend structure
+  - Destroy page hash table; destroy block hash table; free backend structure
   - Acceptance: No memory leaks (valgrind); handles NULL backend gracefully
 
 - [ ] P2.T9: Implement Block Erase Tracking
   - Complexity: Medium | Dependencies: P2.T8, P2.T4 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_on_block_erase()`
   - Get or insert block metadata node; increment erase count; update first/last erase timestamps
-  - Remove all page metadata in block (pages invalidated); free byte deltas for removed pages; set stats dirty flag
+  - Remove all page metadata in block (pages invalidated); set stats dirty flag
   - Acceptance: Unit test: erase block, verify count incremented; erase block with pages, verify pages removed
 
 - [ ] P2.T10: Implement Block Query
@@ -263,34 +263,28 @@ Use this list when implementing or reviewing the read-count extension:
   - For each page, if `track_page_level` enabled, call `on_page_program()`
   - Acceptance: Unit test: write spanning single page, verify page count=1; write spanning 3 pages, verify all 3 tracked
 
-- [ ] P3.T6: Modify `nand_emul_write()` - Byte Range Tracking
-  - Complexity: Medium | Dependencies: P3.T5 | Files: `src/nand_linux_mmap_emul.c`
-  - After page tracking, if `track_byte_level` enabled
-  - For each affected page, calculate byte range within page; call `on_byte_write_range()` with page_num, byte_offset, length
-  - Acceptance: Unit test: write full page then partial, verify backend tracks correctly; multi-page, verify byte ranges calculated correctly
-
-- [ ] P3.T7: Modify `nand_emul_read()` - Failure Check (before buffer fill)
+- [ ] P3.T6: Modify `nand_emul_read()` - Failure Check (before buffer fill)
   - Complexity: Low | Dependencies: P1.T6 | Files: `src/nand_linux_mmap_emul.c`
   - Before copying flash data, if failure model present, build `nand_operation_context_t`; call `should_fail_read()`
   - If true, log warning and return `ESP_ERR_FLASH_OP_FAIL` without writing the destination buffer
   - Acceptance: Unit test: configure failure model to fail reads, verify error and unchanged caller buffer
 
-- [ ] P3.T7b: Modify `nand_emul_read()` - Page read metadata
-  - Complexity: Low | Dependencies: P3.T7, P2 (sparse `on_page_read`) | Files: `src/nand_linux_mmap_emul.c`
+- [ ] P3.T6b: Modify `nand_emul_read()` - Page read metadata
+  - Complexity: Low | Dependencies: P3.T6, P2 (sparse `on_page_read`) | Files: `src/nand_linux_mmap_emul.c`
   - After successful `memcpy` from emulated flash, if `track_page_level` and `metadata_ops->on_page_read` are set, iterate overlapped pages and call `on_page_read(page_num, timestamp)` once per page
   - Reuse the same single timestamp captured at the start of the read operation
   - Acceptance: Unit test: read spanning N pages, verify each page's `read_count` increments by 1; read-only pages may gain sparse metadata entries
 
-- [ ] P3.T8: Modify `nand_emul_read()` - Data Corruption
-  - Complexity: Low | Dependencies: P3.T7b | Files: `src/nand_linux_mmap_emul.c`
+- [ ] P3.T7: Modify `nand_emul_read()` - Data Corruption
+  - Complexity: Low | Dependencies: P3.T6b | Files: `src/nand_linux_mmap_emul.c`
   - After read and optional `on_page_read`, refresh `nand_operation_context_t` metadata (`get_block_info` / `get_page_info`) when available, then call `corrupt_read_data(ctx, data, len)`
   - Model modifies data buffer in-place (bit flips); read-disturb models use updated `page_meta` read counts
   - Acceptance: Unit test: configure probabilistic model with read-disturb enabled, verify corruption rate increases with repeated reads to the same page
 
-- [ ] P3.T9: Write Integration Tests
-  - Complexity: Medium | Dependencies: P3.T3, P3.T6, P3.T8 | Files: Create `host_test/test_integration.c`
+- [ ] P3.T8: Write Integration Tests
+  - Complexity: Medium | Dependencies: P3.T3, P3.T5, P3.T7 | Files: Create `host_test/test_integration.c`
   - Test: Erase block, verify metadata updated; write single/multi page, verify page metadata
-  - Test: Write partial page then full page, verify byte deltas; read with corruption model, verify bit errors injected
+  - Test: Read with corruption model, verify bit errors injected
   - Test: Backward compatibility (init without advanced, verify no crash)
   - Acceptance: All tests pass; existing NAND tests still pass
 
@@ -310,82 +304,76 @@ Use this list when implementing or reviewing the read-count extension:
   - Validate handle and page number; check if advanced tracking enabled; call backend `get_page_info()`; return result
   - Acceptance: Unit test: get page wear for never-programmed page, verify zeros; program page 5 times, get wear, verify count=5
 
-- [ ] P4.T3: Implement `nand_emul_get_byte_deltas()`
-  - Complexity: Low | Dependencies: P2.T12 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
-  - Validate handle and page number; check if byte-level tracking enabled
-  - Call backend `get_byte_deltas()`; return filtered delta array (caller must free)
-  - Acceptance: Unit test: get deltas for page with no outliers, verify empty; program page then partial write, get deltas, verify outliers
-
-- [ ] P4.T4: Implement `nand_emul_get_wear_stats()`
+- [ ] P4.T3: Implement `nand_emul_get_wear_stats()`
   - Complexity: Low | Dependencies: P2.T15 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle; check if advanced tracking enabled; call backend `get_stats()`; merge `logical_write_bytes_recorded` from advanced context; set `write_amplification` from `total_bytes_written` and logical counter
   - Acceptance: Unit test: perform mixed operations, get stats, verify correctness; WAF 0 when no logical bytes
 
-- [ ] P4.T4a: Implement `nand_emul_get_wear_histograms()` and sparse `get_histograms()`
-  - Complexity: Medium | Dependencies: P4.T4, P2.T15 | Files: `src/nand_linux_mmap_emul.c`, `src/backends/sparse_hash_backend.c`, `include/nand_emul_advanced.h`
+- [ ] P4.T3a: Implement `nand_emul_get_wear_histograms()` and sparse `get_histograms()`
+  - Complexity: Medium | Dependencies: P4.T3, P2.T15 | Files: `src/nand_linux_mmap_emul.c`, `src/backends/sparse_hash_backend.c`, `include/nand_emul_advanced.h`
   - Honor `enable_histogram_query`; validate caller `n_bins` / `bin_width`; sweep block/page tables per `proposal.md` §1a
   - Acceptance: Unit tests for known distributions, invalid args, `ESP_ERR_NOT_SUPPORTED` when disabled or NULL op
 
-- [ ] P4.T4b: Implement `nand_emul_record_logical_write()`
+- [ ] P4.T3b: Implement `nand_emul_record_logical_write()`
   - Complexity: Low | Dependencies: P1.T5 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Increment `advanced->logical_write_bytes_recorded`; `ESP_ERR_NOT_SUPPORTED` without advanced init
   - Acceptance: Unit test: record logical bytes, verify stats field and WAF ratio
 
-- [ ] P4.T5: Implement `nand_emul_iterate_worn_blocks()`
+- [ ] P4.T4: Implement `nand_emul_iterate_worn_blocks()`
   - Complexity: Low | Dependencies: P2.T13 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle and callback; check if advanced tracking enabled
   - Call backend `iterate_blocks()`; pass through callback and user_data
   - Acceptance: Unit test: erase 5 blocks, iterate, verify all visited
 
-- [ ] P4.T6: Implement `nand_emul_mark_bad_block()`
+- [ ] P4.T5: Implement `nand_emul_mark_bad_block()`
   - Complexity: Low | Dependencies: P2.T10 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle and block number; check if advanced tracking enabled; call backend `set_bad_block(block_num, true)`
   - Acceptance: Unit test: mark block bad, query, verify flag set
 
-- [ ] P4.T7: Implement Snapshot Header Structure
+- [ ] P4.T6: Implement Snapshot Header Structure
   - Complexity: Low | Dependencies: None | Files: `src/backends/snapshot_format.h`
   - Define `snapshot_header_t` with `__attribute__((packed))`; static assertion: `sizeof(snapshot_header_t) == 64`
-  - Define magic number: `0x4E414E44`; version: `0x01`; flags bitfield (block/page/byte tracking)
+  - Define magic number: `0x4E414E44`; version: `0x01`; flags bitfield (block/page tracking)
   - Acceptance: Header compiles; static assertion passes
 
-- [ ] P4.T8: Implement Snapshot Save (Sparse Hash Backend)
-  - Complexity: High | Dependencies: P4.T7, P2.T15 | Files: `src/backends/sparse_hash_backend.c`
+- [ ] P4.T7: Implement Snapshot Save (Sparse Hash Backend)
+  - Complexity: High | Dependencies: P4.T6, P2.T15 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_save_snapshot()`; write header with placeholders
   - Iterate blocks, write block metadata section; iterate pages, write page metadata section
-  - Accumulate byte deltas, write byte delta section; calculate CRC32; rewrite header with correct offsets and checksum
+  - Calculate CRC32; rewrite header with correct offsets and checksum
   - Acceptance: Unit test: save empty snapshot, verify header correct; erase blocks, program pages, perform reads, save snapshot, verify file size; page records include `read_count` / `read_count_total` per `design.md`
 
-- [ ] P4.T9: Implement Snapshot Load (Sparse Hash Backend)
-  - Complexity: High | Dependencies: P4.T8 | Files: `src/backends/sparse_hash_backend.c`
+- [ ] P4.T8: Implement Snapshot Load (Sparse Hash Backend)
+  - Complexity: High | Dependencies: P4.T7 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_load_snapshot()`; read header, validate magic and CRC32
-  - Clear existing metadata; read block metadata section; read byte deltas; read page metadata, reconstruct byte delta pointers
+  - Clear existing metadata; read block metadata section; read page metadata
   - Set stats dirty flag
   - Acceptance: Unit test: save then load, verify metadata identical (including read counters); load corrupted snapshot, verify error
 
-- [ ] P4.T10: Implement `nand_emul_save_snapshot()`
-  - Complexity: Low | Dependencies: P4.T8 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
+- [ ] P4.T9: Implement `nand_emul_save_snapshot()`
+  - Complexity: Low | Dependencies: P4.T7 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle and filename; check if advanced tracking enabled; get current timestamp; call backend `save_snapshot()`
   - Acceptance: Unit test: save snapshot, verify file created
 
-- [ ] P4.T11: Implement `nand_emul_load_snapshot()`
-  - Complexity: Low | Dependencies: P4.T9 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
+- [ ] P4.T10: Implement `nand_emul_load_snapshot()`
+  - Complexity: Low | Dependencies: P4.T8 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle and filename; check if advanced tracking enabled; call backend `load_snapshot()`; verify success
   - Acceptance: Unit test: save, deinit, init, load, verify metadata restored
 
-- [ ] P4.T12: Implement JSON Export (Sparse Hash Backend)
+- [ ] P4.T11: Implement JSON Export (Sparse Hash Backend)
   - Complexity: Medium | Dependencies: P2.T15 | Files: `src/backends/sparse_hash_backend.c`
   - Implement `sparse_hash_export_json()`; write JSON header with device info
-  - Iterate blocks/pages, write as JSON objects; include byte deltas as nested arrays; write aggregate statistics
+  - Iterate blocks/pages, write as JSON objects; write aggregate statistics
   - Acceptance: Unit test: export to JSON, verify valid JSON (use jq to parse); verify structure matches specification
 
-- [ ] P4.T13: Implement `nand_emul_export_json()`
-  - Complexity: Low | Dependencies: P4.T12 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
+- [ ] P4.T12: Implement `nand_emul_export_json()`
+  - Complexity: Low | Dependencies: P4.T11 | Files: `src/nand_linux_mmap_emul.c`, `include/nand_emul_advanced.h`
   - Validate handle and filename; check if advanced tracking enabled; call backend `export_json(filename)`
   - Acceptance: Unit test: export JSON, parse with external tool
 
-- [ ] P4.T14: Write Query API Unit Tests
-  - Complexity: Medium | Dependencies: P4.T6, P4.T11, P4.T13 | Files: `host_test/test_query_api.c`
-  - Test all query functions (block, page, byte deltas, stats); test iteration; test bad block marking
+- [ ] P4.T13: Write Query API Unit Tests
+  - Complexity: Medium | Dependencies: P4.T5, P4.T10, P4.T12 | Files: `host_test/test_query_api.c`
+  - Test all query functions (block, page, stats); test iteration; test bad block marking
   - Test snapshot save/load roundtrip; test JSON export structure
   - Acceptance: All tests pass
 
@@ -460,173 +448,124 @@ Use this list when implementing or reviewing the read-count extension:
 
 ---
 
-## Phase 6: Byte-Level Delta Tracking & Optimization
-
-**Goal**: Add byte-level delta tracking to sparse hash backend, optimize memory usage
-
-- [ ] P6.T1: Implement Byte Delta Array Growth
-  - Complexity: Low | Dependencies: P2.T12 | Files: `src/backends/sparse_hash_backend.c`
-  - Add `byte_delta_capacity` field to `page_metadata_t` tracking
-  - Implement dynamic array growth (start with 8, double each time); use `realloc()`
-  - Acceptance: Unit test: add 100 byte deltas, verify array grows correctly
-
-- [ ] P6.T2: Implement Byte Write Range Tracking
-  - Complexity: Medium | Dependencies: P6.T1 | Files: `src/backends/sparse_hash_backend.c`
-  - Implement `sparse_hash_on_byte_write_range()`; for each byte in range, call `update_byte_delta()`
-  - `update_byte_delta()` searches existing deltas by offset; if found, increment; if not found, create new (delta starts at 1)
-  - Acceptance: Unit test: write byte range, verify deltas created; write same range twice, verify deltas incremented
-
-- [ ] P6.T3: Implement Zero-Delta Filtering
-  - Complexity: Medium | Dependencies: P6.T2 | Files: `src/backends/sparse_hash_backend.c`
-  - Modify `sparse_hash_get_byte_deltas()` to filter zero-deltas
-  - Count non-zero deltas; allocate filtered array (caller must free); copy only non-zero deltas to output
-  - Acceptance: Unit test: program page, write full page again, get deltas, verify empty; program page, partial write, get deltas, verify only outliers
-
-- [ ] P6.T4: Implement Delta Memory Limit
-  - Complexity: Low | Dependencies: P6.T2 | Files: `src/backends/sparse_hash_backend.c`
-  - Define `MAX_BYTE_DELTAS_PER_PAGE` constant (512 = 12.5% of 4KB page)
-  - In `update_byte_delta()`, check if count >= MAX before creating new delta; log warning if limit reached
-  - Acceptance: Unit test: write 1000 different bytes, verify capped at 512 deltas
-
-- [ ] P6.T5: Implement Memory Usage Query
-  - Complexity: Low | Dependencies: P6.T3 | Files: `src/backends/sparse_hash_backend.c`, `include/nand_emul_advanced.h`
-  - Define `memory_usage_t` structure; implement `sparse_hash_get_memory_usage()`
-  - Calculate block/page metadata bytes; calculate byte delta bytes; calculate hash table overhead; return total
-  - Acceptance: Unit test: perform operations, get memory usage, verify reasonable
-
-- [ ] P6.T6: Optimize Delta Storage
-  - Complexity: Medium | Dependencies: P6.T3 | Files: `src/backends/sparse_hash_backend.c`
-  - Implement `compact_byte_deltas()` function; remove zero-delta entries from internal array
-  - Shrink array with `realloc()`; call during snapshot save to reduce file size
-  - Acceptance: Unit test: create deltas, erase some, compact, verify size reduced
-
-- [ ] P6.T7: Write Byte Delta Unit Tests
-  - Complexity: Medium | Dependencies: P6.T6 | Files: `host_test/test_byte_deltas.c`
-  - Test: Full page write, no deltas; partial page write, deltas created; repeated partial writes, deltas accumulate
-  - Test: Zero-delta filtering; delta memory limit; memory usage calculation; delta compaction
-  - Acceptance: All tests pass
-
----
-
-## Phase 7: Wear Lifetime Simulation Example
+## Phase 6: Wear Lifetime Simulation Example
 
 **Goal**: Create example simulation demonstrating 10K cycle simulation with snapshots
 
-- [ ] P7.T1: Create Simulation Workload Generator
-  - Complexity: Medium | Dependencies: P4.T11 | Files: Create `examples/wear_simulation/workload_generator.c`
+- [ ] P6.T1: Create Simulation Workload Generator
+  - Complexity: Medium | Dependencies: P4.T10 | Files: Create `examples/wear_simulation/workload_generator.c`
   - Implement `simulate_random_writes(device, count)`, `simulate_sequential_writes(device, count)`, `simulate_wear_leveling(device, count)`
   - Use PRNG for reproducibility
   - Acceptance: Unit test: verify write patterns match expectations
 
-- [ ] P7.T2: Create Snapshot Manager
-  - Complexity: Low | Dependencies: P4.T10, P4.T11 | Files: Create `examples/wear_simulation/snapshot_manager.c`
+- [ ] P6.T2: Create Snapshot Manager
+  - Complexity: Low | Dependencies: P4.T9, P4.T10 | Files: Create `examples/wear_simulation/snapshot_manager.c`
   - Implement `snapshot_save_periodic(device, cycle, interval, base_dir)`
   - Generate filename: `wear_{cycle:05d}.bin`; check if cycle % interval == 0; call `nand_emul_save_snapshot()`
   - Acceptance: Unit test: verify snapshots saved at correct intervals
 
-- [ ] P7.T3: Create Wear Analysis Script
-  - Complexity: Medium | Dependencies: P4.T13 | Files: Create `examples/wear_simulation/analyze_wear.py`
+- [ ] P6.T3: Create Wear Analysis Script
+  - Complexity: Medium | Dependencies: P4.T12 | Files: Create `examples/wear_simulation/analyze_wear.py`
   - Python script to load JSON exports; calculate wear leveling metrics; generate plots (matplotlib)
   - Acceptance: Script runs without errors; generates PDF plots
 
-- [ ] P7.T4: Create Main Simulation Program
-  - Complexity: Medium | Dependencies: P7.T1, P7.T2, P5.T10 | Files: Create `examples/wear_simulation/main.c`
+- [ ] P6.T4: Create Main Simulation Program
+  - Complexity: Medium | Dependencies: P6.T1, P6.T2, P5.T10 | Files: Create `examples/wear_simulation/main.c`
   - Initialize 32MB flash with advanced config; enable probabilistic failure model (rated_cycles = 100K)
   - Run 10,000 cycles (1000 ops per cycle); save snapshot every 100 cycles; export final state to JSON
   - Acceptance: Program compiles and runs; completes 10K cycles in <5 minutes (single-core)
 
-- [ ] P7.T5: Create Simulation Makefile
-  - Complexity: Low | Dependencies: P7.T4 | Files: Create `examples/wear_simulation/Makefile`
+- [ ] P6.T5: Create Simulation Makefile
+  - Complexity: Low | Dependencies: P6.T4 | Files: Create `examples/wear_simulation/Makefile`
   - Build simulation program; link against nand_emul library
   - Add targets: `make run` (run simulation), `make analyze` (run Python script)
   - Acceptance: `make all` builds successfully; `make run` executes simulation
 
-- [ ] P7.T6: Document Simulation Workflow
-  - Complexity: Low | Dependencies: P7.T5 | Files: Create `examples/wear_simulation/README.md`
+- [ ] P6.T6: Document Simulation Workflow
+  - Complexity: Low | Dependencies: P6.T5 | Files: Create `examples/wear_simulation/README.md`
   - Explain simulation goals; list commands to build and run; describe output files
   - Explain how to use analysis script; show example plots
   - Acceptance: README is clear and complete
 
-- [ ] P7.T7: Benchmark Performance
-  - Complexity: Low | Dependencies: P7.T4 | Files: `examples/wear_simulation/benchmark.c`
+- [ ] P6.T7: Benchmark Performance
+  - Complexity: Low | Dependencies: P6.T4 | Files: `examples/wear_simulation/benchmark.c`
   - Measure time for 10K cycles with full tracking; measure memory usage (peak RSS)
-  - Compare with/without byte-level tracking; output performance report
   - Acceptance: 10K cycles complete in <5 minutes; memory usage <10MB for 32MB flash
 
-- [ ] P7.T8: Test Different Flash Sizes
-  - Complexity: Low | Dependencies: P7.T7 | Files: `examples/wear_simulation/` (modify main.c)
+- [ ] P6.T8: Test Different Flash Sizes
+  - Complexity: Low | Dependencies: P6.T7 | Files: `examples/wear_simulation/` (modify main.c)
   - Test with 32MB, 64MB, 128MB flash sizes; verify memory scaling (linear); verify time scaling (linear)
   - Acceptance: All sizes complete successfully; memory usage stays <5% of flash size
 
 ---
 
-## Phase 8: Testing & Documentation
+## Phase 7: Testing & Documentation
 
 **Goal**: Comprehensive testing, documentation, and polishing for release
 
-- [ ] P8.T1: Write Wear Leveling Validation Test
-  - Complexity: Medium | Dependencies: P4.T4 | Files: Create `host_test/test_wear_leveling.c`
+- [ ] P7.T1: Write Wear Leveling Validation Test
+  - Complexity: Medium | Dependencies: P4.T3 | Files: Create `host_test/test_wear_leveling.c`
   - Write random blocks 10,000 times; get wear statistics
   - Verify `max_block_erases - min_block_erases < threshold` (e.g., 100); verify `wear_leveling_variation < 0.1`
   - Acceptance: Test passes with proper wear leveling; test fails with intentionally skewed writes
 
-- [ ] P8.T2: Write Failure Injection Integration Test
+- [ ] P7.T2: Write Failure Injection Integration Test
   - Complexity: Medium | Dependencies: P5.T10 | Files: Create `host_test/test_failure_injection.c`
   - Configure threshold model: max 10 erases per block; erase same block 11 times
   - Verify 11th erase fails with `ESP_ERR_FLASH_OP_FAIL`; verify block marked as bad
   - Acceptance: Test passes
 
-- [ ] P8.T3: Write Memory Efficiency Test
-  - Complexity: Low | Dependencies: P6.T5 | Files: Create `host_test/test_memory_efficiency.c`
+- [ ] P7.T3: Write Memory Efficiency Test
+  - Complexity: Low | Dependencies: P2.T15 | Files: Create `host_test/test_memory_efficiency.c`
   - Initialize 32MB flash; perform 1000 random operations; get memory usage; verify total < 5% of flash size (1.6MB)
   - Acceptance: Test passes
 
-- [ ] P8.T4: Write Snapshot Roundtrip Test
-  - Complexity: Medium | Dependencies: P4.T11 | Files: Create `host_test/test_snapshot_roundtrip.c`
+- [ ] P7.T4: Write Snapshot Roundtrip Test
+  - Complexity: Medium | Dependencies: P4.T10 | Files: Create `host_test/test_snapshot_roundtrip.c`
   - Perform various operations (erases, writes); save snapshot; deinit device; init new device; load snapshot
   - Query metadata, verify matches original
   - Acceptance: All metadata restored correctly
 
-- [ ] P8.T5: Write Snapshot Corruption Test
-  - Complexity: Low | Dependencies: P4.T11 | Files: Create `host_test/test_snapshot_corruption.c`
+- [ ] P7.T5: Write Snapshot Corruption Test
+  - Complexity: Low | Dependencies: P4.T10 | Files: Create `host_test/test_snapshot_corruption.c`
   - Save valid snapshot; corrupt file (flip bits in header); attempt to load; verify returns `ESP_ERR_INVALID_CRC`
   - Acceptance: Corruption detected
 
-- [ ] P8.T6: Write Lifetime Simulation Test
-  - Complexity: High | Dependencies: P7.T4 | Files: Create `host_test/test_lifetime_simulation.c`
+- [ ] P7.T6: Write Lifetime Simulation Test
+  - Complexity: High | Dependencies: P6.T4 | Files: Create `host_test/test_lifetime_simulation.c`
   - Run 10K cycles with probabilistic model; save 100 snapshots; load snapshots at cycles 0, 5000, 9999
   - Verify wear progression (erase counts increase); verify failure probability increases
   - Acceptance: Test completes in reasonable time (<5 min); wear progression observed
 
-- [ ] P8.T7: Measure Code Coverage
+- [ ] P7.T7: Measure Code Coverage
   - Complexity: Low | Dependencies: All test tasks | Files: Add to Makefile
   - Add gcov/lcov flags to test build; run all tests; generate coverage report; verify >80% code coverage
   - Acceptance: Coverage report generated; target coverage achieved
 
-- [ ] P8.T8: Write API Documentation
+- [ ] P7.T8: Write API Documentation
   - Complexity: Medium | Dependencies: All API implementation tasks | Files: All header files
   - Add Doxygen comments for all public functions; document parameters, return values, error codes
   - Add usage examples in comments; document backend and failure model interfaces
   - Acceptance: Doxygen builds without warnings; all public APIs documented
 
-- [ ] P8.T9: Write Usage Examples
-  - Complexity: Medium | Dependencies: P8.T8 | Files: Create `examples/basic_tracking/`, `examples/failure_injection/`
+- [ ] P7.T9: Write Usage Examples
+  - Complexity: Medium | Dependencies: P7.T8 | Files: Create `examples/basic_tracking/`, `examples/failure_injection/`
   - Basic Tracking: init with sparse hash backend, perform operations, query metadata
   - Failure Injection: init with threshold model, trigger failures, handle errors; each example includes Makefile and README
   - Acceptance: Examples compile and run; READMEs explain usage
 
-- [ ] P8.T10: Create Architecture Diagrams
+- [ ] P7.T10: Create Architecture Diagrams
   - Complexity: Low | Dependencies: None | Files: Create `docs/architecture.md`
   - System component diagram; data flow diagrams; snapshot file format diagram; include in main README
   - Acceptance: Diagrams clear and accurate
 
-- [ ] P8.T11: Update Main README
-  - Complexity: Medium | Dependencies: P8.T10 | Files: `README.md`
+- [ ] P7.T11: Update Main README
+  - Complexity: Medium | Dependencies: P7.T10 | Files: `README.md`
   - Add "Advanced Flash Tracking" section; explain use cases and features; link to examples and documentation
   - Show quick start code snippet; include architecture diagram; explain snapshot workflow
   - Acceptance: README is clear and comprehensive
 
-- [ ] P8.T12: Run Full Regression Suite
+- [ ] P7.T12: Run Full Regression Suite
   - Complexity: Low | Dependencies: All test tasks | Files: N/A
   - Run all unit tests; run all integration tests; run example programs
   - Verify no memory leaks (valgrind); verify no warnings (compile with -Wall -Wextra)
@@ -636,6 +575,6 @@ Use this list when implementing or reviewing the read-count extension:
 
 ## Summary
 
-- **Total Tasks**: 122 across 8 phases
-- **Critical Path**: P1.T1 → P1.T2 → P1.T4 → P1.T5 → P1.T6 → P2.T1 → P2.T2 → P2.T3 → P2.T9 → P2.T11 → P3.T3 → P3.T5 → P3.T6 → P6.T2 → P6.T3 → P4.T8 → P4.T9 → P7.T4 → P8.T12
-- **Estimated Effort**: ~620 hours (~4 months at full-time)
+- **Total Tasks**: 114 across 7 phases
+- **Critical Path**: P1.T1 → P1.T2 → P1.T4 → P1.T5 → P1.T6 → P2.T1 → P2.T2 → P2.T3 → P2.T9 → P2.T11 → P3.T3 → P3.T5 → P4.T7 → P4.T8 → P4.T10 → P6.T4 → P7.T12
+- **Estimated Effort**: ~580 hours (~3.5 months at full-time)

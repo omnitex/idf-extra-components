@@ -29,12 +29,6 @@ The system SHALL provide `nand_emul_get_page_wear()` function to retrieve metada
 - **THEN** function SHALL return `ESP_OK`
 - **AND** `metadata` SHALL contain program count and timestamps
 
-#### Scenario: Embedded byte_deltas pointer lifetime
-- **WHEN** `nand_emul_get_page_wear()` returns `ESP_OK` and byte-level tracking is enabled
-- **THEN** the `byte_deltas` field in the returned `page_metadata_t` struct is a backend-owned pointer (same rule as `nand_emul_get_byte_deltas()`)
-- **AND** the pointer SHALL remain valid only until the next write, erase, snapshot load, or `nand_emul_deinit()`
-- **AND** caller SHALL NOT free the pointer; caller MAY copy the pointed-to data for longer use
-
 #### Scenario: Query unwritten page
 - **WHEN** page has never been written after last block erase
 - **THEN** `nand_emul_get_page_wear()` SHALL return `ESP_OK`
@@ -164,13 +158,13 @@ The system SHALL provide `nand_emul_export_json()` function to export metadata t
 
 #### Scenario: Export to JSON format
 - **WHEN** developer calls `nand_emul_export_json(handle, "wear.json")`
-- **THEN** function SHALL create JSON file with all block metadata, page metadata, and byte deltas
+- **THEN** function SHALL create JSON file with all block metadata, page metadata, and aggregate statistics
 - **AND** JSON SHALL include aggregate statistics
 - **AND** JSON SHALL be human-readable and suitable for import into plotting tools
 
 #### Scenario: JSON structure
 - **WHEN** JSON export is created
-- **THEN** JSON SHALL have top-level sections: "device", "blocks", "pages", "byte_deltas", "statistics"
+- **THEN** JSON SHALL have top-level sections: "device", "blocks", "pages", "statistics"
 - **AND** SHALL include timestamps for all tracked operations
 
 ### Requirement: Query without advanced init
@@ -210,20 +204,6 @@ The system SHALL implement query functions with minimal overhead.
 - **WHEN** `nand_emul_get_wear_stats()` is called multiple times without intervening operations
 - **THEN** backend MAY cache aggregate statistics for performance
 - **AND** SHALL invalidate cache on any operation that changes metadata
-
-### Requirement: Query byte-level deltas
-The system SHALL provide `nand_emul_get_byte_deltas()` function to retrieve delta information for a specific page.
-
-#### Scenario: Query page with byte deltas
-- **WHEN** developer calls `nand_emul_get_byte_deltas(handle, page_num, &deltas, &count)`
-- **AND** page has partial programs creating byte-level deltas
-- **THEN** function SHALL return array of byte_delta_metadata_t structures
-- **AND** count SHALL indicate number of bytes with non-zero deltas
-
-#### Scenario: Query page without deltas
-- **WHEN** page was only programmed as full page (no partial writes)
-- **THEN** `nand_emul_get_byte_deltas()` SHALL return empty array
-- **AND** count SHALL be zero
 
 ### Requirement: Binary snapshot operations
 The system SHALL provide snapshot save/load functions for wear lifetime simulation.

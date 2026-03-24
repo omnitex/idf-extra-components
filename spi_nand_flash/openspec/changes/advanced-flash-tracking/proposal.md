@@ -2,7 +2,7 @@
 
 ## Overview
 
-Extend the Linux host test NAND flash memory emulation system (`nand_linux_mmap_emul.c`) to support comprehensive byte-level tracking, hierarchical metadata organization, and pluggable reliability modeling for advanced testing scenarios.
+Extend the Linux host test NAND flash memory emulation system (`nand_linux_mmap_emul.c`) to support hierarchical block- and page-level metadata, aggregate wear analytics, and pluggable reliability modeling for advanced testing scenarios.
 
 ## Motivation
 
@@ -10,7 +10,7 @@ Extend the Linux host test NAND flash memory emulation system (`nand_linux_mmap_
 
 The existing `nand_linux_mmap_emul.c` provides basic NAND flash emulation with optional operation-level statistics (`CONFIG_NAND_ENABLE_STATS`), but lacks:
 
-1. **Granular tracking**: Cannot track per-block, per-page, or per-byte wear patterns
+1. **Granular tracking**: Cannot track per-block or per-page wear patterns
 2. **History**: No timestamp or state transition history for forensic analysis
 3. **Failure modeling**: No ability to simulate realistic NAND failures (bit flips, block wear-out, program disturb, read disturb)
 4. **Wear analysis**: Cannot identify hotspots or validate wear leveling algorithms
@@ -30,8 +30,8 @@ The existing `nand_linux_mmap_emul.c` provides basic NAND flash emulation with o
 
 1. **Backward Compatibility**: Existing `nand_emul_init()` API continues to work unchanged; advanced features are opt-in via new `nand_emul_advanced_init()`
 2. **Open/Closed Principle**: Abstract interfaces for metadata storage backends and failure models enable extensibility without modifying core code
-3. **Memory Efficiency**: Default sparse storage backend only allocates metadata for written pages/bytes
-4. **Hierarchical Organization**: Three-level metadata structure (block → page → byte) matches NAND flash architecture
+3. **Memory Efficiency**: Default sparse storage backend only allocates metadata for touched blocks and pages
+4. **Hierarchical Organization**: Two-level metadata structure (block → page) matches common NAND wear accounting
 5. **Composability**: Metadata tracking and failure injection are independent; can use either or both
 
 ### System Components
@@ -64,14 +64,6 @@ The existing `nand_linux_mmap_emul.c` provides basic NAND flash emulation with o
 #### Core Metadata Types
 
 ```c
-// Byte-level metadata (delta-encoded, sparse storage)
-// Stores deltas from page-level aggregate for bytes with different write patterns
-typedef struct {
-    uint16_t byte_offset;          // Offset within page (0-4095)
-    int16_t  write_count_delta;    // Delta from page program_count (-32K to +32K)
-    uint64_t last_write_timestamp; // Last write timestamp for this specific byte
-} byte_delta_metadata_t;
-
 // Page-level metadata
 typedef struct {
     uint32_t program_count;         // Number of programs in the CURRENT erase cycle (reset to 0 on block erase)
@@ -81,8 +73,7 @@ typedef struct {
     uint64_t first_program_timestamp;
     uint64_t last_program_timestamp;
     uint32_t page_num;              // Page number (for iteration)
-    uint16_t byte_delta_count;      // Number of bytes with non-zero deltas in the current erase cycle
-    byte_delta_metadata_t *byte_deltas; // Sparse array of byte-level deltas (NULL if none; reset on block erase)
+    uint32_t _reserved;             // Padding / future use
 } page_metadata_t;
 // Lifetime programs for a page: program_count_total + program_count
 // Lifetime reads for a page:     read_count_total + read_count
@@ -173,8 +164,6 @@ typedef struct {
     // Metadata at operation time
     const block_metadata_t *block_meta;
     const page_metadata_t  *page_meta;
-    const byte_delta_metadata_t *byte_deltas;  // NULL if no deltas for this page
-    uint16_t byte_delta_count;                  // Number of deltas available
     
     // Flash device parameters
     uint32_t total_blocks;
@@ -203,14 +192,6 @@ typedef struct nand_metadata_backend_ops {
     // Optional (NULL = not tracked): called after a successful read, once per page overlapped by the read
     esp_err_t (*on_page_read)(void *backend_handle, uint32_t page_num, uint64_t timestamp);
     esp_err_t (*get_page_info)(void *backend_handle, uint32_t page_num, page_metadata_t *out);
-    
-    // Byte delta operations (optional, may return ESP_ERR_NOT_SUPPORTED)
-    // Called for every write operation when byte_level tracking is enabled
-    // Backend optimizes away zero-deltas (bytes written same count as page)
-    esp_err_t (*on_byte_write_range)(void *backend_handle, uint32_t page_num, 
-                                     uint16_t byte_offset, size_t len, uint64_t timestamp);
-    esp_err_t (*get_byte_deltas)(void *backend_handle, uint32_t page_num, 
-                                 byte_delta_metadata_t **out_deltas, uint16_t *out_count);
     
     // Query/iteration
     esp_err_t (*iterate_blocks)(void *backend_handle, 
@@ -277,7 +258,6 @@ typedef struct {
     // Tracking granularity
     bool track_block_level;   // Default: true
     bool track_page_level;    // Default: true
-    bool track_byte_level;    // Default: true (uses delta encoding for efficiency)
     
     // Timestamp source (NULL = use default monotonic counter)
     uint64_t (*get_timestamp)(void);
@@ -339,13 +319,6 @@ esp_err_t nand_emul_save_snapshot(spi_nand_flash_device_t *handle,
                                   const char *filename);
 esp_err_t nand_emul_load_snapshot(spi_nand_flash_device_t *handle,
                                   const char *filename);
-
-// Get byte-level deltas for a specific page
-// out_deltas: backend-owned; valid until next metadata-modifying call or deinit; caller must not free
-esp_err_t nand_emul_get_byte_deltas(spi_nand_flash_device_t *handle,
-                                    uint32_t page_num,
-                                    byte_delta_metadata_t **out_deltas,
-                                    uint16_t *out_count);
 ```
 
 For blocks/pages that have never been erased or written, `nand_emul_get_block_wear()` and `nand_emul_get_page_wear()` SHALL return `ESP_OK` and SHALL fill `out` with a zeroed metadata structure (no error).
@@ -359,7 +332,6 @@ For blocks/pages that have never been erased or written, `nand_emul_get_block_we
 typedef struct {
     size_t initial_capacity;  // Initial hash table size (0 = auto)
     float  load_factor;       // Rehash threshold (default 0.75)
-    bool   track_byte_deltas; // Enable byte-level delta tracking
     // When true, backend exposes non-NULL get_histograms (same iteration cost as a full stats sweep)
     bool   enable_histogram_query;
 } sparse_hash_backend_config_t;
@@ -371,15 +343,11 @@ extern const nand_metadata_backend_ops_t nand_sparse_hash_backend;
 **Design**: 
 
 - Two primary hash tables: `block_num → block_metadata_t`, `page_num → page_metadata_t`
-- Byte-level: Delta encoding from page aggregate (only track outlier bytes)
-  - Page programmed 47 times → most bytes written 47 times (implicit)
-  - Byte at offset 0x10 written 53 times → store delta: `{offset: 0x10, delta: +6}`
 - Memory usage: 
   - Block metadata: O(written_blocks) ≈ 64 bytes/block
-  - Page metadata: O(written_pages) ≈ 40–56 bytes/page (layout includes read counters; exact size is `sizeof(page_metadata_t)`)
-  - Byte deltas: O(outlier_bytes) ≈ 12 bytes/outlier
-  - **32MB flash**: ~512KB (blocks) + ~512KB (pages) + ~50KB (deltas) ≈ **1.1MB** (3% of flash size)
-  - **128MB flash**: ~2MB (blocks) + ~2MB (pages) + ~200KB (deltas) ≈ **4.2MB** (3% of flash size)
+  - Page metadata: O(written_pages) ≈ 40–48 bytes/page (layout includes read counters; exact size is `sizeof(page_metadata_t)`)
+  - **32MB flash**: ~512KB (blocks) + ~512KB (pages) ≈ **1MB** (≈3% of flash size)
+  - **128MB flash**: ~2MB (blocks) + ~2MB (pages) ≈ **4MB** (≈3% of flash size)
 
 #### Built-in Failure Models
 
@@ -434,7 +402,7 @@ Header (64 bytes, aligned):
 ┌────────────────────────────────────────────────┐
 │ Magic: 0x4E414E44 ("NAND")         4 bytes     │
 │ Version: 0x01                      1 byte      │
-│ Flags: [byte|page|block tracking]  1 byte      │
+│ Flags: [page|block tracking]         1 byte      │
 │ Reserved                           2 bytes     │
 │ Timestamp: uint64_t                8 bytes     │
 │ Total blocks: uint32_t             4 bytes     │
@@ -442,10 +410,9 @@ Header (64 bytes, aligned):
 │ Page size: uint32_t                4 bytes     │
 │ Block metadata count: uint32_t     4 bytes     │
 │ Page metadata count: uint32_t      4 bytes     │
-│ Byte delta count: uint32_t         4 bytes     │
 │ Block metadata offset: uint64_t    8 bytes     │
 │ Page metadata offset: uint64_t     8 bytes     │
-│ Byte delta offset: uint64_t        8 bytes     │
+│ Reserved: uint32_t[2]              8 bytes     │
 │ Checksum (CRC32): uint32_t    4 bytes     │  ← CRC32 of header only (bytes 0..59)
 └────────────────────────────────────────────────┘
 
@@ -469,18 +436,9 @@ Page Metadata Section (variable):
   - read_count_total: uint32_t     (folded lifetime component; see design.md)
   - first_program_ts: uint64_t
   - last_program_ts: uint64_t
-  - byte_delta_count: uint16_t
-  - byte_delta_offset: uint32_t (relative offset in byte delta section)
-  - (padding): 2 bytes
-  TOTAL: 40 bytes per page on-disk record (program_count_total remains in-memory in sparse backend; see design.md snapshot serialization)
-
-Byte Delta Section (variable):
-  For each outlier byte (compressed):
-  - page_num: uint32_t
-  - byte_offset: uint16_t
-  - write_count_delta: int16_t
-  - last_write_ts: uint64_t
-  TOTAL: 16 bytes per delta
+  - program_count_total: uint32_t (lifetime component; see design.md)
+  - (padding): uint32_t
+  TOTAL: 40 bytes per page on-disk record
 ```
 
 **Snapshot integrity and versioning**:
@@ -489,13 +447,13 @@ Byte Delta Section (variable):
 
 **Snapshot Size Estimates**:
 
-- 32MB flash, 10% blocks written, 1% byte outliers: ~500KB per snapshot
-- 128MB flash, 10% blocks written, 1% byte outliers: ~2MB per snapshot
+- 32MB flash, 10% blocks written: ~500KB per snapshot
+- 128MB flash, 10% blocks written: ~2MB per snapshot
 - 100 snapshots for lifetime simulation: 50MB - 200MB total
 
 **Snapshot Scope**:
 
-- Snapshots contain **metadata only** (erase counts, timestamps, byte deltas)
+- Snapshots contain **metadata only** (erase counts, timestamps, page/block counters)
 - Snapshots do **NOT** contain flash data (actual memory contents)
 - Use case: Analyze wear patterns at different points in simulation
 - Note: To checkpoint full simulation state including flash data, separately save the mmap file
@@ -519,7 +477,7 @@ nand_emul_advanced_config_t cfg = {
     },
     .metadata_backend = &nand_sparse_hash_backend,
     .metadata_backend_config = &(sparse_hash_backend_config_t){
-        .track_byte_deltas = true
+        .enable_histogram_query = true
     },
     .failure_model = &nand_probabilistic_failure_model,
     .failure_model_config = &(probabilistic_failure_config_t){
@@ -529,8 +487,7 @@ nand_emul_advanced_config_t cfg = {
         .random_seed = 12345  // Reproducible
     },
     .track_block_level = true,
-    .track_page_level = true,
-    .track_byte_level = true
+    .track_page_level = true
 };
 
 nand_emul_advanced_init(&dev, &cfg);
@@ -595,7 +552,6 @@ typedef struct {
         // Configuration
         bool track_block_level;
         bool track_page_level;
-        bool track_byte_level;
         
         // Timestamp source
         uint64_t (*get_timestamp)(void);
@@ -669,74 +625,9 @@ esp_err_t nand_emul_erase_block(spi_nand_flash_device_t *handle, size_t offset)
 }
 ```
 
-**Example: `nand_emul_write()` with byte delta tracking**
+**Example: `nand_emul_write()` with page program tracking**
 
-```c
-esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset, 
-                          const void *data, size_t len)
-{
-    nand_mmap_emul_handle_t *emul = handle->emul_handle;
-    
-    // Existing validation
-    if (emul->mem_file_buf == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    // Advanced: Check failure model before operation
-    if (emul->advanced && emul->advanced->failure_ops) {
-        // Build context and check for failure
-        // ... (similar to erase example)
-    }
-    
-    // Perform write
-    void *dst_addr = emul->mem_file_buf + offset;
-    memcpy(dst_addr, data, len);
-    
-    // Advanced: Track metadata after successful operation
-    if (emul->advanced && emul->advanced->metadata_ops) {
-        uint64_t timestamp = emul->advanced->get_timestamp();
-        uint32_t page_size = handle->chip.page_size;
-        
-        // Calculate affected pages
-        uint32_t first_page = offset / page_size;
-        uint32_t last_page = (offset + len - 1) / page_size;
-        
-        for (uint32_t page_num = first_page; page_num <= last_page; page_num++) {
-            // Track page program
-            if (emul->advanced->track_page_level) {
-                emul->advanced->metadata_ops->on_page_program(
-                    emul->advanced->metadata_handle, page_num, timestamp);
-            }
-            
-            // Track byte-level deltas (conservative approach)
-            if (emul->advanced->track_byte_level) {
-                size_t page_start = page_num * page_size;
-                size_t write_start = (offset > page_start) ? offset : page_start;
-                size_t write_end = ((offset + len) < (page_start + page_size)) 
-                                   ? (offset + len) : (page_start + page_size);
-                
-                uint16_t byte_offset_in_page = write_start - page_start;
-                size_t write_len = write_end - write_start;
-                
-                // Record byte range write (backend will create deltas if needed)
-                emul->advanced->metadata_ops->on_byte_write_range(
-                    emul->advanced->metadata_handle, 
-                    page_num, byte_offset_in_page, write_len, timestamp);
-            }
-        }
-    }
-    
-    // Existing stats
-#ifdef CONFIG_NAND_ENABLE_STATS
-    emul->stats.write_ops++;
-    emul->stats.write_bytes += len;
-#endif
-    
-    return ESP_OK;
-}
-```
-
-**Backend optimization**: The sparse hash backend compares byte write counts against page program count. If all bytes in a page have the same count as the page, no deltas are stored (zero-delta optimization).
+After a successful `memcpy` into emulated flash, if advanced tracking and `track_page_level` are enabled, the core iterates affected logical pages and calls `on_page_program()` once per page with a single timestamp for the operation (see `design.md`).
 
 ## Implementation Plan
 
@@ -760,8 +651,7 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 ### Phase 3: Integration with Core Operations (Week 2)
 
 - Modify `nand_emul_erase_block()` to call metadata backend and failure model
-- Modify `nand_emul_write()` to track page programs and byte-level deltas
-- Detect partial page programs and record byte deltas automatically
+- Modify `nand_emul_write()` to track page programs per affected page
 - Modify `nand_emul_read()` to call failure model for corruption injection
 - Add timestamp generation (monotonic counter by default)
 - Integration tests: run existing NAND tests, verify backward compatibility
@@ -770,7 +660,6 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 
 - Implement `nand_emul_get_block_wear()`
 - Implement `nand_emul_get_page_wear()`
-- Implement `nand_emul_get_byte_deltas()`
 - Implement `nand_emul_get_wear_stats()` (including WAF fields and `logical_write_bytes_recorded`)
 - Implement `nand_emul_get_wear_histograms()` and sparse `get_histograms()` when `enable_histogram_query`
 - Implement `nand_emul_record_logical_write()` on the mmap handle (merged into stats on `get_wear_stats`)
@@ -789,9 +678,8 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 
 ### Phase 6: Wear Lifetime Simulation (Week 3-4)
 
-- Add byte-level delta tracking to sparse hash backend
-- Optimize delta encoding for memory efficiency (target: <5% overhead)
-- Implement snapshot compression/optimization
+- Validate sparse hash memory usage (target: <5% of emulated flash size for typical sparsity)
+- Implement snapshot compression/optimization (optional)
 - Create wear simulation example: 10K cycles with periodic snapshots
 - Performance tests: measure operation overhead with full tracking
 - Benchmark: simulate 32MB flash lifetime in <5 minutes
@@ -802,7 +690,7 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 - Comprehensive unit tests: 80%+ code coverage
 - Wear leveling validation test: write to random blocks, verify even distribution
 - Failure injection test: configure threshold model, verify operations fail after limit
-- Memory efficiency test: verify sparse storage with deltas uses <5% of flash size
+- Memory efficiency test: verify sparse block/page metadata uses <5% of flash size for typical workloads
 - Snapshot roundtrip test: save, load, verify metadata integrity
 - Lifetime simulation test: 10K cycles, 100 snapshots, analyze wear progression
 - API documentation with Doxygen comments
@@ -849,29 +737,15 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
       else TEST_ASSERT_EQUAL(ESP_ERR_FLASH_OP_FAIL, ret);
   }
   ```
-- **Memory Efficiency with Byte Deltas**:
+- **Memory efficiency (sparse metadata)**:
   ```c
-  // Write workload with 10% partial page programs, verify delta encoding efficiency
-  // Dense byte tracking would need: 32MB × 16 bytes/byte = 512MB
-  // Delta encoding should use: <10MB for typical workload
+  // After a bounded random workload, heap growth for metadata should stay << emulated flash size
   size_t initial_heap = esp_get_free_heap_size();
-
-  // Simulate workload: 1000 full page writes + 100 partial page writes
   for (int i = 0; i < 1000; i++) {
       write_full_page(handle, random_page());
   }
-  for (int i = 0; i < 100; i++) {
-      write_partial_page(handle, random_page(), 64);  // Only OOB area
-  }
-
   size_t used_heap = initial_heap - esp_get_free_heap_size();
-  TEST_ASSERT_LESS_THAN(10 * 1024 * 1024, used_heap);  // <10MB
-
-  // Verify deltas were tracked
-  byte_delta_metadata_t *deltas;
-  uint16_t count;
-  nand_emul_get_byte_deltas(handle, partial_page_num, &deltas, &count);
-  TEST_ASSERT_GREATER_THAN(0, count);  // Partial writes created deltas
+  TEST_ASSERT_LESS_THAN(10 * 1024 * 1024, used_heap);  // host-test budget; tune per flash size
   ```
 - **Snapshot Integrity**:
   ```c
@@ -898,8 +772,8 @@ esp_err_t nand_emul_write(spi_nand_flash_device_t *handle, size_t offset,
 
 ### Performance Benchmarks
 
-- Measure overhead of tracking at block/page/byte granularity
-- Target: <5% performance degradation for block+page tracking, <15% for byte delta tracking
+- Measure overhead of tracking at block and page granularity
+- Target: <5% performance degradation for block+page tracking
 - Snapshot performance: <10ms save, <20ms load for 32MB flash
 - Lifetime simulation: <5 minutes for 10K cycles on 32MB flash (single-core)
 
@@ -918,10 +792,10 @@ nand_file_mmap_emul_config_t cfg = {
 nand_emul_init(&dev, &cfg);
 ```
 
-### Opt-in to Advanced Features with Byte Tracking
+### Opt-in to Advanced Features
 
 ```c
-// New code can use advanced features with byte-level delta tracking
+// New code can use advanced block/page metadata and optional failure models
 spi_nand_flash_device_t dev;
 nand_emul_advanced_config_t adv_cfg = {
     .base_config = {
@@ -931,7 +805,7 @@ nand_emul_advanced_config_t adv_cfg = {
     },
     .metadata_backend = &nand_sparse_hash_backend,
     .metadata_backend_config = &(sparse_hash_backend_config_t){
-        .track_byte_deltas = true  // Enable delta encoding
+        .enable_histogram_query = true
     },
     .failure_model = &nand_probabilistic_failure_model,
     .failure_model_config = &(probabilistic_failure_config_t){
@@ -941,8 +815,7 @@ nand_emul_advanced_config_t adv_cfg = {
         .random_seed = 12345
     },
     .track_block_level = true,
-    .track_page_level = true,
-    .track_byte_level = true  // Track byte deltas automatically
+    .track_page_level = true
 };
 nand_emul_advanced_init(&dev, &adv_cfg);
 
@@ -969,8 +842,8 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 ## Success Criteria
 
 1. **Backward Compatibility**: All existing host tests pass without modification
-2. **Memory Efficiency**: Delta-encoded byte tracking uses <5% of flash size for typical workloads (vs. 1600% for dense)
-3. **Performance**: <5% overhead for block+page tracking, <15% for byte delta tracking
+2. **Memory Efficiency**: Sparse block/page metadata uses <5% of emulated flash size for typical workloads
+3. **Performance**: <5% overhead for block+page tracking
 4. **Snapshot Performance**: <10ms save, <20ms load for 32MB flash
 5. **Simulation Performance**: 10K cycle simulation completes in <5 minutes (32MB, single-core)
 6. **Code Coverage**: >80% unit test coverage for new code
@@ -986,10 +859,9 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 
 ## Resolved Design Decisions
 
-1. **Byte-level tracking approach**: Delta encoding from page-level aggregate
-  - **Decision**: Store only deltas for bytes that differ from page program count
-  - **Rationale**: 95% memory savings vs. dense tracking; most bytes in a page are written together
-  - **Memory**: ~3-5MB for 32MB flash vs. 512MB for dense tracking
+1. **Wear tracking granularity**: Block and page only
+  - **Decision**: Metadata tracks erase/program/read stress at **block** and **page** resolution. There is **no** per-byte write history or delta table in this change.
+  - **Rationale**: Matches typical NAND wear accounting (one program per page per erase cycle); keeps memory and API surface smaller while preserving histograms, snapshots, and failure-model context.
 2. **Persistence format**: Binary snapshots + JSON export
   - **Decision**: Binary for snapshots (fast, compact), JSON for analysis (human-readable)
   - **Rationale**: Snapshots enable time-series wear simulation; JSON enables plotting/graphing
@@ -1001,44 +873,35 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 4. **Simulation scale**: Target 10,000 cycles for validation (10% of lifetime)
   - **Decision**: Optimize for 10K cycles in <5 minutes; support 100K cycles overnight
   - **Rationale**: 10K cycles sufficient to validate wear leveling; 100K available if needed
-5. **Partial page write detection**: Always track deltas when byte-level enabled (conservative)
-  - **Decision**: Every write operation creates byte deltas; backend optimizes away zero-deltas
-  - **Rationale**: Simple implementation, never misses partial writes, backend handles optimization
-  - **Implementation**: Write handler records all byte ranges; backend compares against page program count
 
 ### Resolved Edge Cases
 
-6. **`wear_leveling_variation` when no blocks erased (avg = 0)**
+5. **`wear_leveling_variation` when no blocks erased (avg = 0)**
   - **Question**: Formula `(max - min) / avg` divides by zero when no block has been erased.
   - **Decision**: When `avg_block_erases == 0` (or no block has been erased), `wear_leveling_variation` SHALL be 0.0. Pristine flash has no variation.
   - **Rationale**: Matches "Statistics for pristine flash"; avoids undefined behavior; 0.0 is the correct semantic (no spread).
 
-7. **`is_block_bad` (failure model) vs `nand_emul_mark_bad_block` (explicit mark)**
+6. **`is_block_bad` (failure model) vs `nand_emul_mark_bad_block` (explicit mark)**
   - **Question**: How do the two sources of "bad block" combine?
   - **Decision**: A block is considered bad if **either** (a) it was explicitly marked via `nand_emul_mark_bad_block` / backend `set_bad_block`, or (b) the failure model's `is_block_bad()` returns true. When the failure model returns true, the core SHALL call the backend's `set_bad_block(block_num, true)` so metadata reflects the status. The core operation handler SHALL then immediately return `ESP_ERR_FLASH_BAD_BLOCK` and SHALL NOT modify flash contents or update other metadata. Explicit mark and model-driven mark are equivalent once set.
   - **Rationale**: Single source of truth in metadata; both paths update the same flag; bad block enforcement is in the core layer (unconditional), not delegated to the failure model.
 
-8. **Lifetime of `page_metadata_t.byte_deltas` and `get_byte_deltas` pointer**
-  - **Question**: How long is the pointer returned in `get_page_info()` / `get_byte_deltas()` valid?
-  - **Decision**: The pointer is **owned by the backend**. It is valid until the next call to any metadata backend operation or emulator API that may modify metadata (e.g. write, erase, snapshot load), or until `nand_emul_deinit()`. Callers SHALL NOT free it; they may copy or use the data within that scope only.
-  - **Rationale**: Allows backend to use internal storage; avoids forcing a copy on every query.
-
-9. **Snapshot checksum (CRC32) scope**
+7. **Snapshot checksum (CRC32) scope**
   - **Question**: CRC32 covers header only or entire file?
   - **Decision**: CRC32 SHALL cover **the snapshot header only** (the first 60 bytes, excluding the 4-byte checksum field). On load, the backend SHALL verify the checksum over the same range and SHALL return an error if it does not match.
   - **Rationale**: Header-only CRC is computable at header-write time without buffering the entire file. The header contains offsets and counts that describe the payload, so a corrupt payload (changed counts or offsets) is detectable via the header checksum.
 
-10. **Snapshot format versioning**
+8. **Snapshot format versioning**
   - **Question**: How to handle unknown or future snapshot versions?
   - **Decision**: The loader SHALL accept only version 1. For any other version field value, `load_snapshot()` SHALL return `ESP_ERR_NOT_SUPPORTED` and SHALL NOT modify backend state. Future versions may define backward compatibility in later specs.
   - **Rationale**: Prevents misinterpreting unknown formats; allows format evolution with explicit support.
 
-11. **`corrupt_read_data` buffer contract**
+9. **`corrupt_read_data` buffer contract**
   - **Question**: May the failure model corrupt only a subset of bytes? May it change length?
   - **Decision**: `data` is the read buffer; `len` is the number of bytes read (unchanged by the model). The model MAY flip bits (or otherwise corrupt) any subset of bytes in the range `[0, len)`. The model SHALL NOT write outside `[0, len)` and SHALL NOT assume it can change `len` or reallocate the buffer.
   - **Rationale**: Simulates bit errors in place; keeps API simple and safe.
 
-12. **Page program history across erase cycles**
+10. **Page program history across erase cycles**
   - **Question**: Should `program_count` accumulate across all erase cycles, or only track the current cycle?
   - **Decision**: `page_metadata_t` SHALL have two counters:
     - `program_count` — number of programs **in the current erase cycle** (reset to 0 when the block is erased)
@@ -1046,11 +909,10 @@ printf("Max block erases: %u\n", stats.max_block_erases);
   - `block_metadata_t` SHALL have two corresponding aggregate counters:
     - `total_page_programs` — aggregate page programs across all pages in this block **in the current erase cycle** (reset to 0 when the block is erased)
     - `total_page_programs_total` — **lifetime cumulative** aggregate across all cycles (never reset)
-  - Byte deltas (`byte_deltas`, `byte_delta_count`) track the current erase cycle only (freed and reset to NULL/0 on block erase).
   - `first_program_timestamp` and `last_program_timestamp` track the **current cycle**; lifetime-first and lifetime-last can be derived from block data if needed.
-  - **Rationale**: `program_count` (per-cycle) is what makes delta encoding semantically correct — `write_count_delta` means "this byte was written N more times than the page in this cycle." `program_count_total` and `total_page_programs_total` add the historical view without breaking the delta math.
+  - **Rationale**: Per-cycle counts model “fresh” wear since last erase; lifetime totals support failure models and long-run analytics.
 
-13. **Page read counting and read-disturb inputs**
+11. **Page read counting and read-disturb inputs**
   - **Question**: How should the emulator represent read stress for failure models (read disturb, retention vs read)?
   - **Decision**: `page_metadata_t` SHALL include `read_count` and `read_count_total` using the **same fold-on-erase rule** as program counters: each successful read that overlaps a page increments `read_count`; on `on_block_erase`, `read_count_total += read_count` then `read_count = 0`. Lifetime reads for a page are `read_count_total + read_count`. The metadata backend SHALL expose `on_page_read()` (optional NULL). The core SHALL call it once per overlapped page after a successful read and when page-level tracking is enabled. Failure models MAY use same-page lifetime reads only, or consult neighbor pages via `get_page_info()` when `read_disturb_use_neighbors` is set. Neighbor/word-line geometry beyond ±1 page is **not** modeled in metadata (future extension).
   - **Rationale**: Monotonic read stress signal without per-byte read storage; aligns with existing erase-cycle bookkeeping; enables probabilistic read-disturb in `corrupt_read_data`.
@@ -1060,9 +922,7 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 1. **ECC simulation**: Should we track ECC errors separately from bit flips?
   - Current: Bit flips injected by failure model are returned directly
   - Future: Could add ECC correction layer with `ecc_corrected_errors` counter
-2. **Address range filtering**: Should byte tracking support address ranges (e.g., only OOB)?
-  - Current: Delta encoding makes full-page tracking efficient enough
-  - Future: Could add `track_address_range(start, end)` if needed for optimization
+2. **Per-byte wear or partial-page physics**: Optional future extension if a workload needs sub-page stress modeling beyond page-level program counts.
 3. **Integration with existing `CONFIG_NAND_ENABLE_STATS`**: Merge or keep separate?
   - Decision: Keep separate; advanced tracking is much richer than simple counters
 
@@ -1076,6 +936,7 @@ printf("Max block erases: %u\n", stats.max_block_erases);
 ## Changelog
 
 - **2026-03-16**: Initial proposal
-- **2026-03-16**: Updated with delta-encoded byte tracking, binary snapshot format, and wear simulation design
+- **2026-03-16**: Updated with binary snapshot format and wear simulation design
+- **2026-03-24**: Removed per-byte delta metadata; wear tracking is block + page only
 - **2026-03-20**: Added per-page read counters (`read_count` / `read_count_total`), `on_page_read` backend hook, aggregate read stats, optional probabilistic read-disturb parameters, and snapshot fields for read totals
 

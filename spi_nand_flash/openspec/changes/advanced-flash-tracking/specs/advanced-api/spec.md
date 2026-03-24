@@ -29,19 +29,10 @@ The system SHALL define `nand_emul_advanced_config_t` structure that extends bas
 - **THEN** those settings SHALL be used for underlying file mmap emulation
 - **AND** SHALL support all existing `nand_file_mmap_emul_config_t` fields
 
-#### Scenario: Configure tracking granularity with byte deltas
-- **WHEN** config specifies `track_block_level = true, track_page_level = true, track_byte_level = true`
-- **THEN** emulator SHALL track blocks, pages, and byte-level deltas
-- **AND** SHALL use delta encoding for byte tracking (not dense per-byte metadata)
-- **AND** SHALL pass granularity settings to metadata backend
-
-#### Scenario: track_byte_level is the master control for byte tracking
-- **WHEN** `nand_emul_advanced_config_t.track_byte_level = false`
-- **THEN** the emulator SHALL NOT call `on_byte_write_range()` on the backend regardless of the backend's own `track_byte_deltas` configuration flag
-- **AND** no byte-level deltas SHALL be created
-- **WHEN** `track_byte_level = true`
-- **THEN** the emulator SHALL call `on_byte_write_range()` for every write; the backend then decides whether to create delta entries based on its own `track_byte_deltas` flag
-- **AND** if the backend's `track_byte_deltas = false`, the backend SHALL return `ESP_ERR_NOT_SUPPORTED` from `on_byte_write_range()` and the emulator SHALL silently skip byte-level tracking
+#### Scenario: Configure block and page tracking
+- **WHEN** config specifies `track_block_level = true` and `track_page_level = true`
+- **THEN** emulator SHALL invoke block erase and page program metadata callbacks per `integration` spec
+- **AND** wear accounting SHALL be at block and page granularity only (no per-byte history in this change)
 
 ### Requirement: Custom timestamp source
 The system SHALL allow developers to provide custom timestamp function for metadata.
@@ -89,12 +80,6 @@ The system SHALL validate advanced configuration before initialization.
 - **WHEN** config provides metadata backend with NULL required function pointers
 - **THEN** `nand_emul_advanced_init()` SHALL return `ESP_ERR_INVALID_ARG`
 - **AND** SHALL log descriptive error message
-
-#### Scenario: Incompatible tracking settings
-- **WHEN** `track_byte_level = true` but backend does not support byte delta tracking
-- **THEN** initialization SHALL succeed with warning
-- **AND** byte delta tracking SHALL be silently disabled
-- **AND** page-level tracking SHALL continue to function
 
 ### Requirement: Device geometry caching
 The system SHALL cache device geometry in advanced tracking structure for efficient access.
@@ -147,7 +132,7 @@ The system SHALL support snapshot save/load operations for wear lifetime simulat
 #### Scenario: Load snapshot to restore state
 - **WHEN** developer calls `nand_emul_load_snapshot()` with valid snapshot file
 - **THEN** function SHALL delegate to metadata backend's `load_snapshot()` callback
-- **AND** SHALL restore all block, page, and byte delta metadata
+- **AND** SHALL restore all block and page metadata
 - **AND** SHALL return `ESP_OK` on success
 
 #### Scenario: Snapshot without advanced tracking
@@ -174,10 +159,5 @@ The system SHALL provide JSON export for analysis and visualization.
 - **AND** developer calls `nand_emul_export_json()`
 - **THEN** function SHALL return `ESP_ERR_NOT_SUPPORTED`
 
-### Requirement: Query API pointer lifetime
-The system SHALL document that pointers returned by `nand_emul_get_byte_deltas()` and by `get_page_info()` (e.g. `page_metadata_t.byte_deltas`) are owned by the backend and valid only until the next metadata-modifying operation or deinit; callers SHALL NOT free them.
-
-#### Scenario: Byte deltas pointer use
-- **WHEN** developer calls `nand_emul_get_byte_deltas()` and receives `out_deltas` and `out_count`
-- **THEN** the pointer SHALL remain valid until the next write, erase, snapshot load, or deinit
-- **AND** caller SHALL NOT free the pointer; caller MAY copy the data for longer use
+### Requirement: Query API consistency
+The system SHALL document that `nand_emul_get_page_wear()` and related queries return page metadata fields (counters, timestamps) by copy into caller-provided structs; implementations SHALL NOT require the caller to free nested pointers for page wear data in this change.
