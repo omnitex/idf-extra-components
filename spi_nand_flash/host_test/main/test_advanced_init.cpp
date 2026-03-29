@@ -54,3 +54,41 @@ TEST_CASE("advanced field is NULL after normal nand_emul_init", "[advanced][adva
 
     REQUIRE(spi_nand_flash_deinit_device(dev) == ESP_OK);
 }
+
+TEST_CASE("advanced init with no-op backend and failure model succeeds", "[advanced][advanced-init]")
+{
+    nand_emul_advanced_config_t cfg = {};
+    cfg.base_config = {"", 32 * 1024 * 1024, true};
+    cfg.metadata_backend        = &nand_noop_backend;       // extern symbol
+    cfg.metadata_backend_config = NULL;
+    cfg.failure_model           = &nand_noop_failure_model; // extern symbol
+    cfg.failure_model_config    = NULL;
+    cfg.track_block_level = true;
+    cfg.track_page_level  = true;
+
+    spi_nand_flash_device_t *dev;
+    REQUIRE(nand_emul_advanced_init(&dev, &cfg) == ESP_OK);
+
+    // Operations must work; no-op model never fails anything
+    uint32_t block_size, sector_size;
+    REQUIRE(spi_nand_flash_get_block_size(dev, &block_size) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_sector_size(dev, &sector_size) == ESP_OK);
+
+    uint32_t pages_per_block = block_size / sector_size;
+    (void)pages_per_block;
+    REQUIRE(nand_wrap_erase_block(dev, 0) == ESP_OK);
+
+    uint8_t *buf = (uint8_t *)malloc(sector_size);
+    REQUIRE(buf != NULL);
+    memset(buf, 0xBB, sector_size);
+    REQUIRE(nand_wrap_prog(dev, 0, buf) == ESP_OK);
+
+    memset(buf, 0, sector_size);
+    REQUIRE(nand_wrap_read(dev, 0, 0, sector_size, buf) == ESP_OK);
+    // No-op failure model must not corrupt the buffer
+    REQUIRE(buf[0] == 0xBB);
+
+    free(buf);
+    REQUIRE(nand_emul_advanced_deinit(dev) == ESP_OK);
+}
+
