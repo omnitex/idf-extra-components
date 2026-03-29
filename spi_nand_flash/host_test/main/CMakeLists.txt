@@ -1,4 +1,5 @@
 idf_component_register(SRCS "test_nand_flash.cpp" "test_app_main.cpp"
+                             "test_backward_compat.cpp"
                        WHOLE_ARCHIVE
                        )
 
