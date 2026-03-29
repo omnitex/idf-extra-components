@@ -13,6 +13,7 @@ if(${target} STREQUAL "linux")
                  "src/nand_linux_mmap_emul.c"
                  "src/nand_emul_advanced.c"
                  "src/backends/noop_backend.c"
+                 "src/backends/hash_table.c"
                  "src/failure_models/noop_failure_model.c")
 else()
     list(APPEND srcs "src/nand_winbond.c"
