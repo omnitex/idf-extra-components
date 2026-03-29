@@ -11,7 +11,9 @@ set(srcs "src/nand.c"
 if(${target} STREQUAL "linux")
     list(APPEND srcs "src/nand_impl_linux.c"
                  "src/nand_linux_mmap_emul.c"
-                 "src/nand_emul_advanced.c")
+                 "src/nand_emul_advanced.c"
+                 "src/backends/noop_backend.c"
+                 "src/failure_models/noop_failure_model.c")
 else()
     list(APPEND srcs "src/nand_winbond.c"
                  "src/nand_gigadevice.c"
