@@ -36,6 +36,8 @@ typedef struct {
         size_t write_bytes;
     } stats;
 #endif
+    /** Optional advanced tracking context; NULL when initialized via normal path. */
+    void *advanced;
 } nand_mmap_emul_handle_t;
 
 // Emulated nand mmap file size
