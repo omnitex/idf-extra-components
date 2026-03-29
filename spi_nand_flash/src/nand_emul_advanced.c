@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nand_emul_advanced.h"
+#include "nand_emul_advanced_priv.h"
 #include "nand_linux_mmap_emul.h"
 #include "nand.h"
 #include "esp_log.h"
@@ -119,6 +120,14 @@ esp_err_t nand_emul_advanced_init(spi_nand_flash_device_t **dev_out,
 
     /* Initialize backend if provided */
     if (ctx->backend_ops && ctx->backend_ops->init) {
+        /* If the caller supplied a sparse_hash_backend_config_t, inject the
+         * cached pages_per_block so the backend can perform erase-fold. */
+        if (cfg->metadata_backend == &nand_sparse_hash_backend &&
+            cfg->metadata_backend_config != NULL) {
+            sparse_hash_backend_config_t *shcfg =
+                (sparse_hash_backend_config_t *)cfg->metadata_backend_config;
+            shcfg->pages_per_block = ctx->pages_per_block;
+        }
         ret = ctx->backend_ops->init(&ctx->backend_handle, cfg->metadata_backend_config);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Backend init failed: %d", ret);
@@ -352,4 +361,45 @@ esp_err_t nand_emul_export_json(spi_nand_flash_device_t *dev, const char *filena
         return ctx->backend_ops->export_json(ctx->backend_handle, filename);
     }
     return ESP_ERR_NOT_SUPPORTED;
+}
+
+/* ---------------------------------------------------------------------------
+ * Private notify API (called from nand_linux_mmap_emul.c)
+ * -------------------------------------------------------------------------*/
+
+void nand_emul_advanced_notify_erase(spi_nand_flash_device_t *dev, uint32_t block_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL) {
+        return;
+    }
+    if (ctx->backend_ops && ctx->backend_ops->on_block_erase) {
+        ctx->backend_ops->on_block_erase(ctx->backend_handle, block_num,
+                                         ctx->get_timestamp());
+    }
+}
+
+void nand_emul_advanced_notify_program(spi_nand_flash_device_t *dev, uint32_t page_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL) {
+        return;
+    }
+    if (ctx->backend_ops && ctx->backend_ops->on_page_program) {
+        ctx->backend_ops->on_page_program(ctx->backend_handle, page_num,
+                                          ctx->get_timestamp());
+    }
+    ctx->physical_bytes_written += ctx->page_size;
+}
+
+void nand_emul_advanced_notify_read(spi_nand_flash_device_t *dev, uint32_t page_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL) {
+        return;
+    }
+    if (ctx->backend_ops && ctx->backend_ops->on_page_read) {
+        ctx->backend_ops->on_page_read(ctx->backend_handle, page_num,
+                                       ctx->get_timestamp());
+    }
 }

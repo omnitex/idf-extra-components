@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include "nand_linux_mmap_emul.h"
 #include "nand.h"
+#include "nand_emul_advanced_priv.h"
 
 static const char *TAG = "linux_nandflash";
 
@@ -206,6 +207,10 @@ esp_err_t nand_emul_erase_block(spi_nand_flash_device_t *handle, size_t offset)
 #ifdef CONFIG_NAND_ENABLE_STATS
     emul_handle->stats.erase_ops++;
 #endif
+
+    /* Notify advanced tracking */
+    uint32_t block_num = (uint32_t)(offset / handle->chip.block_size);
+    nand_emul_advanced_notify_erase(handle, block_num);
 
     return ESP_OK;
 }

@@ -332,6 +332,40 @@ extern const nand_metadata_backend_ops_t nand_noop_backend;
 extern const nand_failure_model_ops_t nand_noop_failure_model;
 
 /* ---------------------------------------------------------------------------
+ * Sparse hash backend
+ * -------------------------------------------------------------------------*/
+
+/**
+ * @brief Configuration for the sparse hash metadata backend.
+ *
+ * Pass as metadata_backend_config in nand_emul_advanced_config_t when
+ * using &nand_sparse_hash_backend as the metadata_backend.
+ */
+typedef struct {
+    /** Initial hash table capacity (rounded up to next power of two). */
+    size_t initial_capacity;
+    /** Load-factor threshold at which the table rehashes (e.g. 0.75f). */
+    float  load_factor;
+    /** Reserved for future histogram query support (ignored for now). */
+    bool   enable_histogram_query;
+    /**
+     * Pages per block — populated automatically by nand_emul_advanced_init()
+     * from the device geometry.  Caller should leave this as 0; it is set
+     * before backend->init() is called.
+     */
+    uint32_t pages_per_block;
+} sparse_hash_backend_config_t;
+
+/**
+ * @brief Sparse hash metadata backend.
+ *
+ * Stores per-block and per-page metadata in two separate hash tables.
+ * Only blocks/pages that have actually been erased or programmed consume
+ * memory, making this suitable for large flash devices in host tests.
+ */
+extern const nand_metadata_backend_ops_t nand_sparse_hash_backend;
+
+/* ---------------------------------------------------------------------------
  * Advanced emulator lifecycle API
  * -------------------------------------------------------------------------*/
 

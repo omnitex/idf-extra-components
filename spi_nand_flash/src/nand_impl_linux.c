@@ -10,6 +10,7 @@
 #include "spi_nand_flash.h"
 #include "nand.h"
 #include "nand_linux_mmap_emul.h"
+#include "nand_emul_advanced_priv.h"
 
 static const char *TAG = "nand_linux";
 
@@ -76,6 +77,9 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 2,
                                         (uint8_t *)&used_marker, 2), TAG, "Error in nand_prog %d", ret);
 
+    /* Notify advanced tracking: one logical page program */
+    nand_emul_advanced_notify_program(handle, page);
+
     return ret;
 }
 
@@ -100,6 +104,9 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
 
     ESP_RETURN_ON_ERROR(nand_emul_read(handle, page * handle->chip.emulated_page_size + offset, data, length),
                         TAG, "Error in nand_read %d", ret);
+
+    /* Notify advanced tracking: one logical page read */
+    nand_emul_advanced_notify_read(handle, page);
 
     return ret;
 }
