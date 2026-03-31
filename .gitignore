@@ -8,6 +8,7 @@ dependencies.lock
 .vscode/
 .cache
 .DS_Store
+.opencode
 warnings.txt
 # Ignore artifacts for documentation build
 doxygen_output/
