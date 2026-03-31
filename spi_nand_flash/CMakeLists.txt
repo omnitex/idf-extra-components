@@ -15,7 +15,8 @@ if(${target} STREQUAL "linux")
                  "src/backends/noop_backend.c"
                  "src/backends/hash_table.c"
                  "src/backends/sparse_hash_backend.c"
-                 "src/failure_models/noop_failure_model.c")
+                 "src/failure_models/noop_failure_model.c"
+                 "src/failure_models/threshold_failure_model.c")
 else()
     list(APPEND srcs "src/nand_winbond.c"
                  "src/nand_gigadevice.c"

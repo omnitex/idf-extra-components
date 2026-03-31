@@ -332,6 +332,28 @@ extern const nand_metadata_backend_ops_t nand_noop_backend;
 extern const nand_failure_model_ops_t nand_noop_failure_model;
 
 /* ---------------------------------------------------------------------------
+ * Threshold failure model
+ * -------------------------------------------------------------------------*/
+
+/**
+ * @brief Configuration for the threshold failure model.
+ *
+ * A block fails (returns an error) after @c max_block_erases successful erases.
+ * A page fails after @c max_page_programs successful programs.
+ * When @c fail_over_limit is true the operation returns an error; otherwise the
+ * block is silently marked bad but operations succeed (useful for testing
+ * bad-block detection without hard failures).
+ */
+typedef struct {
+    uint32_t max_block_erases;   /**< Max erases before block failure (0 = never fail) */
+    uint32_t max_page_programs;  /**< Max programs before page failure (0 = never fail) */
+    bool     fail_over_limit;    /**< If true, return error; if false, mark bad silently */
+} threshold_failure_config_t;
+
+/** Threshold-based failure model. */
+extern const nand_failure_model_ops_t nand_threshold_failure_model;
+
+/* ---------------------------------------------------------------------------
  * Sparse hash backend
  * -------------------------------------------------------------------------*/
 
