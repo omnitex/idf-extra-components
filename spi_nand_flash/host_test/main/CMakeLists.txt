@@ -4,6 +4,7 @@ idf_component_register(SRCS "test_nand_flash.cpp" "test_app_main.cpp"
                              "test_advanced_init.cpp"
                              "test_hash_table.cpp"
                              "test_sparse_hash_backend.cpp"
+                             "test_integration.cpp"
                        WHOLE_ARCHIVE
                        )
 

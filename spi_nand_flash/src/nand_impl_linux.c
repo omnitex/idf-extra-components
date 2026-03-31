@@ -73,6 +73,12 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     uint16_t used_marker = 0;
     uint32_t data_offset = page * handle->chip.emulated_page_size;
 
+    /* Advanced: check failure model before programming */
+    if (nand_emul_advanced_should_fail_write(handle, page)) {
+        ESP_LOGW(TAG, "Simulated write failure at page %" PRIu32, page);
+        return ESP_ERR_FLASH_OP_FAIL;
+    }
+
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset, data, handle->chip.page_size), TAG, "Error in nand_prog %d", ret);
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 2,
                                         (uint8_t *)&used_marker, 2), TAG, "Error in nand_prog %d", ret);
@@ -102,8 +108,17 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     assert(page < handle->chip.num_blocks * (1 << handle->chip.log2_ppb));
     esp_err_t ret = ESP_OK;
 
+    /* Advanced: check failure model before reading */
+    if (nand_emul_advanced_should_fail_read(handle, page)) {
+        ESP_LOGW(TAG, "Simulated read failure at page %" PRIu32, page);
+        return ESP_ERR_FLASH_OP_FAIL;
+    }
+
     ESP_RETURN_ON_ERROR(nand_emul_read(handle, page * handle->chip.emulated_page_size + offset, data, length),
                         TAG, "Error in nand_read %d", ret);
+
+    /* Advanced: optionally corrupt the read buffer (bit-flip injection) */
+    nand_emul_advanced_corrupt_read(handle, page, data, length);
 
     /* Notify advanced tracking: one logical page read */
     nand_emul_advanced_notify_read(handle, page);

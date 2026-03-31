@@ -403,3 +403,155 @@ void nand_emul_advanced_notify_read(spi_nand_flash_device_t *dev, uint32_t page_
                                        ctx->get_timestamp());
     }
 }
+
+/* ---------------------------------------------------------------------------
+ * Private failure-check API (called before operations in emul layer)
+ * -------------------------------------------------------------------------*/
+
+bool nand_emul_advanced_should_fail_erase(spi_nand_flash_device_t *dev,
+                                          uint32_t block_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL || ctx->failure_ops == NULL) {
+        return false;
+    }
+    if (ctx->failure_ops->should_fail_erase == NULL) {
+        return false;
+    }
+
+    /* Build operation context with current block metadata */
+    block_metadata_t bm = {};
+    if (ctx->backend_ops && ctx->backend_ops->get_block_info) {
+        ctx->backend_ops->get_block_info(ctx->backend_handle, block_num, &bm);
+    }
+
+    nand_operation_context_t op = {
+        .block_num       = block_num,
+        .page_num        = block_num * ctx->pages_per_block,
+        .timestamp       = ctx->get_timestamp(),
+        .total_blocks    = ctx->total_blocks,
+        .pages_per_block = ctx->pages_per_block,
+        .page_size       = ctx->page_size,
+        .block_meta      = &bm,
+        .page_meta       = NULL,
+    };
+
+    bool fail = ctx->failure_ops->should_fail_erase(ctx->failure_handle, &op);
+
+    if (fail) {
+        /* If the model also marks the block bad, persist that in the backend */
+        if (ctx->failure_ops->is_block_bad &&
+            ctx->failure_ops->is_block_bad(ctx->failure_handle, block_num, &bm) &&
+            ctx->backend_ops && ctx->backend_ops->set_bad_block) {
+            ctx->backend_ops->set_bad_block(ctx->backend_handle, block_num, true);
+        }
+    }
+
+    return fail;
+}
+
+bool nand_emul_advanced_should_fail_write(spi_nand_flash_device_t *dev,
+                                          uint32_t page_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL || ctx->failure_ops == NULL ||
+        ctx->failure_ops->should_fail_write == NULL) {
+        return false;
+    }
+
+    uint32_t block_num = (ctx->pages_per_block > 0)
+                         ? page_num / ctx->pages_per_block : 0;
+
+    block_metadata_t bm = {};
+    page_metadata_t  pm = {};
+    if (ctx->backend_ops) {
+        if (ctx->backend_ops->get_block_info)
+            ctx->backend_ops->get_block_info(ctx->backend_handle, block_num, &bm);
+        if (ctx->backend_ops->get_page_info)
+            ctx->backend_ops->get_page_info(ctx->backend_handle, page_num, &pm);
+    }
+
+    nand_operation_context_t op = {
+        .block_num       = block_num,
+        .page_num        = page_num,
+        .timestamp       = ctx->get_timestamp(),
+        .total_blocks    = ctx->total_blocks,
+        .pages_per_block = ctx->pages_per_block,
+        .page_size       = ctx->page_size,
+        .block_meta      = &bm,
+        .page_meta       = &pm,
+    };
+
+    return ctx->failure_ops->should_fail_write(ctx->failure_handle, &op);
+}
+
+bool nand_emul_advanced_should_fail_read(spi_nand_flash_device_t *dev,
+                                         uint32_t page_num)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL || ctx->failure_ops == NULL ||
+        ctx->failure_ops->should_fail_read == NULL) {
+        return false;
+    }
+
+    uint32_t block_num = (ctx->pages_per_block > 0)
+                         ? page_num / ctx->pages_per_block : 0;
+
+    block_metadata_t bm = {};
+    page_metadata_t  pm = {};
+    if (ctx->backend_ops) {
+        if (ctx->backend_ops->get_block_info)
+            ctx->backend_ops->get_block_info(ctx->backend_handle, block_num, &bm);
+        if (ctx->backend_ops->get_page_info)
+            ctx->backend_ops->get_page_info(ctx->backend_handle, page_num, &pm);
+    }
+
+    nand_operation_context_t op = {
+        .block_num       = block_num,
+        .page_num        = page_num,
+        .timestamp       = ctx->get_timestamp(),
+        .total_blocks    = ctx->total_blocks,
+        .pages_per_block = ctx->pages_per_block,
+        .page_size       = ctx->page_size,
+        .block_meta      = &bm,
+        .page_meta       = &pm,
+    };
+
+    return ctx->failure_ops->should_fail_read(ctx->failure_handle, &op);
+}
+
+void nand_emul_advanced_corrupt_read(spi_nand_flash_device_t *dev,
+                                     uint32_t page_num,
+                                     uint8_t *data, size_t len)
+{
+    nand_advanced_context_t *ctx = get_ctx(dev);
+    if (ctx == NULL || ctx->failure_ops == NULL ||
+        ctx->failure_ops->corrupt_read_data == NULL) {
+        return;
+    }
+
+    uint32_t block_num = (ctx->pages_per_block > 0)
+                         ? page_num / ctx->pages_per_block : 0;
+
+    block_metadata_t bm = {};
+    page_metadata_t  pm = {};
+    if (ctx->backend_ops) {
+        if (ctx->backend_ops->get_block_info)
+            ctx->backend_ops->get_block_info(ctx->backend_handle, block_num, &bm);
+        if (ctx->backend_ops->get_page_info)
+            ctx->backend_ops->get_page_info(ctx->backend_handle, page_num, &pm);
+    }
+
+    nand_operation_context_t op = {
+        .block_num       = block_num,
+        .page_num        = page_num,
+        .timestamp       = ctx->get_timestamp(),
+        .total_blocks    = ctx->total_blocks,
+        .pages_per_block = ctx->pages_per_block,
+        .page_size       = ctx->page_size,
+        .block_meta      = &bm,
+        .page_meta       = &pm,
+    };
+
+    ctx->failure_ops->corrupt_read_data(ctx->failure_handle, &op, data, len);
+}

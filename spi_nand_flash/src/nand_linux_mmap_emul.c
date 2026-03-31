@@ -201,6 +201,13 @@ esp_err_t nand_emul_erase_block(spi_nand_flash_device_t *handle, size_t offset)
         return ESP_ERR_INVALID_SIZE;
     }
 
+    /* Advanced: check failure model before erasing */
+    uint32_t block_num_check = (uint32_t)(offset / handle->chip.block_size);
+    if (nand_emul_advanced_should_fail_erase(handle, block_num_check)) {
+        ESP_LOGW(TAG, "Simulated erase failure at block %" PRIu32, block_num_check);
+        return ESP_ERR_FLASH_OP_FAIL;
+    }
+
     void *dst_addr = emul_handle->mem_file_buf + offset;
     memset(dst_addr, 0xFF,  handle->chip.block_size);
 
