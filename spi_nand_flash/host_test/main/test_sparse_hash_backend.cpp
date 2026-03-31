@@ -19,6 +19,7 @@
 #include <catch2/catch_approx.hpp>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 /* --------------------------------------------------------------------------
  * Shared fixture helper
@@ -233,4 +234,47 @@ TEST_CASE("iterate_worn_blocks visits all erased blocks",
 
     REQUIRE(count == 5);
     REQUIRE(nand_emul_advanced_deinit(dev) == ESP_OK);
+}
+
+/* --------------------------------------------------------------------------
+ * P4.T11-T12: JSON export
+ * -------------------------------------------------------------------------- */
+
+TEST_CASE("export_json creates a non-empty JSON file starting with '{'",
+          "[advanced][sparse-backend][json]")
+{
+    spi_nand_flash_device_t *dev = make_advanced_dev_with_sparse_backend();
+
+    // Perform some operations so there's data to export
+    REQUIRE(nand_wrap_erase_block(dev, 0) == ESP_OK);
+    REQUIRE(nand_wrap_erase_block(dev, 1) == ESP_OK);
+    REQUIRE(nand_wrap_erase_block(dev, 1) == ESP_OK);
+
+    const char *path = "/tmp/test_nand_export.json";
+    REQUIRE(nand_emul_export_json(dev, path) == ESP_OK);
+
+    FILE *fp = fopen(path, "r");
+    REQUIRE(fp != NULL);
+    fseek(fp, 0, SEEK_END);
+    long sz = ftell(fp);
+    rewind(fp);
+    int first = fgetc(fp);
+    fclose(fp);
+
+    REQUIRE(sz > 0);
+    REQUIRE(first == '{');
+
+    remove(path);
+    REQUIRE(nand_emul_advanced_deinit(dev) == ESP_OK);
+}
+
+TEST_CASE("export_json returns INVALID_STATE without advanced init",
+          "[advanced][sparse-backend][json]")
+{
+    nand_file_mmap_emul_config_t conf = {"", 32 * 1024 * 1024, true};
+    spi_nand_flash_config_t nand_cfg  = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_device_t *dev;
+    REQUIRE(spi_nand_flash_init_device(&nand_cfg, &dev) == ESP_OK);
+    REQUIRE(nand_emul_export_json(dev, "/tmp/x.json") == ESP_ERR_INVALID_STATE);
+    REQUIRE(spi_nand_flash_deinit_device(dev) == ESP_OK);
 }

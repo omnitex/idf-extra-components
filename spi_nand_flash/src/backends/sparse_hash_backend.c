@@ -26,6 +26,8 @@
 #include "backends/hash_table.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 
 /* -------------------------------------------------------------------------
  * Internal context
@@ -355,6 +357,70 @@ static esp_err_t sparse_get_stats(void *handle, nand_wear_stats_t *out)
 }
 
 /* -------------------------------------------------------------------------
+ * JSON export
+ * ---------------------------------------------------------------------- */
+
+typedef struct {
+    FILE *fp;
+    bool  first;
+} json_iter_ctx_t;
+
+static bool json_block_cb(hash_node_t *node, void *user_data)
+{
+    json_iter_ctx_t  *jc = (json_iter_ctx_t *)user_data;
+    block_metadata_t *bm = (block_metadata_t *)node->data;
+
+    if (!jc->first) fprintf(jc->fp, ",\n");
+    jc->first = false;
+
+    fprintf(jc->fp,
+            "    {\"block\":%" PRIu32 ",\"erases\":%" PRIu32
+            ",\"bad\":%s,\"total_progs\":%" PRIu32 "}",
+            bm->block_num, bm->erase_count,
+            bm->is_bad_block ? "true" : "false",
+            bm->total_page_programs_total);
+    return true;
+}
+
+static bool json_page_cb(hash_node_t *node, void *user_data)
+{
+    json_iter_ctx_t *jc = (json_iter_ctx_t *)user_data;
+    page_metadata_t *pm = (page_metadata_t *)node->data;
+
+    if (!jc->first) fprintf(jc->fp, ",\n");
+    jc->first = false;
+
+    uint32_t lifetime_progs = pm->program_count_total + pm->program_count;
+    uint32_t lifetime_reads = pm->read_count_total    + pm->read_count;
+    fprintf(jc->fp,
+            "    {\"page\":%" PRIu32 ",\"lifetime_progs\":%" PRIu32
+            ",\"lifetime_reads\":%" PRIu32 "}",
+            pm->page_num, lifetime_progs, lifetime_reads);
+    return true;
+}
+
+static esp_err_t sparse_export_json(void *handle, const char *filename)
+{
+    sparse_hash_ctx_t *ctx = (sparse_hash_ctx_t *)handle;
+    if (!ctx || !filename) return ESP_ERR_INVALID_ARG;
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) return ESP_FAIL;
+
+    fprintf(fp, "{\n  \"blocks\": [\n");
+    json_iter_ctx_t jc_b = { .fp = fp, .first = true };
+    hash_table_iterate(ctx->block_table, json_block_cb, &jc_b);
+    fprintf(fp, "\n  ],\n  \"pages\": [\n");
+
+    json_iter_ctx_t jc_p = { .fp = fp, .first = true };
+    hash_table_iterate(ctx->page_table, json_page_cb, &jc_p);
+    fprintf(fp, "\n  ]\n}\n");
+
+    fclose(fp);
+    return ESP_OK;
+}
+
+/* -------------------------------------------------------------------------
  * Public vtable
  * ---------------------------------------------------------------------- */
 
@@ -373,5 +439,5 @@ const nand_metadata_backend_ops_t nand_sparse_hash_backend = {
     .get_histograms = NULL,
     .save_snapshot  = NULL,
     .load_snapshot  = NULL,
-    .export_json    = NULL,
+    .export_json    = sparse_export_json,
 };
