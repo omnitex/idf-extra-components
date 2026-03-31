@@ -319,6 +319,15 @@ typedef struct {
      * If NULL, a monotonic counter is used.
      */
     uint64_t (*get_timestamp)(void);
+
+    /**
+     * Dhara GC ratio — passed verbatim to spi_nand_flash_config_t.gc_factor.
+     * 0 means "use the default" (currently 45 in nand.c).
+     * Lower values (e.g. 4–8) reserve more journal space for GC, allowing
+     * sustained writes on small flash without MAP_FULL errors; capacity is
+     * reduced proportionally.
+     */
+    uint8_t gc_factor;
 } nand_emul_advanced_config_t;
 
 /* ---------------------------------------------------------------------------

@@ -83,6 +83,7 @@ esp_err_t nand_emul_advanced_init(spi_nand_flash_device_t **dev_out,
     spi_nand_flash_config_t nand_cfg = {
         .emul_conf = &base_cfg,
         .io_mode = SPI_NAND_IO_MODE_SIO,
+        .gc_factor = cfg->gc_factor,  /* 0 → default (45) inside init_device */
     };
 
     /* Delegate to the standard init (which allocates and fills the device handle) */

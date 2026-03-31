@@ -19,6 +19,12 @@
 #include "nand_impl.h"
 #include "nand.h"
 
+/* ESP_ERR_FLASH_OP_FAIL lives in spi_flash_mmap.h which is not available
+ * on the Linux host target.  Provide a fallback so this file compiles. */
+#ifndef ESP_ERR_FLASH_OP_FAIL
+#define ESP_ERR_FLASH_OP_FAIL (ESP_ERR_FLASH_BASE + 1)
+#endif
+
 typedef struct {
     struct dhara_nand dhara_nand;
     struct dhara_map dhara_map;
@@ -186,7 +192,7 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b, dhara_error_t 
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
     esp_err_t ret = nand_erase_block(dev_handle, b);
     if (ret) {
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        if (ret == ESP_ERR_NOT_FINISHED || ret == ESP_ERR_FLASH_OP_FAIL) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;
@@ -200,7 +206,7 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
     esp_err_t ret = nand_prog(dev_handle, p, data);
     if (ret) {
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        if (ret == ESP_ERR_NOT_FINISHED || ret == ESP_ERR_FLASH_OP_FAIL) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;
