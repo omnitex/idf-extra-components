@@ -1,0 +1,1103 @@
+[DHARA 445208.716009] trace_path[prepare_write]: enter target=47 count=15 root=18 new_meta=1
+[DHARA 445208.716054] trace_path[prepare_write]: [target] enter target=47 count=15 root=18 new_meta=1
+[DHARA 445208.716064] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=15 root=18
+[DHARA 445208.716073] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.716997] trace_path[prepare_write]: enter target=47 count=84 root=449 new_meta=1
+[DHARA 445208.717010] trace_path[prepare_write]: [target] enter target=47 count=84 root=449 new_meta=1
+[DHARA 445208.717020] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=84 root=449
+[DHARA 445208.717029] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.717160] trace_path[prepare_write]: enter target=47 count=85 root=483 new_meta=1
+[DHARA 445208.717170] trace_path[prepare_write]: [target] enter target=47 count=85 root=483 new_meta=1
+[DHARA 445208.717179] trace_path[prepare_write]: FOUND target=47 count=85 page=450 depth=32 loc_out=0 [target]
+[DHARA 445208.717211] trace_path[prepare_write]: enter target=47 count=85 root=489 new_meta=1
+[DHARA 445208.717220] trace_path[prepare_write]: [target] enter target=47 count=85 root=489 new_meta=1
+[DHARA 445208.717229] trace_path[prepare_write]: FOUND target=47 count=85 page=484 depth=32 loc_out=0 [target]
+[DHARA 445208.717423] trace_path[prepare_write]: enter target=47 count=86 root=600 new_meta=1
+[DHARA 445208.717434] trace_path[prepare_write]: [target] enter target=47 count=86 root=600 new_meta=1
+[DHARA 445208.717443] trace_path[prepare_write]: FOUND target=47 count=86 page=490 depth=32 loc_out=0 [target]
+[DHARA 445208.717719] trace_path[prepare_write]: enter target=47 count=86 root=733 new_meta=1
+[DHARA 445208.717731] trace_path[prepare_write]: [target] enter target=47 count=86 root=733 new_meta=1
+[DHARA 445208.717740] trace_path[prepare_write]: FOUND target=47 count=86 page=601 depth=32 loc_out=0 [target]
+[DHARA 445208.717924] trace_path[prepare_write]: enter target=47 count=86 root=834 new_meta=1
+[DHARA 445208.717935] trace_path[prepare_write]: [target] enter target=47 count=86 root=834 new_meta=1
+[DHARA 445208.717944] trace_path[prepare_write]: FOUND target=47 count=86 page=734 depth=32 loc_out=0 [target]
+[DHARA 445208.717969] trace_path[prepare_write]: enter target=47 count=86 root=838 new_meta=1
+[DHARA 445208.717979] trace_path[prepare_write]: [target] enter target=47 count=86 root=838 new_meta=1
+[DHARA 445208.717987] trace_path[prepare_write]: FOUND target=47 count=86 page=835 depth=32 loc_out=0 [target]
+[DHARA 445208.718041] trace_path[prepare_write]: enter target=47 count=86 root=850 new_meta=1
+[DHARA 445208.718050] trace_path[prepare_write]: [target] enter target=47 count=86 root=850 new_meta=1
+[DHARA 445208.718059] trace_path[prepare_write]: FOUND target=47 count=86 page=839 depth=32 loc_out=0 [target]
+[DHARA 445208.718792] trace_path[prepare_write]: enter target=47 count=121 root=1160 new_meta=1
+[DHARA 445208.718804] trace_path[prepare_write]: [target] enter target=47 count=121 root=1160 new_meta=1
+[DHARA 445208.718814] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=121 root=1160
+[DHARA 445208.718823] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.719364] trace_path[prepare_write]: enter target=47 count=132 root=1417 new_meta=1
+[DHARA 445208.719376] trace_path[prepare_write]: [target] enter target=47 count=132 root=1417 new_meta=1
+[DHARA 445208.719385] trace_path[prepare_write]: FOUND target=47 count=132 page=1161 depth=32 loc_out=0 [target]
+[DHARA 445208.719722] trace_path[prepare_write]: enter target=47 count=134 root=1565 new_meta=1
+[DHARA 445208.719733] trace_path[prepare_write]: [target] enter target=47 count=134 root=1565 new_meta=1
+[DHARA 445208.719742] trace_path[prepare_write]: FOUND target=47 count=134 page=1418 depth=32 loc_out=0 [target]
+[DHARA 445208.720119] trace_path[prepare_write]: enter target=47 count=134 root=1725 new_meta=1
+[DHARA 445208.720143] trace_path[prepare_write]: [target] enter target=47 count=134 root=1725 new_meta=1
+[DHARA 445208.720152] trace_path[prepare_write]: FOUND target=47 count=134 page=1566 depth=32 loc_out=0 [target]
+[DHARA 445208.720208] trace_path[prepare_write]: enter target=47 count=134 root=1797 new_meta=1
+[DHARA 445208.720218] trace_path[prepare_write]: [target] enter target=47 count=134 root=1797 new_meta=1
+[DHARA 445208.720226] trace_path[prepare_write]: FOUND target=47 count=134 page=1726 depth=32 loc_out=0 [target]
+[DHARA 445208.720246] trace_path[prepare_write]: enter target=47 count=134 root=1800 new_meta=1
+[DHARA 445208.720255] trace_path[prepare_write]: [target] enter target=47 count=134 root=1800 new_meta=1
+[DHARA 445208.720264] trace_path[prepare_write]: FOUND target=47 count=134 page=1798 depth=32 loc_out=0 [target]
+[DHARA 445208.720288] trace_path[prepare_write]: enter target=47 count=134 root=1804 new_meta=1
+[DHARA 445208.720297] trace_path[prepare_write]: [target] enter target=47 count=134 root=1804 new_meta=1
+[DHARA 445208.720306] trace_path[prepare_write]: FOUND target=47 count=134 page=1801 depth=32 loc_out=0 [target]
+[DHARA 445208.720331] trace_path[prepare_write]: enter target=47 count=134 root=1809 new_meta=1
+[DHARA 445208.720341] trace_path[prepare_write]: [target] enter target=47 count=134 root=1809 new_meta=1
+[DHARA 445208.720349] trace_path[prepare_write]: FOUND target=47 count=134 page=1805 depth=32 loc_out=0 [target]
+[DHARA 445208.720616] trace_path[prepare_write]: enter target=47 count=134 root=1939 new_meta=1
+[DHARA 445208.720627] trace_path[prepare_write]: [target] enter target=47 count=134 root=1939 new_meta=1
+[DHARA 445208.720636] trace_path[prepare_write]: FOUND target=47 count=134 page=1810 depth=32 loc_out=0 [target]
+[DHARA 445208.720834] trace_path[prepare_write]: enter target=47 count=134 root=2048 new_meta=1
+[DHARA 445208.720859] trace_path[prepare_write]: [target] enter target=47 count=134 root=2048 new_meta=1
+[DHARA 445208.720869] trace_path[prepare_write]: FOUND target=47 count=134 page=1940 depth=32 loc_out=0 [target]
+[DHARA 445208.721087] trace_path[prepare_write]: enter target=47 count=134 root=2081 new_meta=1
+[DHARA 445208.721115] trace_path[prepare_write]: [target] enter target=47 count=134 root=2081 new_meta=1
+[DHARA 445208.721127] trace_path[prepare_write]: FOUND target=47 count=134 page=2049 depth=32 loc_out=0 [target]
+[DHARA 445208.721165] trace_path[prepare_write]: enter target=47 count=134 root=2088 new_meta=1
+[DHARA 445208.721175] trace_path[prepare_write]: [target] enter target=47 count=134 root=2088 new_meta=1
+[DHARA 445208.721184] trace_path[prepare_write]: FOUND target=47 count=134 page=2082 depth=32 loc_out=0 [target]
+[DHARA 445208.721620] trace_path[prepare_write]: enter target=47 count=147 root=2190 new_meta=1
+[DHARA 445208.721632] trace_path[prepare_write]: [target] enter target=47 count=147 root=2190 new_meta=1
+[DHARA 445208.721642] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=30 id=0x2d count=147 root=2190
+[DHARA 445208.721652] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.721865] auto_gc #1: jsize=2221 cap=2071 count=158 gc_ratio=45
+[DHARA 445208.721885] trace_path[raw_gc]: enter target=47 count=158 root=2368 new_meta=1
+[DHARA 445208.721894] trace_path[raw_gc]: [target] enter target=47 count=158 root=2368 new_meta=1
+[DHARA 445208.721903] trace_path[raw_gc]: FOUND target=47 count=158 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.721927] auto_gc #2: jsize=2222 cap=2071 count=158 gc_ratio=45
+[DHARA 445208.721954] auto_gc #3: jsize=2223 cap=2071 count=159 gc_ratio=45
+[DHARA 445208.721985] auto_gc #4: jsize=2224 cap=2071 count=160 gc_ratio=45
+[DHARA 445208.722015] auto_gc #5: jsize=2225 cap=2071 count=160 gc_ratio=45
+[DHARA 445208.722047] trace_path[raw_gc]: enter target=47 count=160 root=2373 new_meta=1
+[DHARA 445208.722057] trace_path[raw_gc]: [target] enter target=47 count=160 root=2373 new_meta=1
+[DHARA 445208.722066] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722098] trace_path[raw_gc]: enter target=47 count=160 root=2373 new_meta=1
+[DHARA 445208.722108] trace_path[raw_gc]: [target] enter target=47 count=160 root=2373 new_meta=1
+[DHARA 445208.722117] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722132] trace_path[raw_gc]: enter target=47 count=160 root=2374 new_meta=1
+[DHARA 445208.722141] trace_path[raw_gc]: [target] enter target=47 count=160 root=2374 new_meta=1
+[DHARA 445208.722150] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722178] trace_path[raw_gc]: enter target=47 count=160 root=2375 new_meta=1
+[DHARA 445208.722187] trace_path[raw_gc]: [target] enter target=47 count=160 root=2375 new_meta=1
+[DHARA 445208.722196] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722229] trace_path[raw_gc]: enter target=47 count=160 root=2376 new_meta=1
+[DHARA 445208.722239] trace_path[raw_gc]: [target] enter target=47 count=160 root=2376 new_meta=1
+[DHARA 445208.722248] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722272] trace_path[raw_gc]: enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722281] trace_path[raw_gc]: [target] enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722290] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722300] trace_path[raw_gc]: enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722309] trace_path[raw_gc]: [target] enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722318] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722330] trace_path[raw_gc]: enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722339] trace_path[raw_gc]: [target] enter target=47 count=160 root=2377 new_meta=1
+[DHARA 445208.722348] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722417] trace_path[raw_gc]: enter target=47 count=160 root=2381 new_meta=1
+[DHARA 445208.722426] trace_path[raw_gc]: [target] enter target=47 count=160 root=2381 new_meta=1
+[DHARA 445208.722435] trace_path[raw_gc]: FOUND target=47 count=160 page=2192 depth=32 loc_out=1 [target]
+[DHARA 445208.722812] trace_path[prepare_write]: enter target=47 count=179 root=2471 new_meta=1
+[DHARA 445208.722824] trace_path[prepare_write]: [target] enter target=47 count=179 root=2471 new_meta=1
+[DHARA 445208.722833] trace_path[prepare_write]: FOUND target=47 count=179 page=2192 depth=32 loc_out=0 [target]
+[DHARA 445208.722984] trace_path[prepare_write]: enter target=47 count=183 root=2630 new_meta=1
+[DHARA 445208.722995] trace_path[prepare_write]: [target] enter target=47 count=183 root=2630 new_meta=1
+[DHARA 445208.723005] trace_path[prepare_write]: FOUND target=47 count=183 page=2472 depth=32 loc_out=0 [target]
+[DHARA 445208.723168] trace_path[prepare_write]: enter target=47 count=187 root=2670 new_meta=1
+[DHARA 445208.723178] trace_path[prepare_write]: [target] enter target=47 count=187 root=2670 new_meta=1
+[DHARA 445208.723187] trace_path[prepare_write]: FOUND target=47 count=187 page=2631 depth=32 loc_out=0 [target]
+[DHARA 445208.723325] trace_path[prepare_write]: enter target=47 count=190 root=2700 new_meta=1
+[DHARA 445208.723336] trace_path[prepare_write]: [target] enter target=47 count=190 root=2700 new_meta=1
+[DHARA 445208.723345] trace_path[prepare_write]: FOUND target=47 count=190 page=2672 depth=32 loc_out=0 [target]
+[DHARA 445208.723380] trace_path[prepare_write]: enter target=47 count=192 root=2707 new_meta=1
+[DHARA 445208.723389] trace_path[prepare_write]: [target] enter target=47 count=192 root=2707 new_meta=1
+[DHARA 445208.723398] trace_path[prepare_write]: FOUND target=47 count=192 page=2701 depth=32 loc_out=0 [target]
+[DHARA 445208.723503] trace_path[prepare_write]: enter target=47 count=194 root=2731 new_meta=1
+[DHARA 445208.723513] trace_path[prepare_write]: [target] enter target=47 count=194 root=2731 new_meta=1
+[DHARA 445208.723533] trace_path[prepare_write]: FOUND target=47 count=194 page=2708 depth=32 loc_out=0 [target]
+[DHARA 445208.723564] trace_path[prepare_write]: enter target=47 count=195 root=2737 new_meta=1
+[DHARA 445208.723574] trace_path[prepare_write]: [target] enter target=47 count=195 root=2737 new_meta=1
+[DHARA 445208.723583] trace_path[prepare_write]: FOUND target=47 count=195 page=2732 depth=32 loc_out=0 [target]
+[DHARA 445208.723915] trace_path[prepare_write]: enter target=47 count=198 root=2936 new_meta=1
+[DHARA 445208.723928] trace_path[prepare_write]: [target] enter target=47 count=198 root=2936 new_meta=1
+[DHARA 445208.723937] trace_path[prepare_write]: FOUND target=47 count=198 page=2738 depth=32 loc_out=0 [target]
+[DHARA 445208.724053] trace_path[prepare_write]: enter target=47 count=199 root=2956 new_meta=1
+[DHARA 445208.724064] trace_path[prepare_write]: [target] enter target=47 count=199 root=2956 new_meta=1
+[DHARA 445208.724074] trace_path[prepare_write]: FOUND target=47 count=199 page=2937 depth=32 loc_out=0 [target]
+[DHARA 445208.724169] trace_path[prepare_write]: enter target=47 count=202 root=2979 new_meta=1
+[DHARA 445208.724178] trace_path[prepare_write]: [target] enter target=47 count=202 root=2979 new_meta=1
+[DHARA 445208.724188] trace_path[prepare_write]: FOUND target=47 count=202 page=2957 depth=32 loc_out=0 [target]
+[DHARA 445208.724367] trace_path[raw_gc]: enter target=47 count=205 root=3137 new_meta=1
+[DHARA 445208.724379] trace_path[raw_gc]: [target] enter target=47 count=205 root=3137 new_meta=1
+[DHARA 445208.724388] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724433] trace_path[raw_gc]: enter target=47 count=205 root=3139 new_meta=1
+[DHARA 445208.724443] trace_path[raw_gc]: [target] enter target=47 count=205 root=3139 new_meta=1
+[DHARA 445208.724452] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724498] trace_path[raw_gc]: enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724507] trace_path[raw_gc]: [target] enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724517] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724528] trace_path[raw_gc]: enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724537] trace_path[raw_gc]: [target] enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724546] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724556] trace_path[raw_gc]: enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724565] trace_path[raw_gc]: [target] enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724574] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724584] trace_path[raw_gc]: enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724593] trace_path[raw_gc]: [target] enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724602] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724612] trace_path[raw_gc]: enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724621] trace_path[raw_gc]: [target] enter target=47 count=205 root=3141 new_meta=1
+[DHARA 445208.724630] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724667] trace_path[raw_gc]: enter target=47 count=205 root=3143 new_meta=1
+[DHARA 445208.724677] trace_path[raw_gc]: [target] enter target=47 count=205 root=3143 new_meta=1
+[DHARA 445208.724686] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724743] trace_path[raw_gc]: enter target=47 count=205 root=3147 new_meta=1
+[DHARA 445208.724752] trace_path[raw_gc]: [target] enter target=47 count=205 root=3147 new_meta=1
+[DHARA 445208.724761] trace_path[raw_gc]: FOUND target=47 count=205 page=2980 depth=32 loc_out=1 [target]
+[DHARA 445208.724890] trace_path[prepare_write]: enter target=47 count=206 root=3171 new_meta=1
+[DHARA 445208.724909] trace_path[prepare_write]: [target] enter target=47 count=206 root=3171 new_meta=1
+[DHARA 445208.724919] trace_path[prepare_write]: FOUND target=47 count=206 page=2980 depth=32 loc_out=0 [target]
+[DHARA 445208.725228] trace_path[prepare_write]: enter target=47 count=209 root=3243 new_meta=1
+[DHARA 445208.725240] trace_path[prepare_write]: [target] enter target=47 count=209 root=3243 new_meta=1
+[DHARA 445208.725249] trace_path[prepare_write]: FOUND target=47 count=209 page=3172 depth=32 loc_out=0 [target]
+[DHARA 445208.725279] trace_path[prepare_write]: enter target=47 count=209 root=3249 new_meta=1
+[DHARA 445208.725288] trace_path[prepare_write]: [target] enter target=47 count=209 root=3249 new_meta=1
+[DHARA 445208.725298] trace_path[prepare_write]: FOUND target=47 count=209 page=3244 depth=32 loc_out=0 [target]
+[DHARA 445208.725327] trace_path[prepare_write]: enter target=47 count=209 root=3254 new_meta=1
+[DHARA 445208.725336] trace_path[prepare_write]: [target] enter target=47 count=209 root=3254 new_meta=1
+[DHARA 445208.725345] trace_path[prepare_write]: FOUND target=47 count=209 page=3250 depth=32 loc_out=0 [target]
+[DHARA 445208.725505] trace_path[prepare_write]: enter target=47 count=209 root=3414 new_meta=1
+[DHARA 445208.725516] trace_path[prepare_write]: [target] enter target=47 count=209 root=3414 new_meta=1
+[DHARA 445208.725526] trace_path[prepare_write]: FOUND target=47 count=209 page=3255 depth=32 loc_out=0 [target]
+[DHARA 445208.725727] trace_path[prepare_write]: enter target=47 count=209 root=3459 new_meta=1
+[DHARA 445208.725739] trace_path[prepare_write]: [target] enter target=47 count=209 root=3459 new_meta=1
+[DHARA 445208.725748] trace_path[prepare_write]: FOUND target=47 count=209 page=3415 depth=32 loc_out=0 [target]
+[DHARA 445208.725773] trace_path[prepare_write]: enter target=47 count=209 root=3463 new_meta=1
+[DHARA 445208.725782] trace_path[prepare_write]: [target] enter target=47 count=209 root=3463 new_meta=1
+[DHARA 445208.725791] trace_path[prepare_write]: FOUND target=47 count=209 page=3460 depth=32 loc_out=0 [target]
+[DHARA 445208.725824] trace_path[prepare_write]: enter target=47 count=209 root=3469 new_meta=1
+[DHARA 445208.725834] trace_path[prepare_write]: [target] enter target=47 count=209 root=3469 new_meta=1
+[DHARA 445208.725843] trace_path[prepare_write]: FOUND target=47 count=209 page=3464 depth=32 loc_out=0 [target]
+[DHARA 445208.725881] trace_path[prepare_write]: enter target=47 count=209 root=3477 new_meta=1
+[DHARA 445208.725890] trace_path[prepare_write]: [target] enter target=47 count=209 root=3477 new_meta=1
+[DHARA 445208.725899] trace_path[prepare_write]: FOUND target=47 count=209 page=3470 depth=32 loc_out=0 [target]
+[DHARA 445208.726029] trace_path[prepare_write]: enter target=47 count=210 root=3509 new_meta=1
+[DHARA 445208.726039] trace_path[prepare_write]: [target] enter target=47 count=210 root=3509 new_meta=1
+[DHARA 445208.726048] trace_path[prepare_write]: FOUND target=47 count=210 page=3478 depth=32 loc_out=0 [target]
+[DHARA 445208.726355] trace_path[prepare_write]: enter target=47 count=211 root=3706 new_meta=1
+[DHARA 445208.726367] trace_path[prepare_write]: [target] enter target=47 count=211 root=3706 new_meta=1
+[DHARA 445208.726376] trace_path[prepare_write]: FOUND target=47 count=211 page=3510 depth=32 loc_out=0 [target]
+[DHARA 445208.726393] trace_path[prepare_write]: enter target=47 count=211 root=3708 new_meta=1
+[DHARA 445208.726402] trace_path[prepare_write]: [target] enter target=47 count=211 root=3708 new_meta=1
+[DHARA 445208.726411] trace_path[prepare_write]: FOUND target=47 count=211 page=3707 depth=32 loc_out=0 [target]
+[DHARA 445208.726788] trace_path[raw_gc]: enter target=47 count=211 root=3918 new_meta=1
+[DHARA 445208.726800] trace_path[raw_gc]: [target] enter target=47 count=211 root=3918 new_meta=1
+[DHARA 445208.726810] trace_path[raw_gc]: FOUND target=47 count=211 page=3709 depth=32 loc_out=1 [target]
+[DHARA 445208.726930] trace_path[prepare_write]: enter target=47 count=211 root=3945 new_meta=1
+[DHARA 445208.726949] trace_path[prepare_write]: [target] enter target=47 count=211 root=3945 new_meta=1
+[DHARA 445208.726959] trace_path[prepare_write]: FOUND target=47 count=211 page=3709 depth=32 loc_out=0 [target]
+[DHARA 445208.727087] trace_path[prepare_write]: enter target=47 count=211 root=2 new_meta=1
+[DHARA 445208.727098] trace_path[prepare_write]: [target] enter target=47 count=211 root=2 new_meta=1
+[DHARA 445208.727107] trace_path[prepare_write]: FOUND target=47 count=211 page=3946 depth=32 loc_out=0 [target]
+[DHARA 445208.727527] trace_path[prepare_write]: enter target=47 count=237 root=105 new_meta=1
+[DHARA 445208.727538] trace_path[prepare_write]: [target] enter target=47 count=237 root=105 new_meta=1
+[DHARA 445208.727547] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=30 id=0x2d count=237 root=105
+[DHARA 445208.727556] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.727573] trace_path[prepare_write]: enter target=47 count=239 root=107 new_meta=1
+[DHARA 445208.727582] trace_path[prepare_write]: [target] enter target=47 count=239 root=107 new_meta=1
+[DHARA 445208.727591] trace_path[prepare_write]: FOUND target=47 count=239 page=106 depth=32 loc_out=0 [target]
+[DHARA 445208.727637] trace_path[prepare_write]: enter target=47 count=241 root=117 new_meta=1
+[DHARA 445208.727646] trace_path[prepare_write]: [target] enter target=47 count=241 root=117 new_meta=1
+[DHARA 445208.727655] trace_path[prepare_write]: FOUND target=47 count=241 page=108 depth=32 loc_out=0 [target]
+[DHARA 445208.727738] trace_path[raw_gc]: enter target=47 count=244 root=192 new_meta=1
+[DHARA 445208.727749] trace_path[raw_gc]: [target] enter target=47 count=244 root=192 new_meta=1
+[DHARA 445208.727758] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727781] trace_path[raw_gc]: enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727791] trace_path[raw_gc]: [target] enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727800] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727811] trace_path[raw_gc]: enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727820] trace_path[raw_gc]: [target] enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727829] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727845] trace_path[raw_gc]: enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727854] trace_path[raw_gc]: [target] enter target=47 count=244 root=193 new_meta=1
+[DHARA 445208.727863] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727878] trace_path[raw_gc]: enter target=47 count=244 root=194 new_meta=1
+[DHARA 445208.727888] trace_path[raw_gc]: [target] enter target=47 count=244 root=194 new_meta=1
+[DHARA 445208.727897] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727925] trace_path[raw_gc]: enter target=47 count=244 root=195 new_meta=1
+[DHARA 445208.727934] trace_path[raw_gc]: [target] enter target=47 count=244 root=195 new_meta=1
+[DHARA 445208.727943] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727958] trace_path[raw_gc]: enter target=47 count=244 root=195 new_meta=1
+[DHARA 445208.727967] trace_path[raw_gc]: [target] enter target=47 count=244 root=195 new_meta=1
+[DHARA 445208.727976] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.727995] trace_path[raw_gc]: enter target=47 count=244 root=196 new_meta=1
+[DHARA 445208.728004] trace_path[raw_gc]: [target] enter target=47 count=244 root=196 new_meta=1
+[DHARA 445208.728013] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728042] trace_path[raw_gc]: enter target=47 count=244 root=197 new_meta=1
+[DHARA 445208.728051] trace_path[raw_gc]: [target] enter target=47 count=244 root=197 new_meta=1
+[DHARA 445208.728060] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728108] trace_path[raw_gc]: enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728117] trace_path[raw_gc]: [target] enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728126] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728137] trace_path[raw_gc]: enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728146] trace_path[raw_gc]: [target] enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728155] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728165] trace_path[raw_gc]: enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728174] trace_path[raw_gc]: [target] enter target=47 count=244 root=199 new_meta=1
+[DHARA 445208.728183] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728202] trace_path[raw_gc]: enter target=47 count=244 root=200 new_meta=1
+[DHARA 445208.728211] trace_path[raw_gc]: [target] enter target=47 count=244 root=200 new_meta=1
+[DHARA 445208.728220] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728241] trace_path[raw_gc]: enter target=47 count=244 root=200 new_meta=1
+[DHARA 445208.728250] trace_path[raw_gc]: [target] enter target=47 count=244 root=200 new_meta=1
+[DHARA 445208.728259] trace_path[raw_gc]: FOUND target=47 count=244 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728273] trace_path[raw_gc]: enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728282] trace_path[raw_gc]: [target] enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728291] trace_path[raw_gc]: FOUND target=47 count=245 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728301] trace_path[raw_gc]: enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728310] trace_path[raw_gc]: [target] enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728319] trace_path[raw_gc]: FOUND target=47 count=245 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728330] trace_path[raw_gc]: enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728339] trace_path[raw_gc]: [target] enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728348] trace_path[raw_gc]: FOUND target=47 count=245 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728365] trace_path[raw_gc]: enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728374] trace_path[raw_gc]: [target] enter target=47 count=245 root=201 new_meta=1
+[DHARA 445208.728383] trace_path[raw_gc]: FOUND target=47 count=245 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728419] trace_path[raw_gc]: enter target=47 count=246 root=203 new_meta=1
+[DHARA 445208.728429] trace_path[raw_gc]: [target] enter target=47 count=246 root=203 new_meta=1
+[DHARA 445208.728438] trace_path[raw_gc]: FOUND target=47 count=246 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728447] trace_path[raw_gc]: enter target=47 count=246 root=203 new_meta=1
+[DHARA 445208.728456] trace_path[raw_gc]: [target] enter target=47 count=246 root=203 new_meta=1
+[DHARA 445208.728465] trace_path[raw_gc]: FOUND target=47 count=246 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728510] trace_path[raw_gc]: enter target=47 count=247 root=205 new_meta=1
+[DHARA 445208.728520] trace_path[raw_gc]: [target] enter target=47 count=247 root=205 new_meta=1
+[DHARA 445208.728529] trace_path[raw_gc]: FOUND target=47 count=247 page=105 depth=32 loc_out=1 [target]
+[DHARA 445208.728635] trace_path[prepare_write]: enter target=47 count=250 root=230 new_meta=1
+[DHARA 445208.728645] trace_path[prepare_write]: [target] enter target=47 count=250 root=230 new_meta=1
+[DHARA 445208.728654] trace_path[prepare_write]: FOUND target=47 count=250 page=105 depth=32 loc_out=0 [target]
+[DHARA 445208.729493] trace_path[prepare_write]: enter target=47 count=259 root=626 new_meta=1
+[DHARA 445208.729504] trace_path[prepare_write]: [target] enter target=47 count=259 root=626 new_meta=1
+[DHARA 445208.729513] trace_path[prepare_write]: FOUND target=47 count=259 page=448 depth=32 loc_out=0 [target]
+[DHARA 445208.729557] trace_path[prepare_write]: enter target=47 count=259 root=633 new_meta=1
+[DHARA 445208.729566] trace_path[prepare_write]: [target] enter target=47 count=259 root=633 new_meta=1
+[DHARA 445208.729575] trace_path[prepare_write]: FOUND target=47 count=259 page=627 depth=32 loc_out=0 [target]
+[DHARA 445208.730075] trace_path[prepare_write]: enter target=47 count=261 root=884 new_meta=1
+[DHARA 445208.730085] trace_path[prepare_write]: [target] enter target=47 count=261 root=884 new_meta=1
+[DHARA 445208.730094] trace_path[prepare_write]: FOUND target=47 count=261 page=834 depth=32 loc_out=0 [target]
+[DHARA 445208.730376] trace_path[prepare_write]: enter target=47 count=262 root=1016 new_meta=1
+[DHARA 445208.730386] trace_path[prepare_write]: [target] enter target=47 count=262 root=1016 new_meta=1
+[DHARA 445208.730395] trace_path[prepare_write]: FOUND target=47 count=262 page=873 depth=32 loc_out=0 [target]
+[DHARA 445208.730752] trace_path[prepare_write]: enter target=47 count=273 root=1292 new_meta=1
+[DHARA 445208.730762] trace_path[prepare_write]: [target] enter target=47 count=273 root=1292 new_meta=1
+[DHARA 445208.730771] trace_path[prepare_write]: FOUND target=47 count=273 page=974 depth=32 loc_out=0 [target]
+[DHARA 445208.731238] trace_path[raw_gc]: enter target=47 count=278 root=1454 new_meta=1
+[DHARA 445208.731265] trace_path[raw_gc]: [target] enter target=47 count=278 root=1454 new_meta=1
+[DHARA 445208.731276] trace_path[raw_gc]: FOUND target=47 count=278 page=1024 depth=32 loc_out=1 [target]
+[DHARA 445208.731370] trace_path[prepare_write]: enter target=47 count=278 root=1470 new_meta=1
+[DHARA 445208.731380] trace_path[prepare_write]: [target] enter target=47 count=278 root=1470 new_meta=1
+[DHARA 445208.731390] trace_path[prepare_write]: FOUND target=47 count=278 page=1424 depth=32 loc_out=0 [target]
+[DHARA 445208.731446] trace_path[raw_gc]: enter target=47 count=278 root=1537 new_meta=1
+[DHARA 445208.731456] trace_path[raw_gc]: [target] enter target=47 count=278 root=1537 new_meta=1
+[DHARA 445208.731465] trace_path[raw_gc]: FOUND target=47 count=278 page=1536 depth=32 loc_out=1 [target]
+[DHARA 445208.731475] trace_path[raw_gc]: enter target=47 count=278 root=1537 new_meta=1
+[DHARA 445208.731484] trace_path[raw_gc]: [target] enter target=47 count=278 root=1537 new_meta=1
+[DHARA 445208.731492] trace_path[raw_gc]: FOUND target=47 count=278 page=1536 depth=32 loc_out=1 [target]
+[DHARA 445208.731525] trace_path[raw_gc]: enter target=47 count=278 root=1538 new_meta=1
+[DHARA 445208.731534] trace_path[raw_gc]: [target] enter target=47 count=278 root=1538 new_meta=1
+[DHARA 445208.731543] trace_path[raw_gc]: FOUND target=47 count=278 page=1536 depth=32 loc_out=1 [target]
+[DHARA 445208.731693] trace_path[raw_gc]: enter target=47 count=278 root=1546 new_meta=1
+[DHARA 445208.731703] trace_path[raw_gc]: [target] enter target=47 count=278 root=1546 new_meta=1
+[DHARA 445208.731712] trace_path[raw_gc]: FOUND target=47 count=278 page=1536 depth=32 loc_out=1 [target]
+[DHARA 445208.731751] trace_path[raw_gc]: enter target=47 count=278 root=1548 new_meta=1
+[DHARA 445208.731761] trace_path[raw_gc]: [target] enter target=47 count=278 root=1548 new_meta=1
+[DHARA 445208.731769] trace_path[raw_gc]: FOUND target=47 count=278 page=1536 depth=32 loc_out=1 [target]
+[DHARA 445208.731818] trace_path[prepare_write]: enter target=47 count=279 root=1553 new_meta=1
+[DHARA 445208.731827] trace_path[prepare_write]: [target] enter target=47 count=279 root=1553 new_meta=1
+[DHARA 445208.731836] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=279 root=1553
+[DHARA 445208.731845] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.731854] prepare_write: count increment to 280 dst=47 (new logical sector)
+[DHARA 445208.731866] trace_path[prepare_write]: enter target=27 count=280 root=1554 new_meta=1
+[DHARA 445208.731876] trace_path[prepare_write]: FOUND target=27 count=280 page=1538 depth=32 loc_out=0
+[DHARA 445208.731902] trace_path[prepare_write]: enter target=19 count=280 root=1555 new_meta=1
+[DHARA 445208.731912] trace_path[prepare_write]: FOUND target=19 count=280 page=1540 depth=32 loc_out=0
+[DHARA 445208.731925] trace_path[prepare_write]: enter target=35 count=280 root=1556 new_meta=1
+[DHARA 445208.731934] trace_path[prepare_write]: FOUND target=35 count=280 page=1553 depth=32 loc_out=0
+[DHARA 445208.731946] trace_path[prepare_write]: enter target=10 count=280 root=1557 new_meta=1
+[DHARA 445208.731956] trace_path[prepare_write]: FOUND target=10 count=280 page=1410 depth=32 loc_out=0
+[DHARA 445208.731968] trace_path[prepare_write]: enter target=31 count=280 root=1558 new_meta=1
+[DHARA 445208.731978] trace_path[prepare_write]: FOUND target=31 count=280 page=1290 depth=32 loc_out=0
+[DHARA 445208.731990] trace_path[prepare_write]: enter target=0 count=280 root=1559 new_meta=1
+[DHARA 445208.731999] trace_path[prepare_write]: FOUND target=0 count=280 page=1026 depth=32 loc_out=0
+[DHARA 445208.732012] trace_path[prepare_write]: enter target=32 count=280 root=1560 new_meta=1
+[DHARA 445208.732021] trace_path[prepare_write]: FOUND target=32 count=280 page=1548 depth=32 loc_out=0
+[DHARA 445208.732034] trace_path[prepare_write]: enter target=2 count=280 root=1561 new_meta=1
+[DHARA 445208.732043] trace_path[prepare_write]: NOT_FOUND target=2 reason=alt_none depth=30 id=0x0 count=280 root=1561
+[DHARA 445208.732052] trace_path[prepare_write]: exit NOT_FOUND target=2 depth=31 new_meta=1
+[DHARA 445208.732060] prepare_write: count increment to 281 dst=2 (new logical sector)
+[DHARA 445208.732073] trace_path[prepare_write]: enter target=14 count=281 root=1562 new_meta=1
+[DHARA 445208.732082] trace_path[prepare_write]: FOUND target=14 count=281 page=1281 depth=32 loc_out=0
+[DHARA 445208.732094] trace_path[prepare_write]: enter target=28 count=281 root=1563 new_meta=1
+[DHARA 445208.732103] trace_path[prepare_write]: FOUND target=28 count=281 page=1158 depth=32 loc_out=0
+[DHARA 445208.732116] trace_path[prepare_write]: enter target=13 count=281 root=1564 new_meta=1
+[DHARA 445208.732125] trace_path[prepare_write]: FOUND target=13 count=281 page=0 depth=32 loc_out=0
+[DHARA 445208.732138] trace_path[prepare_write]: enter target=47 count=281 root=1565 new_meta=1
+[DHARA 445208.732146] trace_path[prepare_write]: [target] enter target=47 count=281 root=1565 new_meta=1
+[DHARA 445208.732155] trace_path[prepare_write]: FOUND target=47 count=281 page=1554 depth=32 loc_out=0 [target]
+[DHARA 445208.732169] trace_path[prepare_write]: enter target=1 count=281 root=1566 new_meta=1
+[DHARA 445208.732178] trace_path[prepare_write]: FOUND target=1 count=281 page=1314 depth=32 loc_out=0
+[DHARA 445208.732190] trace_path[prepare_write]: enter target=3 count=281 root=1568 new_meta=1
+[DHARA 445208.732200] trace_path[prepare_write]: FOUND target=3 count=281 page=1536 depth=32 loc_out=0
+[DHARA 445208.732212] trace_path[prepare_write]: enter target=31 count=281 root=1569 new_meta=1
+[DHARA 445208.732222] trace_path[prepare_write]: FOUND target=31 count=281 page=1286 depth=32 loc_out=0
+[DHARA 445208.732234] trace_path[prepare_write]: enter target=12 count=281 root=1570 new_meta=1
+[DHARA 445208.732243] trace_path[prepare_write]: FOUND target=12 count=281 page=1449 depth=32 loc_out=0
+[DHARA 445208.732256] trace_path[prepare_write]: enter target=27 count=281 root=1571 new_meta=1
+[DHARA 445208.732265] trace_path[prepare_write]: FOUND target=27 count=281 page=1025 depth=32 loc_out=0
+[DHARA 445208.732277] trace_path[prepare_write]: enter target=45 count=281 root=1572 new_meta=1
+[DHARA 445208.732287] trace_path[prepare_write]: NOT_FOUND target=45 reason=alt_none depth=31 id=0x4 count=281 root=1572
+[DHARA 445208.732295] trace_path[prepare_write]: exit NOT_FOUND target=45 depth=32 new_meta=1
+[DHARA 445208.732304] prepare_write: count increment to 282 dst=45 (new logical sector)
+[DHARA 445208.732316] trace_path[prepare_write]: enter target=22 count=282 root=1573 new_meta=1
+[DHARA 445208.732325] trace_path[prepare_write]: FOUND target=22 count=282 page=1021 depth=32 loc_out=0
+[DHARA 445208.732346] trace_path[prepare_write]: enter target=41 count=282 root=1574 new_meta=1
+[DHARA 445208.732356] trace_path[prepare_write]: FOUND target=41 count=282 page=1024 depth=32 loc_out=0
+[DHARA 445208.732368] trace_path[prepare_write]: enter target=25 count=282 root=1575 new_meta=1
+[DHARA 445208.732377] trace_path[prepare_write]: FOUND target=25 count=282 page=0 depth=32 loc_out=0
+[DHARA 445208.732390] trace_path[prepare_write]: enter target=37 count=282 root=1576 new_meta=1
+[DHARA 445208.732399] trace_path[prepare_write]: FOUND target=37 count=282 page=1537 depth=32 loc_out=0
+[DHARA 445208.732412] trace_path[prepare_write]: enter target=36 count=282 root=1577 new_meta=1
+[DHARA 445208.732420] trace_path[prepare_write]: FOUND target=36 count=282 page=1281 depth=32 loc_out=0
+[DHARA 445208.732433] trace_path[prepare_write]: enter target=5 count=282 root=1578 new_meta=1
+[DHARA 445208.732442] trace_path[prepare_write]: FOUND target=5 count=282 page=1536 depth=32 loc_out=0
+[DHARA 445208.732455] trace_path[prepare_write]: enter target=32 count=282 root=1579 new_meta=1
+[DHARA 445208.732464] trace_path[prepare_write]: FOUND target=32 count=282 page=1026 depth=32 loc_out=0
+[DHARA 445208.732476] trace_path[prepare_write]: enter target=29 count=282 root=1580 new_meta=1
+[DHARA 445208.732485] trace_path[prepare_write]: NOT_FOUND target=29 reason=alt_none depth=30 id=0x1f count=282 root=1580
+[DHARA 445208.732494] trace_path[prepare_write]: exit NOT_FOUND target=29 depth=31 new_meta=1
+[DHARA 445208.732502] prepare_write: count increment to 283 dst=29 (new logical sector)
+[DHARA 445208.732514] trace_path[prepare_write]: enter target=9 count=283 root=1581 new_meta=1
+[DHARA 445208.732524] trace_path[prepare_write]: FOUND target=9 count=283 page=1341 depth=32 loc_out=0
+[DHARA 445208.732538] trace_path[prepare_write]: enter target=38 count=283 root=1582 new_meta=1
+[DHARA 445208.732547] trace_path[prepare_write]: FOUND target=38 count=283 page=1408 depth=32 loc_out=0
+[DHARA 445208.732559] trace_path[prepare_write]: enter target=22 count=283 root=1584 new_meta=1
+[DHARA 445208.732569] trace_path[prepare_write]: FOUND target=22 count=283 page=1408 depth=32 loc_out=0
+[DHARA 445208.732581] trace_path[prepare_write]: enter target=36 count=283 root=1585 new_meta=1
+[DHARA 445208.732590] trace_path[prepare_write]: FOUND target=36 count=283 page=1463 depth=32 loc_out=0
+[DHARA 445208.732603] trace_path[prepare_write]: enter target=10 count=283 root=1586 new_meta=1
+[DHARA 445208.732612] trace_path[prepare_write]: FOUND target=10 count=283 page=1410 depth=32 loc_out=0
+[DHARA 445208.732625] trace_path[prepare_write]: enter target=49 count=283 root=1587 new_meta=1
+[DHARA 445208.732634] trace_path[prepare_write]: FOUND target=49 count=283 page=0 depth=32 loc_out=0
+[DHARA 445208.732647] trace_path[prepare_write]: enter target=28 count=283 root=1588 new_meta=1
+[DHARA 445208.732656] trace_path[prepare_write]: FOUND target=28 count=283 page=1557 depth=32 loc_out=0
+[DHARA 445208.732668] trace_path[prepare_write]: enter target=30 count=283 root=1589 new_meta=1
+[DHARA 445208.732678] trace_path[prepare_write]: FOUND target=30 count=283 page=1050 depth=32 loc_out=0
+[DHARA 445208.732690] trace_path[prepare_write]: enter target=39 count=283 root=1590 new_meta=1
+[DHARA 445208.732699] trace_path[prepare_write]: FOUND target=39 count=283 page=3953 depth=32 loc_out=0
+[DHARA 445208.732712] trace_path[prepare_write]: enter target=33 count=283 root=1591 new_meta=1
+[DHARA 445208.732721] trace_path[prepare_write]: FOUND target=33 count=283 page=0 depth=32 loc_out=0
+[DHARA 445208.732733] trace_path[prepare_write]: enter target=18 count=283 root=1592 new_meta=1
+[DHARA 445208.732742] trace_path[prepare_write]: FOUND target=18 count=283 page=1281 depth=32 loc_out=0
+[DHARA 445208.732755] trace_path[prepare_write]: enter target=1 count=283 root=1593 new_meta=1
+[DHARA 445208.732764] trace_path[prepare_write]: FOUND target=1 count=283 page=1024 depth=32 loc_out=0
+[DHARA 445208.732776] trace_path[prepare_write]: enter target=18 count=283 root=1594 new_meta=1
+[DHARA 445208.732793] trace_path[prepare_write]: FOUND target=18 count=283 page=1593 depth=32 loc_out=0
+[DHARA 445208.732806] trace_path[prepare_write]: enter target=41 count=283 root=1595 new_meta=1
+[DHARA 445208.732816] trace_path[prepare_write]: FOUND target=41 count=283 page=1341 depth=32 loc_out=0
+[DHARA 445208.732828] trace_path[prepare_write]: enter target=49 count=283 root=1596 new_meta=1
+[DHARA 445208.732837] trace_path[prepare_write]: FOUND target=49 count=283 page=1588 depth=32 loc_out=0
+[DHARA 445208.732850] trace_path[prepare_write]: enter target=19 count=283 root=1597 new_meta=1
+[DHARA 445208.732859] trace_path[prepare_write]: FOUND target=19 count=283 page=1537 depth=32 loc_out=0
+[DHARA 445208.732873] trace_path[prepare_write]: enter target=9 count=283 root=1598 new_meta=1
+[DHARA 445208.732882] trace_path[prepare_write]: FOUND target=9 count=283 page=1588 depth=32 loc_out=0
+[DHARA 445208.732917] trace_path[prepare_write]: enter target=33 count=283 root=1664 new_meta=1
+[DHARA 445208.732927] trace_path[prepare_write]: FOUND target=33 count=283 page=1024 depth=32 loc_out=0
+[DHARA 445208.732940] trace_path[prepare_write]: enter target=48 count=283 root=1665 new_meta=1
+[DHARA 445208.732949] trace_path[prepare_write]: FOUND target=48 count=283 page=1560 depth=32 loc_out=0
+[DHARA 445208.732962] trace_path[prepare_write]: enter target=49 count=283 root=1666 new_meta=1
+[DHARA 445208.732971] trace_path[prepare_write]: FOUND target=49 count=283 page=1569 depth=32 loc_out=0
+[DHARA 445208.732983] trace_path[prepare_write]: enter target=26 count=283 root=1667 new_meta=1
+[DHARA 445208.732993] trace_path[prepare_write]: FOUND target=26 count=283 page=58 depth=32 loc_out=0
+[DHARA 445208.733005] trace_path[prepare_write]: enter target=6 count=283 root=1668 new_meta=1
+[DHARA 445208.733014] trace_path[prepare_write]: FOUND target=6 count=283 page=1050 depth=32 loc_out=0
+[DHARA 445208.733027] trace_path[prepare_write]: enter target=42 count=283 root=1669 new_meta=1
+[DHARA 445208.733036] trace_path[prepare_write]: FOUND target=42 count=283 page=1281 depth=32 loc_out=0
+[DHARA 445208.733049] trace_path[prepare_write]: enter target=34 count=283 root=1670 new_meta=1
+[DHARA 445208.733058] trace_path[prepare_write]: FOUND target=34 count=283 page=1060 depth=32 loc_out=0
+[DHARA 445208.733070] trace_path[prepare_write]: enter target=22 count=283 root=1671 new_meta=1
+[DHARA 445208.733080] trace_path[prepare_write]: FOUND target=22 count=283 page=1281 depth=32 loc_out=0
+[DHARA 445208.733092] trace_path[prepare_write]: enter target=38 count=283 root=1672 new_meta=1
+[DHARA 445208.733101] trace_path[prepare_write]: FOUND target=38 count=283 page=1032 depth=32 loc_out=0
+[DHARA 445208.733114] trace_path[prepare_write]: enter target=7 count=283 root=1673 new_meta=1
+[DHARA 445208.733123] trace_path[prepare_write]: FOUND target=7 count=283 page=1047 depth=32 loc_out=0
+[DHARA 445208.733136] trace_path[prepare_write]: enter target=12 count=283 root=1674 new_meta=1
+[DHARA 445208.733145] trace_path[prepare_write]: FOUND target=12 count=283 page=1463 depth=32 loc_out=0
+[DHARA 445208.733157] trace_path[prepare_write]: enter target=17 count=283 root=1675 new_meta=1
+[DHARA 445208.733166] trace_path[prepare_write]: FOUND target=17 count=283 page=1592 depth=32 loc_out=0
+[DHARA 445208.733179] trace_path[prepare_write]: enter target=29 count=283 root=1676 new_meta=1
+[DHARA 445208.733188] trace_path[prepare_write]: FOUND target=29 count=283 page=1024 depth=32 loc_out=0
+[DHARA 445208.733200] trace_path[prepare_write]: enter target=36 count=283 root=1677 new_meta=1
+[DHARA 445208.733209] trace_path[prepare_write]: FOUND target=36 count=283 page=1589 depth=32 loc_out=0
+[DHARA 445208.733223] trace_path[prepare_write]: enter target=23 count=283 root=1678 new_meta=1
+[DHARA 445208.733233] trace_path[prepare_write]: FOUND target=23 count=283 page=1042 depth=32 loc_out=0
+[DHARA 445208.733245] trace_path[prepare_write]: enter target=43 count=283 root=1680 new_meta=1
+[DHARA 445208.733255] trace_path[prepare_write]: FOUND target=43 count=283 page=1537 depth=32 loc_out=0
+[DHARA 445208.733275] trace_path[prepare_write]: enter target=13 count=283 root=1681 new_meta=1
+[DHARA 445208.733285] trace_path[prepare_write]: FOUND target=13 count=283 page=1024 depth=32 loc_out=0
+[DHARA 445208.733298] trace_path[prepare_write]: enter target=46 count=283 root=1682 new_meta=1
+[DHARA 445208.733307] trace_path[prepare_write]: FOUND target=46 count=283 page=1408 depth=32 loc_out=0
+[DHARA 445208.733320] trace_path[prepare_write]: enter target=33 count=283 root=1683 new_meta=1
+[DHARA 445208.733329] trace_path[prepare_write]: FOUND target=33 count=283 page=1280 depth=32 loc_out=0
+[DHARA 445208.733342] trace_path[prepare_write]: enter target=2 count=283 root=1684 new_meta=1
+[DHARA 445208.733351] trace_path[prepare_write]: NOT_FOUND target=2 reason=alt_none depth=31 id=0x13 count=283 root=1684
+[DHARA 445208.733360] trace_path[prepare_write]: exit NOT_FOUND target=2 depth=32 new_meta=1
+[DHARA 445208.733368] prepare_write: count increment to 284 dst=2 (new logical sector)
+[DHARA 445208.733381] trace_path[prepare_write]: enter target=20 count=284 root=1685 new_meta=1
+[DHARA 445208.733389] trace_path[prepare_write]: FOUND target=20 count=284 page=1672 depth=32 loc_out=0
+[DHARA 445208.733402] trace_path[prepare_write]: enter target=41 count=284 root=1686 new_meta=1
+[DHARA 445208.733411] trace_path[prepare_write]: FOUND target=41 count=284 page=1056 depth=32 loc_out=0
+[DHARA 445208.733424] trace_path[prepare_write]: enter target=48 count=284 root=1687 new_meta=1
+[DHARA 445208.733433] trace_path[prepare_write]: FOUND target=48 count=284 page=1665 depth=32 loc_out=0
+[DHARA 445208.733445] trace_path[prepare_write]: enter target=35 count=284 root=1688 new_meta=1
+[DHARA 445208.733454] trace_path[prepare_write]: FOUND target=35 count=284 page=1538 depth=32 loc_out=0
+[DHARA 445208.733467] trace_path[prepare_write]: enter target=4 count=284 root=1689 new_meta=1
+[DHARA 445208.733476] trace_path[prepare_write]: FOUND target=4 count=284 page=1557 depth=32 loc_out=0
+[DHARA 445208.733489] trace_path[prepare_write]: enter target=21 count=284 root=1690 new_meta=1
+[DHARA 445208.733498] trace_path[prepare_write]: FOUND target=21 count=284 page=1025 depth=32 loc_out=0
+[DHARA 445208.733510] trace_path[prepare_write]: enter target=8 count=284 root=1691 new_meta=1
+[DHARA 445208.733519] trace_path[prepare_write]: FOUND target=8 count=284 page=1677 depth=32 loc_out=0
+[DHARA 445208.733532] trace_path[prepare_write]: enter target=13 count=284 root=1692 new_meta=1
+[DHARA 445208.733541] trace_path[prepare_write]: FOUND target=13 count=284 page=1682 depth=32 loc_out=0
+[DHARA 445208.733553] trace_path[prepare_write]: enter target=11 count=284 root=1693 new_meta=1
+[DHARA 445208.733563] trace_path[prepare_write]: NOT_FOUND target=11 reason=alt_none depth=31 id=0x20 count=284 root=1693
+[DHARA 445208.733571] trace_path[prepare_write]: exit NOT_FOUND target=11 depth=32 new_meta=1
+[DHARA 445208.733580] prepare_write: count increment to 285 dst=11 (new logical sector)
+[DHARA 445208.733593] trace_path[prepare_write]: enter target=4 count=285 root=1694 new_meta=1
+[DHARA 445208.733602] trace_path[prepare_write]: FOUND target=4 count=285 page=1541 depth=32 loc_out=0
+[DHARA 445208.733615] trace_path[prepare_write]: enter target=37 count=285 root=1696 new_meta=1
+[DHARA 445208.733624] trace_path[prepare_write]: FOUND target=37 count=285 page=1025 depth=32 loc_out=0
+[DHARA 445208.733637] trace_path[prepare_write]: enter target=17 count=285 root=1697 new_meta=1
+[DHARA 445208.733646] trace_path[prepare_write]: FOUND target=17 count=285 page=1056 depth=32 loc_out=0
+[DHARA 445208.733659] trace_path[prepare_write]: enter target=8 count=285 root=1698 new_meta=1
+[DHARA 445208.733668] trace_path[prepare_write]: FOUND target=8 count=285 page=1694 depth=32 loc_out=0
+[DHARA 445208.733680] trace_path[prepare_write]: enter target=11 count=285 root=1699 new_meta=1
+[DHARA 445208.733689] trace_path[prepare_write]: FOUND target=11 count=285 page=1056 depth=32 loc_out=0
+[DHARA 445208.733702] trace_path[prepare_write]: enter target=36 count=285 root=1700 new_meta=1
+[DHARA 445208.733718] trace_path[prepare_write]: FOUND target=36 count=285 page=1686 depth=32 loc_out=0
+[DHARA 445208.733732] trace_path[prepare_write]: enter target=40 count=285 root=1701 new_meta=1
+[DHARA 445208.733741] trace_path[prepare_write]: FOUND target=40 count=285 page=1469 depth=32 loc_out=0
+[DHARA 445208.733753] trace_path[prepare_write]: enter target=29 count=285 root=1702 new_meta=1
+[DHARA 445208.733763] trace_path[prepare_write]: FOUND target=29 count=285 page=1297 depth=32 loc_out=0
+[DHARA 445208.733775] trace_path[prepare_write]: enter target=46 count=285 root=1703 new_meta=1
+[DHARA 445208.733784] trace_path[prepare_write]: FOUND target=46 count=285 page=1281 depth=32 loc_out=0
+[DHARA 445208.733797] trace_path[prepare_write]: enter target=24 count=285 root=1704 new_meta=1
+[DHARA 445208.733806] trace_path[prepare_write]: FOUND target=24 count=285 page=1556 depth=32 loc_out=0
+[DHARA 445208.733818] trace_path[prepare_write]: enter target=26 count=285 root=1705 new_meta=1
+[DHARA 445208.733827] trace_path[prepare_write]: FOUND target=26 count=285 page=1672 depth=32 loc_out=0
+[DHARA 445208.733845] trace_path[prepare_write]: enter target=21 count=285 root=1706 new_meta=1
+[DHARA 445208.733855] trace_path[prepare_write]: FOUND target=21 count=285 page=1540 depth=32 loc_out=0
+[DHARA 445208.733867] trace_path[prepare_write]: enter target=30 count=285 root=1707 new_meta=1
+[DHARA 445208.733876] trace_path[prepare_write]: FOUND target=30 count=285 page=1281 depth=32 loc_out=0
+[DHARA 445208.733889] trace_path[prepare_write]: enter target=45 count=285 root=1708 new_meta=1
+[DHARA 445208.733898] trace_path[prepare_write]: FOUND target=45 count=285 page=0 depth=32 loc_out=0
+[DHARA 445208.733911] trace_path[prepare_write]: enter target=42 count=285 root=1709 new_meta=1
+[DHARA 445208.733920] trace_path[prepare_write]: FOUND target=42 count=285 page=1410 depth=32 loc_out=0
+[DHARA 445208.733934] trace_path[prepare_write]: enter target=21 count=285 root=1710 new_meta=1
+[DHARA 445208.733943] trace_path[prepare_write]: FOUND target=21 count=285 page=1025 depth=32 loc_out=0
+[DHARA 445208.733956] trace_path[prepare_write]: enter target=29 count=285 root=1712 new_meta=1
+[DHARA 445208.733965] trace_path[prepare_write]: FOUND target=29 count=285 page=1540 depth=32 loc_out=0
+[DHARA 445208.733978] trace_path[prepare_write]: enter target=4 count=285 root=1713 new_meta=1
+[DHARA 445208.733987] trace_path[prepare_write]: FOUND target=4 count=285 page=1442 depth=32 loc_out=0
+[DHARA 445208.733999] trace_path[prepare_write]: enter target=10 count=285 root=1714 new_meta=1
+[DHARA 445208.734009] trace_path[prepare_write]: FOUND target=10 count=285 page=1710 depth=32 loc_out=0
+[DHARA 445208.734021] trace_path[prepare_write]: enter target=23 count=285 root=1715 new_meta=1
+[DHARA 445208.734030] trace_path[prepare_write]: FOUND target=23 count=285 page=1042 depth=32 loc_out=0
+[DHARA 445208.734043] trace_path[prepare_write]: enter target=7 count=285 root=1716 new_meta=1
+[DHARA 445208.734052] trace_path[prepare_write]: FOUND target=7 count=285 page=1536 depth=32 loc_out=0
+[DHARA 445208.734064] trace_path[prepare_write]: enter target=45 count=285 root=1717 new_meta=1
+[DHARA 445208.734073] trace_path[prepare_write]: FOUND target=45 count=285 page=1536 depth=32 loc_out=0
+[DHARA 445208.734086] trace_path[prepare_write]: enter target=42 count=285 root=1718 new_meta=1
+[DHARA 445208.734095] trace_path[prepare_write]: FOUND target=42 count=285 page=1152 depth=32 loc_out=0
+[DHARA 445208.734108] trace_path[prepare_write]: enter target=35 count=285 root=1719 new_meta=1
+[DHARA 445208.734117] trace_path[prepare_write]: NOT_FOUND target=35 reason=alt_none depth=31 id=0x30 count=285 root=1719
+[DHARA 445208.734126] trace_path[prepare_write]: exit NOT_FOUND target=35 depth=32 new_meta=1
+[DHARA 445208.734134] prepare_write: count increment to 286 dst=35 (new logical sector)
+[DHARA 445208.734146] trace_path[prepare_write]: enter target=32 count=286 root=1720 new_meta=1
+[DHARA 445208.734156] trace_path[prepare_write]: FOUND target=32 count=286 page=1665 depth=32 loc_out=0
+[DHARA 445208.734176] trace_path[prepare_write]: enter target=41 count=286 root=1721 new_meta=1
+[DHARA 445208.734186] trace_path[prepare_write]: FOUND target=41 count=286 page=1536 depth=32 loc_out=0
+[DHARA 445208.734198] trace_path[prepare_write]: enter target=29 count=286 root=1722 new_meta=1
+[DHARA 445208.734207] trace_path[prepare_write]: FOUND target=29 count=286 page=1713 depth=32 loc_out=0
+[DHARA 445208.734220] trace_path[prepare_write]: enter target=33 count=286 root=1723 new_meta=1
+[DHARA 445208.734229] trace_path[prepare_write]: FOUND target=33 count=286 page=1536 depth=32 loc_out=0
+[DHARA 445208.734242] trace_path[prepare_write]: enter target=18 count=286 root=1724 new_meta=1
+[DHARA 445208.734251] trace_path[prepare_write]: FOUND target=18 count=286 page=1281 depth=32 loc_out=0
+[DHARA 445208.734263] trace_path[prepare_write]: enter target=33 count=286 root=1725 new_meta=1
+[DHARA 445208.734272] trace_path[prepare_write]: FOUND target=33 count=286 page=1724 depth=32 loc_out=0
+[DHARA 445208.734286] trace_path[prepare_write]: enter target=9 count=286 root=1726 new_meta=1
+[DHARA 445208.734295] trace_path[prepare_write]: FOUND target=9 count=286 page=1024 depth=32 loc_out=0
+[DHARA 445208.734331] trace_path[prepare_write]: enter target=15 count=286 root=1792 new_meta=1
+[DHARA 445208.734341] trace_path[prepare_write]: FOUND target=15 count=286 page=1168 depth=32 loc_out=0
+[DHARA 445208.734354] trace_path[prepare_write]: enter target=36 count=286 root=1793 new_meta=1
+[DHARA 445208.734363] trace_path[prepare_write]: FOUND target=36 count=286 page=58 depth=32 loc_out=0
+[DHARA 445208.734375] trace_path[prepare_write]: enter target=18 count=286 root=1794 new_meta=1
+[DHARA 445208.734385] trace_path[prepare_write]: FOUND target=18 count=286 page=1281 depth=32 loc_out=0
+[DHARA 445208.734397] trace_path[prepare_write]: enter target=3 count=286 root=1795 new_meta=1
+[DHARA 445208.734407] trace_path[prepare_write]: FOUND target=3 count=286 page=1712 depth=32 loc_out=0
+[DHARA 445208.734419] trace_path[prepare_write]: enter target=18 count=286 root=1796 new_meta=1
+[DHARA 445208.734428] trace_path[prepare_write]: FOUND target=18 count=286 page=1795 depth=32 loc_out=0
+[DHARA 445208.734440] trace_path[prepare_write]: enter target=28 count=286 root=1797 new_meta=1
+[DHARA 445208.734450] trace_path[prepare_write]: FOUND target=28 count=286 page=1463 depth=32 loc_out=0
+[DHARA 445208.734462] trace_path[prepare_write]: enter target=47 count=286 root=1798 new_meta=1
+[DHARA 445208.734471] trace_path[prepare_write]: [target] enter target=47 count=286 root=1798 new_meta=1
+[DHARA 445208.734480] trace_path[prepare_write]: FOUND target=47 count=286 page=3953 depth=32 loc_out=0 [target]
+[DHARA 445208.734493] trace_path[prepare_write]: enter target=13 count=286 root=1799 new_meta=1
+[DHARA 445208.734502] trace_path[prepare_write]: FOUND target=13 count=286 page=1160 depth=32 loc_out=0
+[DHARA 445208.734514] trace_path[prepare_write]: enter target=3 count=286 root=1800 new_meta=1
+[DHARA 445208.734523] trace_path[prepare_write]: FOUND target=3 count=286 page=1796 depth=32 loc_out=0
+[DHARA 445208.734536] trace_path[prepare_write]: enter target=16 count=286 root=1801 new_meta=1
+[DHARA 445208.734545] trace_path[prepare_write]: FOUND target=16 count=286 page=1064 depth=32 loc_out=0
+[DHARA 445208.734557] trace_path[prepare_write]: enter target=18 count=286 root=1802 new_meta=1
+[DHARA 445208.734567] trace_path[prepare_write]: FOUND target=18 count=286 page=1797 depth=32 loc_out=0
+[DHARA 445208.734579] trace_path[prepare_write]: enter target=22 count=286 root=1803 new_meta=1
+[DHARA 445208.734588] trace_path[prepare_write]: FOUND target=22 count=286 page=1408 depth=32 loc_out=0
+[DHARA 445208.734601] trace_path[prepare_write]: enter target=21 count=286 root=1804 new_meta=1
+[DHARA 445208.734610] trace_path[prepare_write]: FOUND target=21 count=286 page=1540 depth=32 loc_out=0
+[DHARA 445208.734622] trace_path[prepare_write]: enter target=8 count=286 root=1805 new_meta=1
+[DHARA 445208.734631] trace_path[prepare_write]: FOUND target=8 count=286 page=1717 depth=32 loc_out=0
+[DHARA 445208.734653] trace_path[prepare_write]: enter target=38 count=286 root=1806 new_meta=1
+[DHARA 445208.734663] trace_path[prepare_write]: NOT_FOUND target=38 reason=alt_none depth=31 id=0x3 count=286 root=1806
+[DHARA 445208.734672] trace_path[prepare_write]: exit NOT_FOUND target=38 depth=32 new_meta=1
+[DHARA 445208.734680] prepare_write: count increment to 287 dst=38 (new logical sector)
+[DHARA 445208.734692] trace_path[prepare_write]: enter target=44 count=287 root=1808 new_meta=1
+[DHARA 445208.734701] trace_path[prepare_write]: FOUND target=44 count=287 page=1696 depth=32 loc_out=0
+[DHARA 445208.734714] trace_path[prepare_write]: enter target=35 count=287 root=1809 new_meta=1
+[DHARA 445208.734723] trace_path[prepare_write]: FOUND target=35 count=287 page=1796 depth=32 loc_out=0
+[DHARA 445208.734736] trace_path[prepare_write]: enter target=23 count=287 root=1810 new_meta=1
+[DHARA 445208.734745] trace_path[prepare_write]: FOUND target=23 count=287 page=1536 depth=32 loc_out=0
+[DHARA 445208.734757] trace_path[prepare_write]: enter target=21 count=287 root=1811 new_meta=1
+[DHARA 445208.734766] trace_path[prepare_write]: FOUND target=21 count=287 page=0 depth=32 loc_out=0
+[DHARA 445208.734779] trace_path[prepare_write]: enter target=21 count=287 root=1812 new_meta=1
+[DHARA 445208.734788] trace_path[prepare_write]: FOUND target=21 count=287 page=1812 depth=32 loc_out=0
+[DHARA 445208.734800] trace_path[prepare_write]: enter target=4 count=287 root=1813 new_meta=1
+[DHARA 445208.734810] trace_path[prepare_write]: FOUND target=4 count=287 page=1449 depth=32 loc_out=0
+[DHARA 445208.734822] trace_path[prepare_write]: enter target=31 count=287 root=1814 new_meta=1
+[DHARA 445208.734831] trace_path[prepare_write]: FOUND target=31 count=287 page=997 depth=32 loc_out=0
+[DHARA 445208.734844] trace_path[prepare_write]: enter target=10 count=287 root=1815 new_meta=1
+[DHARA 445208.734853] trace_path[prepare_write]: FOUND target=10 count=287 page=1664 depth=32 loc_out=0
+[DHARA 445208.734865] trace_path[prepare_write]: enter target=39 count=287 root=1816 new_meta=1
+[DHARA 445208.734874] trace_path[prepare_write]: FOUND target=39 count=287 page=1025 depth=32 loc_out=0
+[DHARA 445208.734887] trace_path[prepare_write]: enter target=37 count=287 root=1817 new_meta=1
+[DHARA 445208.734896] trace_path[prepare_write]: FOUND target=37 count=287 page=1280 depth=32 loc_out=0
+[DHARA 445208.734908] trace_path[prepare_write]: enter target=14 count=287 root=1818 new_meta=1
+[DHARA 445208.734918] trace_path[prepare_write]: FOUND target=14 count=287 page=1281 depth=32 loc_out=0
+[DHARA 445208.734930] trace_path[prepare_write]: enter target=18 count=287 root=1819 new_meta=1
+[DHARA 445208.734939] trace_path[prepare_write]: FOUND target=18 count=287 page=1410 depth=32 loc_out=0
+[DHARA 445208.734952] trace_path[prepare_write]: enter target=11 count=287 root=1820 new_meta=1
+[DHARA 445208.734961] trace_path[prepare_write]: FOUND target=11 count=287 page=1801 depth=32 loc_out=0
+[DHARA 445208.734973] trace_path[prepare_write]: enter target=8 count=287 root=1821 new_meta=1
+[DHARA 445208.734982] trace_path[prepare_write]: FOUND target=8 count=287 page=1696 depth=32 loc_out=0
+[DHARA 445208.734996] trace_path[prepare_write]: enter target=41 count=287 root=1822 new_meta=1
+[DHARA 445208.735005] trace_path[prepare_write]: FOUND target=41 count=287 page=1536 depth=32 loc_out=0
+[DHARA 445208.735018] trace_path[prepare_write]: enter target=48 count=287 root=1824 new_meta=1
+[DHARA 445208.735028] trace_path[prepare_write]: FOUND target=48 count=287 page=969 depth=32 loc_out=0
+[DHARA 445208.735040] trace_path[prepare_write]: enter target=6 count=287 root=1825 new_meta=1
+[DHARA 445208.735049] trace_path[prepare_write]: NOT_FOUND target=6 reason=alt_none depth=31 id=0x3 count=287 root=1825
+[DHARA 445208.735058] trace_path[prepare_write]: exit NOT_FOUND target=6 depth=32 new_meta=1
+[DHARA 445208.735066] prepare_write: count increment to 288 dst=6 (new logical sector)
+[DHARA 445208.735078] trace_path[prepare_write]: enter target=0 count=288 root=1826 new_meta=1
+[DHARA 445208.735095] trace_path[prepare_write]: FOUND target=0 count=288 page=1822 depth=32 loc_out=0
+[DHARA 445208.735108] trace_path[prepare_write]: enter target=16 count=288 root=1827 new_meta=1
+[DHARA 445208.735117] trace_path[prepare_write]: FOUND target=16 count=288 page=1696 depth=32 loc_out=0
+[DHARA 445208.735130] trace_path[prepare_write]: enter target=9 count=288 root=1828 new_meta=1
+[DHARA 445208.735139] trace_path[prepare_write]: FOUND target=9 count=288 page=1154 depth=32 loc_out=0
+[DHARA 445208.735151] trace_path[prepare_write]: enter target=17 count=288 root=1829 new_meta=1
+[DHARA 445208.735160] trace_path[prepare_write]: FOUND target=17 count=288 page=1160 depth=32 loc_out=0
+[DHARA 445208.735173] trace_path[prepare_write]: enter target=16 count=288 root=1830 new_meta=1
+[DHARA 445208.735182] trace_path[prepare_write]: FOUND target=16 count=288 page=1828 depth=32 loc_out=0
+[DHARA 445208.735194] trace_path[prepare_write]: enter target=11 count=288 root=1831 new_meta=1
+[DHARA 445208.735204] trace_path[prepare_write]: FOUND target=11 count=288 page=392 depth=32 loc_out=0
+[DHARA 445208.735217] trace_path[prepare_write]: enter target=7 count=288 root=1832 new_meta=1
+[DHARA 445208.735226] trace_path[prepare_write]: FOUND target=7 count=288 page=1025 depth=32 loc_out=0
+[DHARA 445208.735238] trace_path[prepare_write]: enter target=33 count=288 root=1833 new_meta=1
+[DHARA 445208.735247] trace_path[prepare_write]: FOUND target=33 count=288 page=1160 depth=32 loc_out=0
+[DHARA 445208.735260] trace_path[prepare_write]: enter target=27 count=288 root=1834 new_meta=1
+[DHARA 445208.735269] trace_path[prepare_write]: FOUND target=27 count=288 page=1810 depth=32 loc_out=0
+[DHARA 445208.735282] trace_path[prepare_write]: enter target=47 count=288 root=1835 new_meta=1
+[DHARA 445208.735290] trace_path[prepare_write]: [target] enter target=47 count=288 root=1835 new_meta=1
+[DHARA 445208.735299] trace_path[prepare_write]: FOUND target=47 count=288 page=1056 depth=32 loc_out=0 [target]
+[DHARA 445208.735312] trace_path[prepare_write]: enter target=34 count=288 root=1836 new_meta=1
+[DHARA 445208.735321] trace_path[prepare_write]: FOUND target=34 count=288 page=1816 depth=32 loc_out=0
+[DHARA 445208.735333] trace_path[prepare_write]: enter target=21 count=288 root=1837 new_meta=1
+[DHARA 445208.735343] trace_path[prepare_write]: FOUND target=21 count=288 page=0 depth=32 loc_out=0
+[DHARA 445208.735357] trace_path[prepare_write]: enter target=11 count=288 root=1838 new_meta=1
+[DHARA 445208.735366] trace_path[prepare_write]: FOUND target=11 count=288 page=1280 depth=32 loc_out=0
+[DHARA 445208.735379] trace_path[prepare_write]: enter target=3 count=288 root=1840 new_meta=1
+[DHARA 445208.735388] trace_path[prepare_write]: FOUND target=3 count=288 page=1832 depth=32 loc_out=0
+[DHARA 445208.735400] trace_path[prepare_write]: enter target=0 count=288 root=1841 new_meta=1
+[DHARA 445208.735409] trace_path[prepare_write]: FOUND target=0 count=288 page=1560 depth=32 loc_out=0
+[DHARA 445208.735422] trace_path[prepare_write]: enter target=27 count=288 root=1842 new_meta=1
+[DHARA 445208.735431] trace_path[prepare_write]: FOUND target=27 count=288 page=1794 depth=32 loc_out=0
+[DHARA 445208.735443] trace_path[prepare_write]: enter target=46 count=288 root=1843 new_meta=1
+[DHARA 445208.735453] trace_path[prepare_write]: FOUND target=46 count=288 page=1664 depth=32 loc_out=0
+[DHARA 445208.735465] trace_path[prepare_write]: enter target=17 count=288 root=1844 new_meta=1
+[DHARA 445208.735477] trace_path[prepare_write]: FOUND target=17 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.735489] trace_path[prepare_write]: enter target=35 count=288 root=1845 new_meta=1
+[DHARA 445208.735499] trace_path[prepare_write]: FOUND target=35 count=288 page=1794 depth=32 loc_out=0
+[DHARA 445208.735511] trace_path[prepare_write]: enter target=11 count=288 root=1846 new_meta=1
+[DHARA 445208.735520] trace_path[prepare_write]: FOUND target=11 count=288 page=1840 depth=32 loc_out=0
+[DHARA 445208.735532] trace_path[prepare_write]: enter target=35 count=288 root=1847 new_meta=1
+[DHARA 445208.735548] trace_path[prepare_write]: FOUND target=35 count=288 page=1846 depth=32 loc_out=0
+[DHARA 445208.735562] trace_path[prepare_write]: enter target=39 count=288 root=1848 new_meta=1
+[DHARA 445208.735571] trace_path[prepare_write]: FOUND target=39 count=288 page=1470 depth=32 loc_out=0
+[DHARA 445208.735583] trace_path[prepare_write]: enter target=8 count=288 root=1849 new_meta=1
+[DHARA 445208.735592] trace_path[prepare_write]: FOUND target=8 count=288 page=1795 depth=32 loc_out=0
+[DHARA 445208.735605] trace_path[prepare_write]: enter target=17 count=288 root=1850 new_meta=1
+[DHARA 445208.735614] trace_path[prepare_write]: FOUND target=17 count=288 page=1845 depth=32 loc_out=0
+[DHARA 445208.735626] trace_path[prepare_write]: enter target=6 count=288 root=1851 new_meta=1
+[DHARA 445208.735635] trace_path[prepare_write]: FOUND target=6 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.735648] trace_path[prepare_write]: enter target=1 count=288 root=1852 new_meta=1
+[DHARA 445208.735657] trace_path[prepare_write]: FOUND target=1 count=288 page=1569 depth=32 loc_out=0
+[DHARA 445208.735669] trace_path[prepare_write]: enter target=42 count=288 root=1853 new_meta=1
+[DHARA 445208.735679] trace_path[prepare_write]: FOUND target=42 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.735692] trace_path[prepare_write]: enter target=9 count=288 root=1854 new_meta=1
+[DHARA 445208.735702] trace_path[prepare_write]: FOUND target=9 count=288 page=1841 depth=32 loc_out=0
+[DHARA 445208.735737] trace_path[prepare_write]: enter target=19 count=288 root=1920 new_meta=1
+[DHARA 445208.735748] trace_path[prepare_write]: FOUND target=19 count=288 page=1042 depth=32 loc_out=0
+[DHARA 445208.735760] trace_path[prepare_write]: enter target=34 count=288 root=1921 new_meta=1
+[DHARA 445208.735769] trace_path[prepare_write]: FOUND target=34 count=288 page=1840 depth=32 loc_out=0
+[DHARA 445208.735782] trace_path[prepare_write]: enter target=39 count=288 root=1922 new_meta=1
+[DHARA 445208.735791] trace_path[prepare_write]: FOUND target=39 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.735804] trace_path[prepare_write]: enter target=23 count=288 root=1923 new_meta=1
+[DHARA 445208.735813] trace_path[prepare_write]: FOUND target=23 count=288 page=1572 depth=32 loc_out=0
+[DHARA 445208.735825] trace_path[prepare_write]: enter target=2 count=288 root=1924 new_meta=1
+[DHARA 445208.735834] trace_path[prepare_write]: FOUND target=2 count=288 page=1800 depth=32 loc_out=0
+[DHARA 445208.735847] trace_path[prepare_write]: enter target=5 count=288 root=1925 new_meta=1
+[DHARA 445208.735856] trace_path[prepare_write]: FOUND target=5 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.735869] trace_path[prepare_write]: enter target=22 count=288 root=1926 new_meta=1
+[DHARA 445208.735878] trace_path[prepare_write]: FOUND target=22 count=288 page=1466 depth=32 loc_out=0
+[DHARA 445208.735890] trace_path[prepare_write]: enter target=32 count=288 root=1927 new_meta=1
+[DHARA 445208.735900] trace_path[prepare_write]: FOUND target=32 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.735912] trace_path[prepare_write]: enter target=49 count=288 root=1928 new_meta=1
+[DHARA 445208.735921] trace_path[prepare_write]: FOUND target=49 count=288 page=1594 depth=32 loc_out=0
+[DHARA 445208.735934] trace_path[prepare_write]: enter target=1 count=288 root=1929 new_meta=1
+[DHARA 445208.735943] trace_path[prepare_write]: FOUND target=1 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.735955] trace_path[prepare_write]: enter target=38 count=288 root=1930 new_meta=1
+[DHARA 445208.735964] trace_path[prepare_write]: FOUND target=38 count=288 page=1844 depth=32 loc_out=0
+[DHARA 445208.735977] trace_path[prepare_write]: enter target=11 count=288 root=1931 new_meta=1
+[DHARA 445208.735986] trace_path[prepare_write]: FOUND target=11 count=288 page=1569 depth=32 loc_out=0
+[DHARA 445208.735998] trace_path[prepare_write]: enter target=0 count=288 root=1932 new_meta=1
+[DHARA 445208.736007] trace_path[prepare_write]: FOUND target=0 count=288 page=1854 depth=32 loc_out=0
+[DHARA 445208.736020] trace_path[prepare_write]: enter target=33 count=288 root=1933 new_meta=1
+[DHARA 445208.736037] trace_path[prepare_write]: FOUND target=33 count=288 page=1853 depth=32 loc_out=0
+[DHARA 445208.736051] trace_path[prepare_write]: enter target=26 count=288 root=1934 new_meta=1
+[DHARA 445208.736061] trace_path[prepare_write]: FOUND target=26 count=288 page=1410 depth=32 loc_out=0
+[DHARA 445208.736073] trace_path[prepare_write]: enter target=25 count=288 root=1936 new_meta=1
+[DHARA 445208.736082] trace_path[prepare_write]: FOUND target=25 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.736095] trace_path[prepare_write]: enter target=43 count=288 root=1937 new_meta=1
+[DHARA 445208.736104] trace_path[prepare_write]: FOUND target=43 count=288 page=1184 depth=32 loc_out=0
+[DHARA 445208.736117] trace_path[prepare_write]: enter target=12 count=288 root=1938 new_meta=1
+[DHARA 445208.736126] trace_path[prepare_write]: FOUND target=12 count=288 page=1697 depth=32 loc_out=0
+[DHARA 445208.736138] trace_path[prepare_write]: enter target=18 count=288 root=1939 new_meta=1
+[DHARA 445208.736148] trace_path[prepare_write]: FOUND target=18 count=288 page=969 depth=32 loc_out=0
+[DHARA 445208.736160] trace_path[prepare_write]: enter target=7 count=288 root=1940 new_meta=1
+[DHARA 445208.736169] trace_path[prepare_write]: FOUND target=7 count=288 page=1833 depth=32 loc_out=0
+[DHARA 445208.736186] trace_path[prepare_write]: enter target=39 count=288 root=1941 new_meta=1
+[DHARA 445208.736196] trace_path[prepare_write]: FOUND target=39 count=288 page=1025 depth=32 loc_out=0
+[DHARA 445208.736208] trace_path[prepare_write]: enter target=4 count=288 root=1942 new_meta=1
+[DHARA 445208.736218] trace_path[prepare_write]: FOUND target=4 count=288 page=1922 depth=32 loc_out=0
+[DHARA 445208.736230] trace_path[prepare_write]: enter target=29 count=288 root=1943 new_meta=1
+[DHARA 445208.736239] trace_path[prepare_write]: FOUND target=29 count=288 page=0 depth=32 loc_out=0
+[DHARA 445208.736252] trace_path[prepare_write]: enter target=0 count=288 root=1944 new_meta=1
+[DHARA 445208.736261] trace_path[prepare_write]: FOUND target=0 count=288 page=1544 depth=32 loc_out=0
+[DHARA 445208.736274] trace_path[prepare_write]: enter target=26 count=288 root=1945 new_meta=1
+[DHARA 445208.736283] trace_path[prepare_write]: FOUND target=26 count=288 page=1936 depth=32 loc_out=0
+[DHARA 445208.736295] trace_path[prepare_write]: enter target=39 count=288 root=1946 new_meta=1
+[DHARA 445208.736304] trace_path[prepare_write]: FOUND target=39 count=288 page=1942 depth=32 loc_out=0
+[DHARA 445208.736317] trace_path[prepare_write]: enter target=8 count=288 root=1947 new_meta=1
+[DHARA 445208.736326] trace_path[prepare_write]: FOUND target=8 count=288 page=1800 depth=32 loc_out=0
+[DHARA 445208.736338] trace_path[prepare_write]: enter target=11 count=288 root=1948 new_meta=1
+[DHARA 445208.736347] trace_path[prepare_write]: FOUND target=11 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.736360] trace_path[prepare_write]: enter target=33 count=288 root=1949 new_meta=1
+[DHARA 445208.736369] trace_path[prepare_write]: FOUND target=33 count=288 page=1920 depth=32 loc_out=0
+[DHARA 445208.736383] trace_path[prepare_write]: enter target=41 count=288 root=1950 new_meta=1
+[DHARA 445208.736392] trace_path[prepare_write]: FOUND target=41 count=288 page=1056 depth=32 loc_out=0
+[DHARA 445208.736404] trace_path[prepare_write]: enter target=32 count=288 root=1952 new_meta=1
+[DHARA 445208.736414] trace_path[prepare_write]: FOUND target=32 count=288 page=1410 depth=32 loc_out=0
+[DHARA 445208.736426] trace_path[prepare_write]: enter target=7 count=288 root=1953 new_meta=1
+[DHARA 445208.736435] trace_path[prepare_write]: FOUND target=7 count=288 page=1810 depth=32 loc_out=0
+[DHARA 445208.736448] trace_path[prepare_write]: enter target=43 count=288 root=1954 new_meta=1
+[DHARA 445208.736457] trace_path[prepare_write]: FOUND target=43 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.736469] trace_path[prepare_write]: enter target=3 count=288 root=1955 new_meta=1
+[DHARA 445208.736478] trace_path[prepare_write]: FOUND target=3 count=288 page=1568 depth=32 loc_out=0
+[DHARA 445208.736492] trace_path[prepare_write]: enter target=42 count=288 root=1956 new_meta=1
+[DHARA 445208.736501] trace_path[prepare_write]: FOUND target=42 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.736514] trace_path[prepare_write]: enter target=27 count=288 root=1957 new_meta=1
+[DHARA 445208.736523] trace_path[prepare_write]: FOUND target=27 count=288 page=1440 depth=32 loc_out=0
+[DHARA 445208.736536] trace_path[prepare_write]: enter target=42 count=288 root=1958 new_meta=1
+[DHARA 445208.736545] trace_path[prepare_write]: FOUND target=42 count=288 page=1957 depth=32 loc_out=0
+[DHARA 445208.736557] trace_path[prepare_write]: enter target=36 count=288 root=1959 new_meta=1
+[DHARA 445208.736566] trace_path[prepare_write]: FOUND target=36 count=288 page=1417 depth=32 loc_out=0
+[DHARA 445208.736579] trace_path[prepare_write]: enter target=27 count=288 root=1960 new_meta=1
+[DHARA 445208.736588] trace_path[prepare_write]: FOUND target=27 count=288 page=1958 depth=32 loc_out=0
+[DHARA 445208.736600] trace_path[prepare_write]: enter target=40 count=288 root=1961 new_meta=1
+[DHARA 445208.736609] trace_path[prepare_write]: FOUND target=40 count=288 page=1948 depth=32 loc_out=0
+[DHARA 445208.736621] trace_path[prepare_write]: enter target=28 count=288 root=1962 new_meta=1
+[DHARA 445208.736631] trace_path[prepare_write]: FOUND target=28 count=288 page=1442 depth=32 loc_out=0
+[DHARA 445208.736643] trace_path[prepare_write]: enter target=3 count=288 root=1963 new_meta=1
+[DHARA 445208.736652] trace_path[prepare_write]: FOUND target=3 count=288 page=1956 depth=32 loc_out=0
+[DHARA 445208.736664] trace_path[prepare_write]: enter target=34 count=288 root=1964 new_meta=1
+[DHARA 445208.736673] trace_path[prepare_write]: FOUND target=34 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.736686] trace_path[prepare_write]: enter target=11 count=288 root=1965 new_meta=1
+[DHARA 445208.736695] trace_path[prepare_write]: FOUND target=11 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.736709] trace_path[prepare_write]: enter target=22 count=288 root=1966 new_meta=1
+[DHARA 445208.736718] trace_path[prepare_write]: FOUND target=22 count=288 page=1808 depth=32 loc_out=0
+[DHARA 445208.736731] trace_path[prepare_write]: enter target=20 count=288 root=1968 new_meta=1
+[DHARA 445208.736740] trace_path[prepare_write]: FOUND target=20 count=288 page=1960 depth=32 loc_out=0
+[DHARA 445208.736753] trace_path[prepare_write]: enter target=5 count=288 root=1969 new_meta=1
+[DHARA 445208.736762] trace_path[prepare_write]: FOUND target=5 count=288 page=1792 depth=32 loc_out=0
+[DHARA 445208.736774] trace_path[prepare_write]: enter target=15 count=288 root=1970 new_meta=1
+[DHARA 445208.736783] trace_path[prepare_write]: FOUND target=15 count=288 page=1569 depth=32 loc_out=0
+[DHARA 445208.736796] trace_path[prepare_write]: enter target=32 count=288 root=1971 new_meta=1
+[DHARA 445208.736805] trace_path[prepare_write]: FOUND target=32 count=288 page=1410 depth=32 loc_out=0
+[DHARA 445208.736817] trace_path[prepare_write]: enter target=49 count=288 root=1972 new_meta=1
+[DHARA 445208.736840] trace_path[prepare_write]: FOUND target=49 count=288 page=1920 depth=32 loc_out=0
+[DHARA 445208.736852] trace_path[prepare_write]: enter target=33 count=288 root=1973 new_meta=1
+[DHARA 445208.736861] trace_path[prepare_write]: FOUND target=33 count=288 page=1440 depth=32 loc_out=0
+[DHARA 445208.736873] trace_path[prepare_write]: enter target=49 count=288 root=1974 new_meta=1
+[DHARA 445208.736882] trace_path[prepare_write]: FOUND target=49 count=288 page=1973 depth=32 loc_out=0
+[DHARA 445208.736894] trace_path[prepare_write]: enter target=39 count=288 root=1975 new_meta=1
+[DHARA 445208.736903] trace_path[prepare_write]: FOUND target=39 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.736915] trace_path[prepare_write]: enter target=44 count=288 root=1976 new_meta=1
+[DHARA 445208.736924] trace_path[prepare_write]: FOUND target=44 count=288 page=1794 depth=32 loc_out=0
+[DHARA 445208.736936] trace_path[prepare_write]: enter target=45 count=288 root=1977 new_meta=1
+[DHARA 445208.736946] trace_path[prepare_write]: FOUND target=45 count=288 page=1538 depth=32 loc_out=0
+[DHARA 445208.736958] trace_path[prepare_write]: enter target=25 count=288 root=1978 new_meta=1
+[DHARA 445208.736967] trace_path[prepare_write]: FOUND target=25 count=288 page=1568 depth=32 loc_out=0
+[DHARA 445208.736979] trace_path[prepare_write]: enter target=3 count=288 root=1979 new_meta=1
+[DHARA 445208.736988] trace_path[prepare_write]: FOUND target=3 count=288 page=1798 depth=32 loc_out=0
+[DHARA 445208.737000] trace_path[prepare_write]: enter target=41 count=288 root=1980 new_meta=1
+[DHARA 445208.737009] trace_path[prepare_write]: FOUND target=41 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.737021] trace_path[prepare_write]: enter target=12 count=288 root=1981 new_meta=1
+[DHARA 445208.737030] trace_path[prepare_write]: FOUND target=12 count=288 page=1537 depth=32 loc_out=0
+[DHARA 445208.737043] trace_path[prepare_write]: enter target=28 count=288 root=1982 new_meta=1
+[DHARA 445208.737053] trace_path[prepare_write]: FOUND target=28 count=288 page=1936 depth=32 loc_out=0
+[DHARA 445208.737087] trace_path[prepare_write]: enter target=19 count=288 root=2048 new_meta=1
+[DHARA 445208.737096] trace_path[prepare_write]: FOUND target=19 count=288 page=1568 depth=32 loc_out=0
+[DHARA 445208.737109] trace_path[prepare_write]: enter target=5 count=288 root=2049 new_meta=1
+[DHARA 445208.737117] trace_path[prepare_write]: FOUND target=5 count=288 page=1964 depth=32 loc_out=0
+[DHARA 445208.737130] trace_path[prepare_write]: enter target=3 count=288 root=2050 new_meta=1
+[DHARA 445208.737139] trace_path[prepare_write]: FOUND target=3 count=288 page=1552 depth=32 loc_out=0
+[DHARA 445208.737151] trace_path[prepare_write]: enter target=47 count=288 root=2051 new_meta=1
+[DHARA 445208.737159] trace_path[prepare_write]: [target] enter target=47 count=288 root=2051 new_meta=1
+[DHARA 445208.737168] trace_path[prepare_write]: FOUND target=47 count=288 page=1024 depth=32 loc_out=0 [target]
+[DHARA 445208.737180] trace_path[prepare_write]: enter target=7 count=288 root=2052 new_meta=1
+[DHARA 445208.737189] trace_path[prepare_write]: FOUND target=7 count=288 page=1568 depth=32 loc_out=0
+[DHARA 445208.737201] trace_path[prepare_write]: enter target=14 count=288 root=2053 new_meta=1
+[DHARA 445208.737210] trace_path[prepare_write]: FOUND target=14 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.737222] trace_path[prepare_write]: enter target=11 count=288 root=2054 new_meta=1
+[DHARA 445208.737231] trace_path[prepare_write]: FOUND target=11 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.737243] trace_path[prepare_write]: enter target=19 count=288 root=2055 new_meta=1
+[DHARA 445208.737252] trace_path[prepare_write]: FOUND target=19 count=288 page=2049 depth=32 loc_out=0
+[DHARA 445208.737264] trace_path[prepare_write]: enter target=21 count=288 root=2056 new_meta=1
+[DHARA 445208.737273] trace_path[prepare_write]: FOUND target=21 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.737285] trace_path[prepare_write]: enter target=5 count=288 root=2057 new_meta=1
+[DHARA 445208.737294] trace_path[prepare_write]: FOUND target=5 count=288 page=2050 depth=32 loc_out=0
+[DHARA 445208.737306] trace_path[prepare_write]: enter target=43 count=288 root=2058 new_meta=1
+[DHARA 445208.737315] trace_path[prepare_write]: FOUND target=43 count=288 page=1281 depth=32 loc_out=0
+[DHARA 445208.737327] trace_path[prepare_write]: enter target=20 count=288 root=2059 new_meta=1
+[DHARA 445208.737336] trace_path[prepare_write]: FOUND target=20 count=288 page=1921 depth=32 loc_out=0
+[DHARA 445208.737348] trace_path[prepare_write]: enter target=34 count=288 root=2060 new_meta=1
+[DHARA 445208.737357] trace_path[prepare_write]: FOUND target=34 count=288 page=1976 depth=32 loc_out=0
+[DHARA 445208.737369] trace_path[prepare_write]: enter target=46 count=288 root=2061 new_meta=1
+[DHARA 445208.737377] trace_path[prepare_write]: FOUND target=46 count=288 page=1808 depth=32 loc_out=0
+[DHARA 445208.737391] trace_path[prepare_write]: enter target=21 count=288 root=2062 new_meta=1
+[DHARA 445208.737401] trace_path[prepare_write]: FOUND target=21 count=288 page=2057 depth=32 loc_out=0
+[DHARA 445208.737413] trace_path[prepare_write]: enter target=20 count=288 root=2064 new_meta=1
+[DHARA 445208.737422] trace_path[prepare_write]: FOUND target=20 count=288 page=2060 depth=32 loc_out=0
+[DHARA 445208.737434] trace_path[prepare_write]: enter target=37 count=288 root=2065 new_meta=1
+[DHARA 445208.737443] trace_path[prepare_write]: FOUND target=37 count=288 page=1312 depth=32 loc_out=0
+[DHARA 445208.737456] trace_path[prepare_write]: enter target=3 count=288 root=2066 new_meta=1
+[DHARA 445208.737464] trace_path[prepare_write]: FOUND target=3 count=288 page=2051 depth=32 loc_out=0
+[DHARA 445208.737477] trace_path[prepare_write]: enter target=14 count=288 root=2067 new_meta=1
+[DHARA 445208.737485] trace_path[prepare_write]: FOUND target=14 count=288 page=2054 depth=32 loc_out=0
+[DHARA 445208.737498] trace_path[prepare_write]: enter target=40 count=288 root=2068 new_meta=1
+[DHARA 445208.737507] trace_path[prepare_write]: FOUND target=40 count=288 page=1921 depth=32 loc_out=0
+[DHARA 445208.737519] trace_path[prepare_write]: enter target=13 count=288 root=2069 new_meta=1
+[DHARA 445208.737528] trace_path[prepare_write]: FOUND target=13 count=288 page=1152 depth=32 loc_out=0
+[DHARA 445208.737540] trace_path[prepare_write]: enter target=21 count=288 root=2070 new_meta=1
+[DHARA 445208.737548] trace_path[prepare_write]: FOUND target=21 count=288 page=2064 depth=32 loc_out=0
+[DHARA 445208.737561] trace_path[prepare_write]: enter target=15 count=288 root=2071 new_meta=1
+[DHARA 445208.737569] trace_path[prepare_write]: FOUND target=15 count=288 page=1536 depth=32 loc_out=0
+[DHARA 445208.737581] trace_path[prepare_write]: enter target=22 count=288 root=2072 new_meta=1
+[DHARA 445208.737590] trace_path[prepare_write]: FOUND target=22 count=288 page=1827 depth=32 loc_out=0
+[DHARA 445208.737603] trace_path[prepare_write]: enter target=25 count=288 root=2073 new_meta=1
+[DHARA 445208.737611] trace_path[prepare_write]: FOUND target=25 count=288 page=1944 depth=32 loc_out=0
+[DHARA 445208.737624] trace_path[prepare_write]: enter target=1 count=288 root=2074 new_meta=1
+[DHARA 445208.737632] trace_path[prepare_write]: FOUND target=1 count=288 page=1920 depth=32 loc_out=0
+[DHARA 445208.737644] trace_path[prepare_write]: enter target=13 count=288 root=2075 new_meta=1
+[DHARA 445208.737653] trace_path[prepare_write]: FOUND target=13 count=288 page=2070 depth=32 loc_out=0
+[DHARA 445208.737665] trace_path[prepare_write]: enter target=0 count=288 root=2076 new_meta=1
+[DHARA 445208.737674] trace_path[prepare_write]: FOUND target=0 count=288 page=1982 depth=32 loc_out=0
+[DHARA 445208.737686] trace_path[prepare_write]: enter target=14 count=288 root=2077 new_meta=1
+[DHARA 445208.737695] trace_path[prepare_write]: FOUND target=14 count=288 page=2068 depth=32 loc_out=0
+[DHARA 445208.737708] trace_path[prepare_write]: enter target=0 count=288 root=2078 new_meta=1
+[DHARA 445208.737717] trace_path[prepare_write]: FOUND target=0 count=288 page=2077 depth=32 loc_out=0
+[DHARA 445208.737729] trace_path[prepare_write]: enter target=17 count=288 root=2080 new_meta=1
+[DHARA 445208.737738] trace_path[prepare_write]: FOUND target=17 count=288 page=1978 depth=32 loc_out=0
+[DHARA 445208.737750] trace_path[prepare_write]: enter target=39 count=288 root=2081 new_meta=1
+[DHARA 445208.737759] trace_path[prepare_write]: FOUND target=39 count=288 page=1841 depth=32 loc_out=0
+[DHARA 445208.737771] trace_path[prepare_write]: enter target=33 count=288 root=2082 new_meta=1
+[DHARA 445208.737780] trace_path[prepare_write]: FOUND target=33 count=288 page=1440 depth=32 loc_out=0
+[DHARA 445208.737792] trace_path[prepare_write]: enter target=2 count=288 root=2083 new_meta=1
+[DHARA 445208.737801] trace_path[prepare_write]: FOUND target=2 count=288 page=1971 depth=32 loc_out=0
+[DHARA 445208.737813] trace_path[prepare_write]: enter target=34 count=288 root=2084 new_meta=1
+[DHARA 445208.737822] trace_path[prepare_write]: FOUND target=34 count=288 page=2061 depth=32 loc_out=0
+[DHARA 445208.737849] trace_path[prepare_write]: enter target=33 count=288 root=2085 new_meta=1
+[DHARA 445208.737857] trace_path[prepare_write]: FOUND target=33 count=288 page=2083 depth=32 loc_out=0
+[DHARA 445208.737869] trace_path[prepare_write]: enter target=8 count=288 root=2086 new_meta=1
+[DHARA 445208.737878] trace_path[prepare_write]: FOUND target=8 count=288 page=1956 depth=32 loc_out=0
+[DHARA 445208.737890] trace_path[prepare_write]: enter target=29 count=288 root=2087 new_meta=1
+[DHARA 445208.737899] trace_path[prepare_write]: FOUND target=29 count=288 page=1152 depth=32 loc_out=0
+[DHARA 445208.737911] trace_path[prepare_write]: enter target=43 count=288 root=2088 new_meta=1
+[DHARA 445208.737919] trace_path[prepare_write]: FOUND target=43 count=288 page=2059 depth=32 loc_out=0
+[DHARA 445208.737931] trace_path[prepare_write]: enter target=41 count=288 root=2089 new_meta=1
+[DHARA 445208.737940] trace_path[prepare_write]: FOUND target=41 count=288 page=1981 depth=32 loc_out=0
+[DHARA 445208.737952] trace_path[prepare_write]: enter target=35 count=288 root=2090 new_meta=1
+[DHARA 445208.737960] trace_path[prepare_write]: FOUND target=35 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.737972] trace_path[prepare_write]: enter target=9 count=288 root=2091 new_meta=1
+[DHARA 445208.737981] trace_path[prepare_write]: FOUND target=9 count=288 page=1980 depth=32 loc_out=0
+[DHARA 445208.737993] trace_path[prepare_write]: enter target=22 count=288 root=2092 new_meta=1
+[DHARA 445208.738001] trace_path[prepare_write]: FOUND target=22 count=288 page=2073 depth=32 loc_out=0
+[DHARA 445208.738013] trace_path[prepare_write]: enter target=46 count=288 root=2093 new_meta=1
+[DHARA 445208.738022] trace_path[prepare_write]: FOUND target=46 count=288 page=2062 depth=32 loc_out=0
+[DHARA 445208.738035] trace_path[prepare_write]: enter target=21 count=288 root=2094 new_meta=1
+[DHARA 445208.738043] trace_path[prepare_write]: FOUND target=21 count=288 page=2071 depth=32 loc_out=0
+[DHARA 445208.738055] trace_path[prepare_write]: enter target=34 count=288 root=2096 new_meta=1
+[DHARA 445208.738064] trace_path[prepare_write]: FOUND target=34 count=288 page=2085 depth=32 loc_out=0
+[DHARA 445208.738076] trace_path[prepare_write]: enter target=42 count=288 root=2097 new_meta=1
+[DHARA 445208.738084] trace_path[prepare_write]: FOUND target=42 count=288 page=1824 depth=32 loc_out=0
+[DHARA 445208.738096] trace_path[prepare_write]: enter target=2 count=288 root=2098 new_meta=1
+[DHARA 445208.738105] trace_path[prepare_write]: FOUND target=2 count=288 page=2084 depth=32 loc_out=0
+[DHARA 445208.738117] trace_path[prepare_write]: enter target=23 count=288 root=2099 new_meta=1
+[DHARA 445208.738125] trace_path[prepare_write]: FOUND target=23 count=288 page=1024 depth=32 loc_out=0
+[DHARA 445208.738137] trace_path[prepare_write]: enter target=28 count=288 root=2100 new_meta=1
+[DHARA 445208.738146] trace_path[prepare_write]: FOUND target=28 count=288 page=2048 depth=32 loc_out=0
+[DHARA 445208.738157] trace_path[prepare_write]: enter target=12 count=288 root=2101 new_meta=1
+[DHARA 445208.738166] trace_path[prepare_write]: FOUND target=12 count=288 page=1954 depth=32 loc_out=0
+[DHARA 445208.738178] trace_path[prepare_write]: enter target=39 count=288 root=2102 new_meta=1
+[DHARA 445208.738186] trace_path[prepare_write]: FOUND target=39 count=288 page=2082 depth=32 loc_out=0
+[DHARA 445208.738198] trace_path[prepare_write]: enter target=9 count=288 root=2103 new_meta=1
+[DHARA 445208.738207] trace_path[prepare_write]: FOUND target=9 count=288 page=2092 depth=32 loc_out=0
+[DHARA 445208.738219] trace_path[prepare_write]: enter target=31 count=288 root=2104 new_meta=1
+[DHARA 445208.738227] trace_path[prepare_write]: FOUND target=31 count=288 page=1413 depth=32 loc_out=0
+[DHARA 445208.738239] trace_path[prepare_write]: enter target=9 count=288 root=2105 new_meta=1
+[DHARA 445208.738247] trace_path[prepare_write]: FOUND target=9 count=288 page=2104 depth=32 loc_out=0
+[DHARA 445208.738259] trace_path[prepare_write]: enter target=33 count=288 root=2106 new_meta=1
+[DHARA 445208.738269] trace_path[prepare_write]: FOUND target=33 count=288 page=2086 depth=32 loc_out=0
+[DHARA 445208.738281] trace_path[prepare_write]: enter target=0 count=288 root=2107 new_meta=1
+[DHARA 445208.738289] trace_path[prepare_write]: FOUND target=0 count=288 page=2080 depth=32 loc_out=0
+[DHARA 445208.738301] trace_path[prepare_write]: enter target=30 count=288 root=2108 new_meta=1
+[DHARA 445208.738310] trace_path[prepare_write]: FOUND target=30 count=288 page=1312 depth=32 loc_out=0
+[DHARA 445208.738321] trace_path[prepare_write]: enter target=30 count=288 root=2109 new_meta=1
+[DHARA 445208.738330] trace_path[prepare_write]: FOUND target=30 count=288 page=2109 depth=32 loc_out=0
+[DHARA 445208.738343] trace_path[prepare_write]: enter target=41 count=288 root=2110 new_meta=1
+[DHARA 445208.738352] trace_path[prepare_write]: FOUND target=41 count=288 page=2090 depth=32 loc_out=0
+[DHARA 445208.738388] trace_path[prepare_write]: enter target=44 count=288 root=2112 new_meta=1
+[DHARA 445208.738398] trace_path[prepare_write]: NOT_FOUND target=44 reason=id_none depth=30 id=0xffffffff count=288 root=2112
+[DHARA 445208.738406] trace_path[prepare_write]: exit NOT_FOUND target=44 depth=30 new_meta=1
+[DHARA 445208.738414] prepare_write: count increment to 289 dst=44 (new logical sector)
+[DHARA 445208.738426] trace_path[prepare_write]: enter target=17 count=289 root=2113 new_meta=1
+[DHARA 445208.738435] trace_path[prepare_write]: NOT_FOUND target=17 reason=id_none depth=30 id=0xffffffff count=289 root=2113
+[DHARA 445208.738443] trace_path[prepare_write]: exit NOT_FOUND target=17 depth=30 new_meta=1
+[DHARA 445208.738451] prepare_write: count increment to 290 dst=17 (new logical sector)
+[DHARA 445208.738463] trace_path[prepare_write]: enter target=33 count=290 root=2114 new_meta=1
+[DHARA 445208.738471] trace_path[prepare_write]: FOUND target=33 count=290 page=2107 depth=32 loc_out=0
+[DHARA 445208.738483] trace_path[prepare_write]: enter target=33 count=290 root=2115 new_meta=1
+[DHARA 445208.738491] trace_path[prepare_write]: FOUND target=33 count=290 page=2115 depth=32 loc_out=0
+[DHARA 445208.738503] trace_path[prepare_write]: enter target=25 count=290 root=2116 new_meta=1
+[DHARA 445208.738512] trace_path[prepare_write]: NOT_FOUND target=25 reason=id_none depth=30 id=0xffffffff count=290 root=2116
+[DHARA 445208.738520] trace_path[prepare_write]: exit NOT_FOUND target=25 depth=30 new_meta=1
+[DHARA 445208.738539] trace_path[prepare_write]: enter target=47 count=292 root=2119 new_meta=1
+[DHARA 445208.738547] trace_path[prepare_write]: [target] enter target=47 count=292 root=2119 new_meta=1
+[DHARA 445208.738556] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=30 id=0x2c count=292 root=2119
+[DHARA 445208.738564] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.738923] trace_path[prepare_write]: enter target=47 count=320 root=2213 new_meta=1
+[DHARA 445208.738933] trace_path[prepare_write]: [target] enter target=47 count=320 root=2213 new_meta=1
+[DHARA 445208.738941] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=320 root=2213
+[DHARA 445208.738949] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.739141] trace_path[prepare_write]: enter target=47 count=336 root=2389 new_meta=1
+[DHARA 445208.739150] trace_path[prepare_write]: [target] enter target=47 count=336 root=2389 new_meta=1
+[DHARA 445208.739159] trace_path[prepare_write]: FOUND target=47 count=336 page=2160 depth=32 loc_out=0 [target]
+[DHARA 445208.739241] trace_path[prepare_write]: enter target=47 count=342 root=2411 new_meta=1
+[DHARA 445208.739249] trace_path[prepare_write]: [target] enter target=47 count=342 root=2411 new_meta=1
+[DHARA 445208.739258] trace_path[prepare_write]: FOUND target=47 count=342 page=2390 depth=32 loc_out=0 [target]
+[DHARA 445208.739478] trace_path[prepare_write]: enter target=47 count=361 root=2468 new_meta=1
+[DHARA 445208.739487] trace_path[prepare_write]: [target] enter target=47 count=361 root=2468 new_meta=1
+[DHARA 445208.739497] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=361 root=2468
+[DHARA 445208.739505] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.739644] trace_path[prepare_write]: enter target=47 count=368 root=2629 new_meta=1
+[DHARA 445208.739654] trace_path[prepare_write]: [target] enter target=47 count=368 root=2629 new_meta=1
+[DHARA 445208.739662] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=368 root=2629
+[DHARA 445208.739670] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.739755] trace_path[prepare_write]: enter target=47 count=376 root=2652 new_meta=1
+[DHARA 445208.739764] trace_path[prepare_write]: [target] enter target=47 count=376 root=2652 new_meta=1
+[DHARA 445208.739772] trace_path[prepare_write]: FOUND target=47 count=376 page=2630 depth=32 loc_out=0 [target]
+[DHARA 445208.739783] trace_path[prepare_write]: enter target=47 count=376 root=2653 new_meta=1
+[DHARA 445208.739792] trace_path[prepare_write]: [target] enter target=47 count=376 root=2653 new_meta=1
+[DHARA 445208.739799] trace_path[prepare_write]: FOUND target=47 count=376 page=2653 depth=32 loc_out=0 [target]
+[DHARA 445208.740105] trace_path[prepare_write]: enter target=47 count=406 root=2733 new_meta=1
+[DHARA 445208.740114] trace_path[prepare_write]: [target] enter target=47 count=406 root=2733 new_meta=1
+[DHARA 445208.740122] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=406 root=2733
+[DHARA 445208.740130] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.740280] trace_path[raw_gc]: enter target=47 count=413 root=2894 new_meta=1
+[DHARA 445208.740289] trace_path[raw_gc]: [target] enter target=47 count=413 root=2894 new_meta=1
+[DHARA 445208.740297] trace_path[raw_gc]: FOUND target=47 count=413 page=2700 depth=32 loc_out=1 [target]
+[DHARA 445208.740347] trace_path[prepare_write]: enter target=47 count=414 root=2906 new_meta=1
+[DHARA 445208.740356] trace_path[prepare_write]: [target] enter target=47 count=414 root=2906 new_meta=1
+[DHARA 445208.740364] trace_path[prepare_write]: FOUND target=47 count=414 page=2700 depth=32 loc_out=0 [target]
+[DHARA 445208.740387] trace_path[prepare_write]: enter target=47 count=414 root=2910 new_meta=1
+[DHARA 445208.740395] trace_path[prepare_write]: [target] enter target=47 count=414 root=2910 new_meta=1
+[DHARA 445208.740403] trace_path[prepare_write]: FOUND target=47 count=414 page=2907 depth=32 loc_out=0 [target]
+[DHARA 445208.740494] trace_path[prepare_write]: enter target=47 count=417 root=2935 new_meta=1
+[DHARA 445208.740502] trace_path[prepare_write]: [target] enter target=47 count=417 root=2935 new_meta=1
+[DHARA 445208.740510] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=417 root=2935
+[DHARA 445208.740518] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.740579] trace_path[prepare_write]: enter target=47 count=421 root=2945 new_meta=1
+[DHARA 445208.740588] trace_path[prepare_write]: [target] enter target=47 count=421 root=2945 new_meta=1
+[DHARA 445208.740596] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=29 id=0xffffffff count=421 root=2945
+[DHARA 445208.740604] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=29 new_meta=1
+[DHARA 445208.740653] trace_path[prepare_write]: enter target=47 count=426 root=2957 new_meta=1
+[DHARA 445208.740661] trace_path[prepare_write]: [target] enter target=47 count=426 root=2957 new_meta=1
+[DHARA 445208.740669] trace_path[prepare_write]: FOUND target=47 count=426 page=2946 depth=32 loc_out=0 [target]
+[DHARA 445208.740760] trace_path[prepare_write]: enter target=47 count=434 root=2983 new_meta=1
+[DHARA 445208.740769] trace_path[prepare_write]: [target] enter target=47 count=434 root=2983 new_meta=1
+[DHARA 445208.740777] trace_path[prepare_write]: FOUND target=47 count=434 page=2624 depth=32 loc_out=0 [target]
+[DHARA 445208.740845] trace_path[prepare_write]: enter target=47 count=439 root=3001 new_meta=1
+[DHARA 445208.740853] trace_path[prepare_write]: [target] enter target=47 count=439 root=3001 new_meta=1
+[DHARA 445208.740875] trace_path[prepare_write]: FOUND target=47 count=439 page=2946 depth=32 loc_out=0 [target]
+[DHARA 445208.740928] trace_path[raw_gc]: enter target=47 count=441 root=3136 new_meta=1
+[DHARA 445208.740936] trace_path[raw_gc]: [target] enter target=47 count=441 root=3136 new_meta=1
+[DHARA 445208.740944] trace_path[raw_gc]: FOUND target=47 count=441 page=2946 depth=32 loc_out=1 [target]
+[DHARA 445208.740980] trace_path[prepare_write]: enter target=47 count=441 root=3137 new_meta=1
+[DHARA 445208.740989] trace_path[prepare_write]: [target] enter target=47 count=441 root=3137 new_meta=1
+[DHARA 445208.740997] trace_path[prepare_write]: FOUND target=47 count=441 page=2946 depth=32 loc_out=0 [target]
+[DHARA 445208.741325] trace_path[prepare_write]: enter target=47 count=457 root=3192 new_meta=1
+[DHARA 445208.741338] trace_path[prepare_write]: [target] enter target=47 count=457 root=3192 new_meta=1
+[DHARA 445208.741346] trace_path[prepare_write]: FOUND target=47 count=457 page=2624 depth=32 loc_out=0 [target]
+[DHARA 445208.741456] trace_path[prepare_write]: enter target=47 count=466 root=3218 new_meta=1
+[DHARA 445208.741465] trace_path[prepare_write]: [target] enter target=47 count=466 root=3218 new_meta=1
+[DHARA 445208.741473] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=29 id=0xffffffff count=466 root=3218
+[DHARA 445208.741481] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=29 new_meta=1
+[DHARA 445208.741933] trace_path[prepare_write]: enter target=47 count=498 root=3468 new_meta=1
+[DHARA 445208.741942] trace_path[prepare_write]: [target] enter target=47 count=498 root=3468 new_meta=1
+[DHARA 445208.741949] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=498 root=3468
+[DHARA 445208.741957] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.742375] trace_path[prepare_write]: enter target=47 count=540 root=3715 new_meta=1
+[DHARA 445208.742384] trace_path[prepare_write]: [target] enter target=47 count=540 root=3715 new_meta=1
+[DHARA 445208.742392] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=540 root=3715
+[DHARA 445208.742399] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.742955] trace_path[prepare_write]: enter target=47 count=564 root=32 new_meta=1
+[DHARA 445208.742963] trace_path[prepare_write]: [target] enter target=47 count=564 root=32 new_meta=1
+[DHARA 445208.742972] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=564 root=32
+[DHARA 445208.742980] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.743079] trace_path[prepare_write]: enter target=47 count=565 root=62 new_meta=1
+[DHARA 445208.743087] trace_path[prepare_write]: [target] enter target=47 count=565 root=62 new_meta=1
+[DHARA 445208.743095] trace_path[prepare_write]: FOUND target=47 count=565 page=33 depth=32 loc_out=0 [target]
+[DHARA 445208.743491] trace_path[raw_gc]: enter target=47 count=602 root=204 new_meta=1
+[DHARA 445208.743500] trace_path[raw_gc]: [target] enter target=47 count=602 root=204 new_meta=1
+[DHARA 445208.743507] trace_path[raw_gc]: FOUND target=47 count=602 page=64 depth=32 loc_out=1 [target]
+[DHARA 445208.743522] trace_path[raw_gc]: enter target=47 count=602 root=205 new_meta=1
+[DHARA 445208.743529] trace_path[raw_gc]: [target] enter target=47 count=602 root=205 new_meta=1
+[DHARA 445208.743537] trace_path[raw_gc]: FOUND target=47 count=602 page=64 depth=32 loc_out=1 [target]
+[DHARA 445208.743698] trace_path[prepare_write]: enter target=47 count=615 root=253 new_meta=1
+[DHARA 445208.743707] trace_path[prepare_write]: [target] enter target=47 count=615 root=253 new_meta=1
+[DHARA 445208.743714] trace_path[prepare_write]: FOUND target=47 count=615 page=206 depth=32 loc_out=0 [target]
+[DHARA 445208.743882] trace_path[prepare_write]: enter target=47 count=622 root=363 new_meta=1
+[DHARA 445208.743891] trace_path[prepare_write]: [target] enter target=47 count=622 root=363 new_meta=1
+[DHARA 445208.743898] trace_path[prepare_write]: FOUND target=47 count=622 page=96 depth=32 loc_out=0 [target]
+[DHARA 445208.744137] trace_path[prepare_write]: enter target=47 count=630 root=498 new_meta=1
+[DHARA 445208.744145] trace_path[prepare_write]: [target] enter target=47 count=630 root=498 new_meta=1
+[DHARA 445208.744153] trace_path[prepare_write]: FOUND target=47 count=630 page=193 depth=32 loc_out=0 [target]
+[DHARA 445208.744313] trace_path[prepare_write]: enter target=47 count=630 root=605 new_meta=1
+[DHARA 445208.744321] trace_path[prepare_write]: [target] enter target=47 count=630 root=605 new_meta=1
+[DHARA 445208.744329] trace_path[prepare_write]: FOUND target=47 count=630 page=193 depth=32 loc_out=0 [target]
+[DHARA 445208.744551] trace_path[prepare_write]: enter target=47 count=634 root=734 new_meta=1
+[DHARA 445208.744560] trace_path[prepare_write]: [target] enter target=47 count=634 root=734 new_meta=1
+[DHARA 445208.744567] trace_path[prepare_write]: FOUND target=47 count=634 page=69 depth=32 loc_out=0 [target]
+[DHARA 445208.744849] trace_path[prepare_write]: enter target=47 count=638 root=883 new_meta=1
+[DHARA 445208.744858] trace_path[prepare_write]: [target] enter target=47 count=638 root=883 new_meta=1
+[DHARA 445208.744865] trace_path[prepare_write]: FOUND target=47 count=638 page=320 depth=32 loc_out=0 [target]
+[DHARA 445208.745007] trace_path[prepare_write]: enter target=47 count=641 root=984 new_meta=1
+[DHARA 445208.745015] trace_path[prepare_write]: [target] enter target=47 count=641 root=984 new_meta=1
+[DHARA 445208.745022] trace_path[prepare_write]: FOUND target=47 count=641 page=65 depth=32 loc_out=0 [target]
+[DHARA 445208.745195] trace_path[prepare_write]: enter target=47 count=641 root=1018 new_meta=1
+[DHARA 445208.745219] trace_path[prepare_write]: [target] enter target=47 count=641 root=1018 new_meta=1
+[DHARA 445208.745226] trace_path[prepare_write]: FOUND target=47 count=641 page=69 depth=32 loc_out=0 [target]
+[DHARA 445208.745538] trace_path[prepare_write]: enter target=47 count=644 root=1283 new_meta=1
+[DHARA 445208.745546] trace_path[prepare_write]: [target] enter target=47 count=644 root=1283 new_meta=1
+[DHARA 445208.745554] trace_path[prepare_write]: FOUND target=47 count=644 page=65 depth=32 loc_out=0 [target]
+[DHARA 445208.745622] trace_path[prepare_write]: enter target=47 count=645 root=1303 new_meta=1
+[DHARA 445208.745630] trace_path[prepare_write]: [target] enter target=47 count=645 root=1303 new_meta=1
+[DHARA 445208.745637] trace_path[prepare_write]: FOUND target=47 count=645 page=1284 depth=32 loc_out=0 [target]
+[DHARA 445208.745880] trace_path[prepare_write]: enter target=47 count=650 root=1438 new_meta=1
+[DHARA 445208.745888] trace_path[prepare_write]: [target] enter target=47 count=650 root=1438 new_meta=1
+[DHARA 445208.745896] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x6 count=650 root=1438
+[DHARA 445208.745903] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.746041] trace_path[raw_gc]: enter target=47 count=657 root=1536 new_meta=1
+[DHARA 445208.746050] trace_path[raw_gc]: [target] enter target=47 count=657 root=1536 new_meta=1
+[DHARA 445208.746057] trace_path[raw_gc]: [target] NOT_FOUND reason=alt_none depth=31 id=0x6 count=657 root=1536
+[DHARA 445208.746065] trace_path[raw_gc]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.746102] trace_path[raw_gc]: enter target=47 count=657 root=1538 new_meta=1
+[DHARA 445208.746110] trace_path[raw_gc]: [target] enter target=47 count=657 root=1538 new_meta=1
+[DHARA 445208.746118] trace_path[raw_gc]: [target] NOT_FOUND reason=alt_none depth=31 id=0x6 count=657 root=1538
+[DHARA 445208.746125] trace_path[raw_gc]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.746166] trace_path[raw_gc]: enter target=47 count=658 root=1540 new_meta=1
+[DHARA 445208.746175] trace_path[raw_gc]: [target] enter target=47 count=658 root=1540 new_meta=1
+[DHARA 445208.746183] trace_path[raw_gc]: [target] NOT_FOUND reason=alt_none depth=31 id=0x6 count=658 root=1540
+[DHARA 445208.746190] trace_path[raw_gc]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.746241] trace_path[prepare_write]: enter target=47 count=659 root=1543 new_meta=1
+[DHARA 445208.746249] trace_path[prepare_write]: [target] enter target=47 count=659 root=1543 new_meta=1
+[DHARA 445208.746256] trace_path[prepare_write]: [target] NOT_FOUND reason=alt_none depth=31 id=0x2e count=659 root=1543
+[DHARA 445208.746263] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=32 new_meta=1
+[DHARA 445208.746281] trace_path[raw_gc]: enter target=47 count=660 root=1544 new_meta=1
+[DHARA 445208.746289] trace_path[raw_gc]: [target] enter target=47 count=660 root=1544 new_meta=1
+[DHARA 445208.746296] trace_path[raw_gc]: FOUND target=47 count=660 page=1544 depth=32 loc_out=1 [target]
+[DHARA 445208.746333] trace_path[raw_gc]: enter target=47 count=660 root=1546 new_meta=1
+[DHARA 445208.746341] trace_path[raw_gc]: [target] enter target=47 count=660 root=1546 new_meta=1
+[DHARA 445208.746348] trace_path[raw_gc]: FOUND target=47 count=660 page=1544 depth=32 loc_out=1 [target]
+[DHARA 445208.746396] trace_path[raw_gc]: enter target=47 count=661 root=1550 new_meta=1
+[DHARA 445208.746404] trace_path[raw_gc]: [target] enter target=47 count=661 root=1550 new_meta=1
+[DHARA 445208.746411] trace_path[raw_gc]: [target] NOT_FOUND reason=alt_none depth=30 id=0x4 count=661 root=1550
+[DHARA 445208.746419] trace_path[raw_gc]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.746463] trace_path[prepare_write]: enter target=47 count=661 root=1571 new_meta=1
+[DHARA 445208.746496] trace_path[prepare_write]: [target] enter target=47 count=661 root=1571 new_meta=1
+[DHARA 445208.746503] trace_path[prepare_write]: FOUND target=47 count=661 page=832 depth=32 loc_out=0 [target]
+[DHARA 445208.746798] trace_path[prepare_write]: enter target=47 count=664 root=1682 new_meta=1
+[DHARA 445208.746807] trace_path[prepare_write]: [target] enter target=47 count=664 root=1682 new_meta=1
+[DHARA 445208.746814] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=664 root=1682
+[DHARA 445208.746822] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.747062] trace_path[prepare_write]: enter target=47 count=676 root=1816 new_meta=1
+[DHARA 445208.747070] trace_path[prepare_write]: [target] enter target=47 count=676 root=1816 new_meta=1
+[DHARA 445208.747078] trace_path[prepare_write]: [target] NOT_FOUND reason=id_none depth=31 id=0xffffffff count=676 root=1816
+[DHARA 445208.747085] trace_path[prepare_write]: exit NOT_FOUND target=47 depth=31 new_meta=1
+[DHARA 445208.747749] trace_path[prepare_write]: enter target=47 count=692 root=2097 new_meta=1
+[DHARA 445208.747758] trace_path[prepare_write]: [target] enter target=47 count=692 root=2097 new_meta=1
+[DHARA 445208.747766] trace_path[prepare_write]: FOUND target=47 count=692 page=1024 depth=32 loc_out=0 [target]
+[DHARA 445208.747853] trace_path[prepare_write]: enter target=47 count=694 root=2116 new_meta=1
+[DHARA 445208.747862] trace_path[prepare_write]: [target] enter target=47 count=694 root=2116 new_meta=1
+[DHARA 445208.747869] trace_path[prepare_write]: FOUND target=47 count=694 page=2098 depth=32 loc_out=0 [target]
+[DHARA 445208.747901] trace_path[prepare_write]: enter target=47 count=696 root=2124 new_meta=1
+[DHARA 445208.747909] trace_path[prepare_write]: [target] enter target=47 count=696 root=2124 new_meta=1
+[DHARA 445208.747916] trace_path[prepare_write]: FOUND target=47 count=696 page=2117 depth=32 loc_out=0 [target]
+[DHARA 445208.747965] trace_path[prepare_write]: enter target=47 count=699 root=2138 new_meta=1
+[DHARA 445208.747973] trace_path[prepare_write]: [target] enter target=47 count=699 root=2138 new_meta=1
+[DHARA 445208.747980] trace_path[prepare_write]: FOUND target=47 count=699 page=2125 depth=32 loc_out=0 [target]
+[DHARA 445208.748066] trace_path[prepare_write]: enter target=47 count=705 root=2164 new_meta=1
+[DHARA 445208.748074] trace_path[prepare_write]: [target] enter target=47 count=705 root=2164 new_meta=1
+[DHARA 445208.748082] trace_path[prepare_write]: FOUND target=47 count=705 page=2139 depth=32 loc_out=0 [target]
