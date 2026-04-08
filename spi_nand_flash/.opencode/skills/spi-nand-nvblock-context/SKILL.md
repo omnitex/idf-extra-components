@@ -6,7 +6,7 @@ metadata:
   author: OpenCode AI
   version: "2.0"
   created: 2026-03-04
-  updated: 2026-03-04
+  updated: 2026-04-08
 ---
 
 # SPI NAND Flash + nvblock Integration - How To Guide
@@ -168,7 +168,7 @@ Add **nvblock** as an alternative wear leveling implementation alongside **Dhara
 **spi_nand_ops** (what nvblock_glue.c must implement):
 ```c
 typedef struct {
-    esp_err_t (*init)(spi_nand_flash_device_t *handle);
+    esp_err_t (*init)(spi_nand_flash_device_t *handle, void *bdl_handle); // bdl_handle is NULL if BDL disabled
     esp_err_t (*deinit)(spi_nand_flash_device_t *handle);
     esp_err_t (*read)(spi_nand_flash_device_t *handle, uint8_t *buffer, uint32_t sector_id);
     esp_err_t (*write)(spi_nand_flash_device_t *handle, const uint8_t *buffer, uint32_t sector_id);
@@ -176,24 +176,29 @@ typedef struct {
     esp_err_t (*erase_block)(spi_nand_flash_device_t *handle, uint32_t block);
     esp_err_t (*trim)(spi_nand_flash_device_t *handle, uint32_t sector_id);
     esp_err_t (*sync)(spi_nand_flash_device_t *handle);
-    esp_err_t (*copy_sector)(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
-    esp_err_t (*get_capacity)(spi_nand_flash_device_t *handle, uint32_t *sectors);
+    esp_err_t (*copy_sector)(spi_nand_flash_device_t *handle, uint32_t src_sec, uint32_t dst_sec);
+    esp_err_t (*get_capacity)(spi_nand_flash_device_t *handle, uint32_t *number_of_sectors);
+    esp_err_t (*gc)(spi_nand_flash_device_t *handle);
 } spi_nand_ops;
 ```
 
-**nvblock HAL callbacks** (bridge to HAL):
+**nvblock HAL callbacks** (actual signatures - take `const struct nvb_config *cfg` not raw context):
 ```c
-int nvb_read_cb(void *ctx, uint32_t group, uint32_t page, void *buf, uint32_t len);
-int nvb_prog_cb(void *ctx, uint32_t group, uint32_t page, const void *buf, uint32_t len);
-int nvb_move_cb(void *ctx, uint32_t from_grp, uint32_t from_pg, uint32_t to_grp, uint32_t to_pg, uint32_t len);
-bool nvb_is_bad_cb(const void *ctx, uint32_t group);
-void nvb_mark_bad_cb(const void *ctx, uint32_t group);
+int nvb_read_cb(const struct nvb_config *cfg, uint32_t p, void *buffer);
+int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buffer);
+int nvb_move_cb(const struct nvb_config *cfg, uint32_t pf, uint32_t pt);
+bool nvb_isbad_cb(const struct nvb_config *cfg, uint32_t p);
+bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p);
+void nvb_markbad_cb(const struct nvb_config *cfg, uint32_t p);
 ```
 
+Access the device handle via `((nvblock_context_t *)cfg->context)->parent_handle`.
+
 **Terminology mapping:**
-- nvblock "group" = NAND block
-- nvblock "page" = page within block
-- nvblock "virtual block" = NAND page (configured via `bsize`)
+- nvblock "group" = NAND erase block (`bpg` consecutive pages)
+- nvblock "p" (virtual block location) = absolute NAND page number
+- nvblock `bsize` = NAND page size (virtual block size)
+- nvblock `bpg` = NAND pages per block
 
 ## Implementation Guidelines
 
@@ -210,8 +215,9 @@ uint32_t spgcnt = (gcnt * gc_factor) / 100;        // spare groups (min 2)
 
 **Metadata buffer size:**
 ```c
-size_t meta_size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE);
-// For 64 pages/block: 48 + (64 * 2) = 176 bytes
+// Must be exactly bsize (full page size) - nvblock reads/writes full pages into it.
+// A naive bpg*NVB_META_ADDRESS_SIZE estimate is too small and causes heap overflow.
+nvb_ctx->meta_buf_size = bsize;  // e.g., 2048 bytes for typical NAND
 ```
 
 ### HAL Function Reference
@@ -219,19 +225,23 @@ size_t meta_size = NVB_META_DMP_START + (bpg * NVB_META_ADDRESS_SIZE);
 Available in `nvblock_glue.c` via `#include "nand_impl.h"`:
 
 ```c
-esp_err_t nand_read_page(device, block, page, buffer);
-esp_err_t nand_write_page(device, block, page, buffer);
-esp_err_t nand_erase_block(device, block);
-bool nand_is_block_bad(device, block);
-esp_err_t nand_mark_block_bad(device, block);
-esp_err_t nand_copy(device, src_block, src_page, dst_block, dst_page, count);
+esp_err_t nand_read(device, uint32_t page, size_t offset, size_t length, uint8_t *data);
+esp_err_t nand_prog(device, uint32_t page, const uint8_t *data);
+esp_err_t nand_erase_block(device, uint32_t block);
+esp_err_t nand_is_bad(device, uint32_t block, bool *is_bad_status);
+esp_err_t nand_mark_bad(device, uint32_t block);
+esp_err_t nand_is_free(device, uint32_t page, bool *is_free_status);
+esp_err_t nand_copy(device, uint32_t src_page, uint32_t dst_page);
 ```
 
+Note: HAL uses **absolute page numbers** for read/prog/copy/is_free, and **block numbers** for erase/is_bad/mark_bad.
+
 **Use dhara_glue.c as reference** for how to:
-- Structure the glue layer
-- Implement callbacks
+- Structure the glue layer (nand_register_dev / nand_unregister_dev exports)
 - Handle errors
-- Manage context
+- Manage context allocation/deallocation
+
+**Use nvblock_glue.c** as the primary implementation reference for nvblock-specific patterns.
 
 ### Critical Constraints
 
@@ -294,15 +304,15 @@ spi_nand_flash/
 │   ├── tasks.md             # Implementation checklist ⭐ UPDATE THIS!
 │   └── specs/               # Detailed capability specs
 ├── src/
-│   ├── nvblock_glue.c       # Your implementation here
-│   ├── dhara_glue.c         # Reference implementation
-│   └── nand.c               # Core (calls nand_register_dev)
+│   ├── nvblock_glue.c       # nvblock implementation (nand_register_dev / nand_unregister_dev)
+│   ├── dhara_glue.c         # Dhara implementation (reference)
+│   └── nand.c               # Core device init/deinit
 ├── priv_include/
 │   ├── nand.h               # spi_nand_ops interface definition
 │   └── nand_impl.h          # HAL function declarations
 └── Kconfig                  # Wear leveling selection menu
 
-nvblock/ (sibling directory)
+nvblock/ (sibling component directory)
 ├── nvblock/                 # Git submodule
 │   └── lib/
 │       ├── include/nvblock/nvblock.h   # nvblock API
@@ -387,7 +397,8 @@ openspec view                      # See current progress
 ```
 
 **Reference implementation:**
-- Look at `src/dhara_glue.c` for patterns
+- Look at `src/dhara_glue.c` for glue layer structure patterns
+- Look at `src/nvblock_glue.c` for the nvblock implementation itself
 - Check `design.md` for technical decisions
 - Read nvblock API in `nvblock/nvblock/lib/include/nvblock/nvblock.h`
 
