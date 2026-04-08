@@ -129,7 +129,7 @@ TEST_CASE("WL: single sector write and read", "[spi_nand_flash][wl]")
     REQUIRE(read_buf != NULL);
     
     // Fill write buffer with pattern
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     memset(read_buf, 0, sector_size);
     
     // Write to sector 0
@@ -167,8 +167,8 @@ TEST_CASE("WL: multi-sector sequential write and read", "[spi_nand_flash][wl]")
     uint32_t test_count = (sector_num > 10) ? 10 : sector_num;
     
     for (uint32_t i = 0; i < test_count; i++) {
-        // Fill with unique pattern per sector
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        // Fill with deterministic test pattern
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
     }
     
@@ -181,7 +181,7 @@ TEST_CASE("WL: multi-sector sequential write and read", "[spi_nand_flash][wl]")
         REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
         
         // Regenerate expected pattern
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
     }
     
@@ -207,7 +207,7 @@ TEST_CASE("WL: trim/delete functionality", "[spi_nand_flash][wl]")
     REQUIRE(read_buf != NULL);
     
     // Write data to sector 10
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 10) == ESP_OK);
     
     // Verify data is there
@@ -218,7 +218,7 @@ TEST_CASE("WL: trim/delete functionality", "[spi_nand_flash][wl]")
     REQUIRE(spi_nand_flash_trim(device_handle, 10) == ESP_OK);
     
     // Write new data to the trimmed sector (should succeed)
-    fill_buffer(PATTERN_SEED + 1, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 10) == ESP_OK);
     
     // Verify new data
@@ -245,7 +245,7 @@ TEST_CASE("WL: sync operation", "[spi_nand_flash][wl]")
     REQUIRE(write_buf != NULL);
     
     // Write some data
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 5) == ESP_OK);
     
     // Sync should succeed
@@ -272,7 +272,7 @@ TEST_CASE("WL: copy sector functionality", "[spi_nand_flash][wl]")
     REQUIRE(read_buf != NULL);
     
     // Write data to source sector (sector 20)
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 20) == ESP_OK);
     
     // Copy to destination sector (sector 30)
@@ -309,7 +309,7 @@ TEST_CASE("WL: capacity boundary conditions", "[spi_nand_flash][wl]")
     REQUIRE(write_buf != NULL);
     REQUIRE(read_buf != NULL);
     
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     
     // Test first sector (sector 0)
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 0) == ESP_OK);
@@ -349,7 +349,7 @@ TEST_CASE("WL: rewrite same sector multiple times", "[spi_nand_flash][wl]")
     // Rewrite sector 15 multiple times with different patterns
     // This tests wear leveling remapping
     for (uint32_t i = 0; i < 10; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 15) == ESP_OK);
         
         memset(read_buf, 0, sector_size);
@@ -387,7 +387,7 @@ TEST_CASE("WL: unaligned buffer access", "[spi_nand_flash][wl]")
     uint8_t *read_buf  = raw_read  + 1;
 
     // Fill with a known pattern starting one byte in
-    fill_buffer(PATTERN_SEED, (uint8_t *)write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     memset(read_buf, 0, sector_size);
 
     // Write and read back using the misaligned buffers
@@ -396,7 +396,7 @@ TEST_CASE("WL: unaligned buffer access", "[spi_nand_flash][wl]")
     REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
 
     // Repeat with a different sector to rule out lucky alignment
-    fill_buffer(PATTERN_SEED ^ 0xDEADBEEF, (uint8_t *)write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     memset(read_buf, 0, sector_size);
 
     REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 13) == ESP_OK);
@@ -434,14 +434,14 @@ TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
 
     // Phase 1: fill write_count sectors sequentially
     for (uint32_t i = 0; i < write_count; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
     }
     REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
 
     // Phase 2: overwrite the same sectors with new data (forces GC / block recycling)
     for (uint32_t i = 0; i < write_count; i++) {
-        fill_buffer(PATTERN_SEED + write_count + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         esp_err_t wret = spi_nand_flash_write_sector(device_handle, write_buf, i);
         if (wret != ESP_OK) {
             printf("WRITE FAILED at sector %u: err=%d\n", i, wret);
@@ -454,7 +454,7 @@ TEST_CASE("WL: large sequential write stress test", "[spi_nand_flash][wl]")
     for (uint32_t i = 0; i < write_count; i++) {
         memset(read_buf, 0, sector_size);
         REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
-        fill_buffer(PATTERN_SEED + write_count + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         if (memcmp(write_buf, read_buf, sector_size) != 0) {
             printf("MISMATCH at sector %u: first word write=%08x read=%08x\n",
                    i, ((uint32_t*)write_buf)[0], ((uint32_t*)read_buf)[0]);
@@ -512,7 +512,7 @@ TEST_CASE("WL: preexisting factory bad block skipped", "[spi_nand_flash][wl][bad
      * intentionally not reduced for nvblock — a failing build must be fixed, not masked. */
     uint32_t test_sectors = (sector_num > 500) ? 500 : sector_num;
     for (uint32_t i = 0; i < test_sectors; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
     }
     REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
@@ -520,7 +520,7 @@ TEST_CASE("WL: preexisting factory bad block skipped", "[spi_nand_flash][wl][bad
     for (uint32_t i = 0; i < test_sectors; i++) {
         memset(read_buf, 0, sector_size);
         REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
     }
 
@@ -611,13 +611,13 @@ TEST_CASE("WL: repeated writes distribute across physical blocks", "[spi_nand_fl
 
     const uint32_t WRITE_CYCLES = 500;
     for (uint32_t i = 0; i < WRITE_CYCLES; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 0) == ESP_OK);
     }
     REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
 
     /* Verify last-written data reads back correctly. */
-    fill_buffer(PATTERN_SEED + WRITE_CYCLES - 1, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
     REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, 0) == ESP_OK);
     REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
 
@@ -663,7 +663,7 @@ TEST_CASE("WL: full-capacity writes use majority of physical blocks", "[spi_nand
     /* Two full passes over all logical sectors. */
     for (uint32_t pass = 0; pass < 2; pass++) {
         for (uint32_t s = 0; s < sector_num; s++) {
-            fill_buffer(PATTERN_SEED + pass * sector_num + s, write_buf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
             REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, s) == ESP_OK);
         }
     }
@@ -702,12 +702,12 @@ TEST_CASE("WL: 10K writes to single sector - no crash and data integrity", "[spi
     const uint32_t CHECK_INTERVAL = 1000;
 
     for (uint32_t i = 0; i < TOTAL_WRITES; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, 0) == ESP_OK);
 
         if ((i + 1) % CHECK_INTERVAL == 0) {
             REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
-            fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
             REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, 0) == ESP_OK);
             REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
         }
@@ -754,7 +754,7 @@ TEST_CASE("WL: runtime bad block injection and remapping", "[spi_nand_flash][wl]
     /* Phase 1: write an initial set of logical sectors. */
     uint32_t initial_sectors = (sector_num > 64) ? 64 : sector_num / 2;
     for (uint32_t i = 0; i < initial_sectors; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(device_handle, write_buf, i) == ESP_OK);
     }
     REQUIRE(spi_nand_flash_sync(device_handle) == ESP_OK);
@@ -770,7 +770,7 @@ TEST_CASE("WL: runtime bad block injection and remapping", "[spi_nand_flash][wl]
     /* Phase 2: continue writing, forcing GC that must route around the bad block. */
     uint32_t extra_sectors = (sector_num > 128) ? 64 : initial_sectors / 2;
     for (uint32_t i = initial_sectors; i < initial_sectors + extra_sectors; i++) {
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         /* A write may fail if the bad block is the next physical target and
          * nvblock discovers it only during erase/prog.  That is acceptable;
          * what must NOT happen is a crash or silent data corruption. */
@@ -783,7 +783,7 @@ TEST_CASE("WL: runtime bad block injection and remapping", "[spi_nand_flash][wl]
     for (uint32_t i = 0; i < initial_sectors; i++) {
         memset(read_buf, 0, sector_size);
         REQUIRE(spi_nand_flash_read_sector(device_handle, read_buf, i) == ESP_OK);
-        fill_buffer(PATTERN_SEED + i, write_buf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
         REQUIRE(memcmp(write_buf, read_buf, sector_size) == 0);
     }
 
@@ -863,7 +863,7 @@ TEST_CASE("WL: synced data survives power loss", "[spi_nand_flash][wl][power-los
         /* Write 8 sectors and sync — these must survive power loss. */
         const uint32_t SYNCED = 8;
         for (uint32_t i = 0; i < SYNCED; i++) {
-            fill_buffer(PATTERN_SEED + i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             REQUIRE(spi_nand_flash_write_sector(dev, wbuf, i) == ESP_OK);
         }
         REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
@@ -872,7 +872,7 @@ TEST_CASE("WL: synced data survives power loss", "[spi_nand_flash][wl][power-los
         const uint32_t UNSYNCED_START = SYNCED;
         const uint32_t UNSYNCED_COUNT = 4;
         for (uint32_t i = 0; i < UNSYNCED_COUNT; i++) {
-            fill_buffer(PATTERN_SEED + 0xDEAD + i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             /* Write may fail if nvblock is already flushing internally — that is fine. */
             (void)spi_nand_flash_write_sector(dev, wbuf, UNSYNCED_START + i);
         }
@@ -909,7 +909,7 @@ TEST_CASE("WL: synced data survives power loss", "[spi_nand_flash][wl][power-los
         for (uint32_t i = 0; i < SYNCED; i++) {
             memset(rbuf, 0, sector_size);
             REQUIRE(spi_nand_flash_read_sector(dev, rbuf, i) == ESP_OK);
-            fill_buffer(PATTERN_SEED + i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             REQUIRE(memcmp(wbuf, rbuf, sector_size) == 0);
         }
 
@@ -965,7 +965,7 @@ TEST_CASE("WL: power loss during write - device recovers", "[spi_nand_flash][wl]
             write_sectors = sector_num;
         }
         for (uint32_t s = 0; s < write_sectors; s++) {
-            fill_buffer(PATTERN_SEED + iter * 100 + s, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             /* Write errors are allowed — we're stressing the recovery path. */
             (void)spi_nand_flash_write_sector(dev, wbuf, s % sector_num);
         }
@@ -996,7 +996,7 @@ TEST_CASE("WL: power loss during write - device recovers", "[spi_nand_flash][wl]
         REQUIRE(rbuf != NULL);
 
         /* Device must be able to write and read a sector correctly. */
-        fill_buffer(PATTERN_SEED ^ 0xCAFEBABE, wbuf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(dev, wbuf, 0) == ESP_OK);
         REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
         REQUIRE(spi_nand_flash_read_sector(dev, rbuf, 0) == ESP_OK);
@@ -1042,7 +1042,7 @@ TEST_CASE("WL: power loss during erase - no corruption", "[spi_nand_flash][wl][p
 
         /* Write 8 sectors and sync so the underlying flash has real data. */
         for (uint32_t i = 0; i < 8; i++) {
-            fill_buffer(PATTERN_SEED + i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             REQUIRE(spi_nand_flash_write_sector(dev, wbuf, i) == ESP_OK);
         }
         REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
@@ -1081,13 +1081,13 @@ TEST_CASE("WL: power loss during erase - no corruption", "[spi_nand_flash][wl][p
         for (uint32_t i = 0; i < 4; i++) {
             memset(rbuf, 0, sector_size);
             REQUIRE(spi_nand_flash_read_sector(dev, rbuf, i) == ESP_OK);
-            fill_buffer(PATTERN_SEED + i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             REQUIRE(memcmp(wbuf, rbuf, sector_size) == 0);
         }
 
         /* Device must accept writes to the previously-trimmed region. */
         for (uint32_t i = 4; i < 8; i++) {
-            fill_buffer(PATTERN_SEED ^ i, wbuf, sector_size / sizeof(uint32_t));
+            spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
             REQUIRE(spi_nand_flash_write_sector(dev, wbuf, i) == ESP_OK);
         }
         REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
@@ -1140,7 +1140,7 @@ TEST_CASE("WL: random power loss at variable write depths", "[spi_nand_flash][wl
             REQUIRE(wbuf != NULL);
 
             for (uint32_t s = 0; s < sectors_to_write && s < sector_num; s++) {
-                fill_buffer(PATTERN_SEED + iter * 100 + s, wbuf, sector_size / sizeof(uint32_t));
+                spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
                 (void)spi_nand_flash_write_sector(dev, wbuf, s);
             }
             /* NO sync — simulate power loss mid-write. */
@@ -1170,7 +1170,7 @@ TEST_CASE("WL: random power loss at variable write depths", "[spi_nand_flash][wl
         REQUIRE(wbuf != NULL);
         REQUIRE(rbuf != NULL);
 
-        fill_buffer(PATTERN_SEED ^ 0x5A5A5A5A, wbuf, sector_size / sizeof(uint32_t));
+        spi_nand_flash_fill_buffer(wbuf, sector_size / sizeof(uint32_t));
         REQUIRE(spi_nand_flash_write_sector(dev, wbuf, 0) == ESP_OK);
         REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
         REQUIRE(spi_nand_flash_read_sector(dev, rbuf, 0) == ESP_OK);
@@ -1257,7 +1257,7 @@ TEST_CASE("WL: exhausted spares graceful failure", "[spi_nand_flash][wl][bad-blo
 
     uint8_t *write_buf = (uint8_t *)malloc(sector_size);
     REQUIRE(write_buf != NULL);
-    fill_buffer(PATTERN_SEED, write_buf, sector_size / sizeof(uint32_t));
+    spi_nand_flash_fill_buffer(write_buf, sector_size / sizeof(uint32_t));
 
     uint32_t write_limit = (sector_num > 32) ? 32 : sector_num;
     for (uint32_t i = 0; i < write_limit; i++) {
