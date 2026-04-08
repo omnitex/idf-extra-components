@@ -5,6 +5,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <string.h>
 #include <stdlib.h>
 #include "esp_check.h"
@@ -43,6 +44,30 @@ typedef struct {
     uint8_t *meta_buf;                        ///< Metadata buffer for nvblock (runtime-sized)
     size_t meta_buf_size;                     ///< Size of metadata buffer
 } nvblock_context_t;
+
+/** Map nvblock read-style negative errno to esp_err_t */
+static esp_err_t nvb_err_to_esp_read(int ret)
+{
+    if (ret == -NVB_EINVAL) {
+        return ESP_ERR_INVALID_ARG;
+    } else if (ret == -NVB_ENOENT) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ESP_FAIL;
+}
+
+/** Map nvblock write-style negative errno to esp_err_t */
+static esp_err_t nvb_err_to_esp_write(int ret)
+{
+    if (ret == -NVB_EINVAL) {
+        return ESP_ERR_INVALID_ARG;
+    } else if (ret == -NVB_ENOSPC) {
+        return ESP_ERR_NO_MEM;
+    } else if (ret == -NVB_EROFS) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_FAIL;
+}
 
 // ============================================================================
 // nvblock HAL Callbacks
@@ -269,6 +294,7 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
     bool is_free = false;
     esp_err_t ret;
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    (void)dev_handle; // suppress warning about unused variable
     assert(nvb_ctx->bdl_handle != NULL);
     esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
     esp_blockdev_cmd_arg_is_free_page_t free_st = {.num = p, .status = true};
@@ -308,7 +334,10 @@ static void nvb_markbad_cb(const struct nvb_config *cfg, uint32_t p)
     assert(nvb_ctx->bdl_handle != NULL);
     esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
     uint32_t blk = block;
-    bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_MARK_BAD_BLOCK, &blk);
+    esp_err_t ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_MARK_BAD_BLOCK, &blk);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "nvb_markbad_cb: failed to mark block %"PRIu32" as bad: %d", block, ret);
+    }
 #else
     esp_err_t ret = nand_mark_bad(dev_handle, block);
     if (ret != ESP_OK) {
@@ -369,7 +398,7 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle, void *bdl_handle)
         spgcnt = 2;
     }
 
-    ESP_LOGI(TAG, "nvblock config: bsize=%lu, bpg=%lu, gcnt=%lu, spgcnt=%lu",
+    ESP_LOGI(TAG, "nvblock config: bsize=%"PRIu32", bpg=%"PRIu32", gcnt=%"PRIu32", spgcnt=%"PRIu32,
              bsize, bpg, gcnt, spgcnt);
 
     // Allocate the metadata buffer.
@@ -483,14 +512,7 @@ static esp_err_t nvblock_read(spi_nand_flash_device_t *handle, uint8_t *buffer, 
     if (ret != 0) {
         ESP_LOGE(TAG, "nvblock_read FAILED: sector=%"PRIu32" nvb_ret=%d (head=%"PRIu32" gc_head=%"PRIu32")",
                  sector_id, ret, nvb_ctx->nvb_info.head, nvb_ctx->nvb_info.gc_head);
-        // Map nvblock errors to ESP errors
-        if (ret == -NVB_EINVAL) {
-            return ESP_ERR_INVALID_ARG;
-        } else if (ret == -NVB_ENOENT) {
-            return ESP_ERR_NOT_FOUND;
-        } else {
-            return ESP_FAIL;
-        }
+        return nvb_err_to_esp_read(ret);
     }
     
     return ESP_OK;
@@ -523,16 +545,7 @@ static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *b
     if (ret != 0) {
         ESP_LOGE(TAG, "nvblock_write FAILED: sector=%"PRIu32" nvb_ret=%d (head=%"PRIu32" gc_head=%"PRIu32" epoch=%"PRIu32")",
                  sector_id, ret, nvb_ctx->nvb_info.head, nvb_ctx->nvb_info.gc_head, nvb_ctx->nvb_info.epoch);
-        // Map nvblock errors to ESP errors
-        if (ret == -NVB_EINVAL) {
-            return ESP_ERR_INVALID_ARG;
-        } else if (ret == -NVB_ENOSPC) {
-            return ESP_ERR_NO_MEM;  // Out of space (no spare blocks)
-        } else if (ret == -NVB_EROFS) {
-            return ESP_ERR_INVALID_STATE;  // Read-only
-        } else {
-            return ESP_FAIL;
-        }
+        return nvb_err_to_esp_write(ret);
     }
     
     return ESP_OK;
@@ -574,7 +587,10 @@ static esp_err_t nvblock_erase_chip(spi_nand_flash_device_t *handle)
     // Deinitialize and reinitialize nvblock
     nvblock_deinit(handle);
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
-    assert(saved_bdl != NULL);
+    if (saved_bdl == NULL) {
+        ESP_LOGE(TAG, "nvblock_erase_chip: BDL handle missing (nvblock not initialized?)");
+        return ESP_ERR_INVALID_STATE;
+    }
     return nvblock_init(handle, saved_bdl);
 #else
     return nvblock_init(handle, NULL);
@@ -622,11 +638,7 @@ static esp_err_t nvblock_trim(spi_nand_flash_device_t *handle, uint32_t sector_i
     int ret = nvb_write(&nvb_ctx->nvb_info, NULL, sector_id, 1);
     if (ret != 0) {
         ESP_LOGE(TAG, "nvb_write(NULL) failed for sector %"PRIu32": %d", sector_id, ret);
-        if (ret == -NVB_EINVAL) {
-            return ESP_ERR_INVALID_ARG;
-        } else {
-            return ESP_FAIL;
-        }
+        return nvb_err_to_esp_write(ret);
     }
     
     return ESP_OK;
@@ -694,7 +706,7 @@ static esp_err_t nvblock_copy_sector(spi_nand_flash_device_t *handle, uint32_t s
     if (ret != 0) {
         ESP_LOGE(TAG, "nvb_read failed for src sector %"PRIu32": %d", src_sec, ret);
         free(temp_buf);
-        return ESP_FAIL;
+        return nvb_err_to_esp_read(ret);
     }
     
     // Write to destination sector
@@ -702,7 +714,7 @@ static esp_err_t nvblock_copy_sector(spi_nand_flash_device_t *handle, uint32_t s
     if (ret != 0) {
         ESP_LOGE(TAG, "nvb_write failed for dst sector %"PRIu32": %d", dst_sec, ret);
         free(temp_buf);
-        return ESP_FAIL;
+        return nvb_err_to_esp_write(ret);
     }
     
     free(temp_buf);
