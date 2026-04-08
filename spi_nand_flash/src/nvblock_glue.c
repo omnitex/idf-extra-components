@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include "esp_check.h"
@@ -15,6 +16,10 @@
 #endif
 #include "nand_impl.h"
 #include "nand.h"
+
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+#include "esp_nand_blockdev.h"
+#endif
 
 static const char *TAG = "nvblock_glue";
 
@@ -60,6 +65,9 @@ static inline bool nvb_should_log(void)
  */
 typedef struct {
     spi_nand_flash_device_t *parent_handle;  ///< Pointer back to parent device
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    esp_blockdev_handle_t bdl_handle;       ///< Flash BDL (raw NAND); required when BDL is enabled
+#endif
     struct nvb_info nvb_info;                 ///< nvblock instance
     struct nvb_config nvb_config;             ///< nvblock configuration
     uint8_t *meta_buf;                        ///< Metadata buffer for nvblock (runtime-sized)
@@ -100,8 +108,16 @@ static int nvb_read_cb(const struct nvb_config *cfg, uint32_t p, void *buffer)
                  op, p, p / pages_per_block, p % pages_per_block);
     }
 
-    // Read the page via HAL (offset=0, length=full page)
-    esp_err_t ret = nand_read(dev_handle, p, 0, dev_handle->chip.page_size, buffer);
+    esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    size_t page_size = dev_handle->chip.page_size;
+    ret = bdl->ops->read(bdl, buffer, page_size,
+                         (uint64_t)p * bdl->geometry.read_size, page_size);
+#else
+    ret = nand_read(dev_handle, p, 0, dev_handle->chip.page_size, buffer);
+#endif
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "[op=%"PRIu32"] nvb_read_cb FAILED: page=%"PRIu32" ret=%d", op, p, ret);
         return -NVB_EIO;  // I/O error
@@ -144,7 +160,15 @@ static int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buf
                      " before first-page program", op, block);
         }
 
-        esp_err_t ret = nand_erase_block(dev_handle, block);
+        esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+        assert(nvb_ctx->bdl_handle != NULL);
+        esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+        ret = bdl->ops->erase(bdl, (uint64_t)block * bdl->geometry.erase_size,
+                              bdl->geometry.erase_size);
+#else
+        ret = nand_erase_block(dev_handle, block);
+#endif
         if (ret == ESP_ERR_NOT_FINISHED) {
             // Bad block detected during erase
             ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_prog_cb: bad block detected at block=%"PRIu32, op, block);
@@ -156,7 +180,15 @@ static int nvb_prog_cb(const struct nvb_config *cfg, uint32_t p, const void *buf
     }
 
     // Program the page
-    esp_err_t ret = nand_prog(dev_handle, p, buffer);
+    esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    ret = bdl->ops->write(bdl, buffer, (uint64_t)p * bdl->geometry.write_size,
+                          bdl->geometry.write_size);
+#else
+    ret = nand_prog(dev_handle, p, buffer);
+#endif
     if (ret == ESP_ERR_NOT_FINISHED) {
         // Bad block detected during program
         ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_prog_cb: bad block on prog page=%"PRIu32" block=%"PRIu32, op, p, block);
@@ -202,18 +234,34 @@ static int nvb_move_cb(const struct nvb_config *cfg, uint32_t pf, uint32_t pt)
                      " before first-page move", op, dst_block);
         }
 
-        esp_err_t ret = nand_erase_block(dev_handle, dst_block);
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        esp_err_t eret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+        assert(nvb_ctx->bdl_handle != NULL);
+        esp_blockdev_handle_t bdl_e = nvb_ctx->bdl_handle;
+        eret = bdl_e->ops->erase(bdl_e, (uint64_t)dst_block * bdl_e->geometry.erase_size,
+                                 bdl_e->geometry.erase_size);
+#else
+        eret = nand_erase_block(dev_handle, dst_block);
+#endif
+        if (eret == ESP_ERR_NOT_FINISHED) {
             ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_move_cb: bad block at dst block=%"PRIu32, op, dst_block);
             return -NVB_EFAULT;
-        } else if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "[op=%"PRIu32"] nvb_move_cb: nand_erase_block FAILED block=%"PRIu32" ret=%d", op, dst_block, ret);
+        } else if (eret != ESP_OK) {
+            ESP_LOGE(TAG, "[op=%"PRIu32"] nvb_move_cb: nand_erase_block FAILED block=%"PRIu32" ret=%d", op, dst_block, eret);
             return -NVB_EIO;
         }
     }
 
-    // Use optimized HAL copy operation
-    esp_err_t ret = nand_copy(dev_handle, pf, pt);
+    // Use optimized HAL copy operation (or Flash BDL COPY_PAGE ioctl)
+    esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    esp_blockdev_cmd_arg_copy_page_t copy_arg = {.src_page = pf, .dst_page = pt};
+    ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_COPY_PAGE, &copy_arg);
+#else
+    ret = nand_copy(dev_handle, pf, pt);
+#endif
     if (ret == ESP_ERR_NOT_FINISHED) {
         ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_move_cb: bad block on copy src=%"PRIu32" dst=%"PRIu32, op, pf, pt);
         return -NVB_EFAULT;
@@ -243,7 +291,16 @@ static bool nvb_isbad_cb(const struct nvb_config *cfg, uint32_t p)
     uint32_t op = s_nvb_op_count++;
 
     bool is_bad = false;
-    esp_err_t ret = nand_is_bad(dev_handle, block, &is_bad);
+    esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    esp_blockdev_cmd_arg_is_bad_block_t bad_st = {.num = block, .status = false};
+    ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_IS_BAD_BLOCK, &bad_st);
+    is_bad = bad_st.status;
+#else
+    ret = nand_is_bad(dev_handle, block, &is_bad);
+#endif
     if (ret != ESP_OK) {
         // On error, assume bad for safety
         ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_isbad_cb: nand_is_bad FAILED page=%"PRIu32
@@ -276,7 +333,16 @@ static bool nvb_isfree_cb(const struct nvb_config *cfg, uint32_t p)
     uint32_t op = s_nvb_op_count++;
 
     bool is_free = false;
-    esp_err_t ret = nand_is_free(dev_handle, p, &is_free);
+    esp_err_t ret;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    esp_blockdev_cmd_arg_is_free_page_t free_st = {.num = p, .status = true};
+    ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_IS_FREE_PAGE, &free_st);
+    is_free = free_st.status;
+#else
+    ret = nand_is_free(dev_handle, p, &is_free);
+#endif
     if (ret != ESP_OK) {
         // On error, assume not free
         ESP_LOGW(TAG, "[op=%"PRIu32"] nvb_isfree_cb: nand_is_free FAILED page=%"PRIu32
@@ -312,10 +378,17 @@ static void nvb_markbad_cb(const struct nvb_config *cfg, uint32_t p)
 
     ESP_LOGW(TAG, "nvb_markbad_cb: marking block %"PRIu32" as bad (page=%"PRIu32")", block, p);
 
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(nvb_ctx->bdl_handle != NULL);
+    esp_blockdev_handle_t bdl = nvb_ctx->bdl_handle;
+    uint32_t blk = block;
+    bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_MARK_BAD_BLOCK, &blk);
+#else
     esp_err_t ret = nand_mark_bad(dev_handle, block);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nvb_markbad_cb: failed to mark block %"PRIu32" as bad: %d", block, ret);
     }
+#endif
 }
 
 // ============================================================================
@@ -333,9 +406,12 @@ static void nvb_markbad_cb(const struct nvb_config *cfg, uint32_t p)
  * @return ESP_OK on success, ESP_ERR_NO_MEM if allocation fails,
  *         ESP_ERR_INVALID_ARG / ESP_FAIL if nvb_init fails
  */
-static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
+static esp_err_t nvblock_init(spi_nand_flash_device_t *handle, void *bdl_handle)
 {
     ESP_LOGI(TAG, "Initializing nvblock wear leveling");
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(bdl_handle != NULL);
+#endif
 
     // Allocate nvblock context
     nvblock_context_t *nvb_ctx = calloc(1, sizeof(nvblock_context_t));
@@ -346,6 +422,9 @@ static esp_err_t nvblock_init(spi_nand_flash_device_t *handle)
 
     handle->ops_priv_data = nvb_ctx;
     nvb_ctx->parent_handle = handle;
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    nvb_ctx->bdl_handle = (esp_blockdev_handle_t)bdl_handle;
+#endif
 
     // Calculate nvblock configuration from chip parameters.
     // Map nvblock terminology to NAND flash:
@@ -550,17 +629,30 @@ static esp_err_t nvblock_write(spi_nand_flash_device_t *handle, const uint8_t *b
 static esp_err_t nvblock_erase_chip(spi_nand_flash_device_t *handle)
 {
     ESP_LOGI(TAG, "nvblock_erase_chip");
-    
+
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    esp_blockdev_handle_t saved_bdl = NULL;
+    nvblock_context_t *nvb_ctx_pre = (nvblock_context_t *)handle->ops_priv_data;
+    if (nvb_ctx_pre) {
+        saved_bdl = nvb_ctx_pre->bdl_handle;
+    }
+#endif
+
     // Erase all physical blocks via HAL
     esp_err_t ret = nand_erase_chip(handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nand_erase_chip failed: %d", ret);
         return ret;
     }
-    
+
     // Deinitialize and reinitialize nvblock
     nvblock_deinit(handle);
-    return nvblock_init(handle);
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    assert(saved_bdl != NULL);
+    return nvblock_init(handle, saved_bdl);
+#else
+    return nvblock_init(handle, NULL);
+#endif
 }
 
 /**
