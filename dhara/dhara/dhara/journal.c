@@ -12,6 +12,8 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Modified by Martin Havlik <omnitex.git@gmail.com>, 2026
+ *
  */
 
 #include <string.h>
@@ -425,7 +427,54 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
         }
     }
 
-    return 0;
+	return 0;
+}
+
+/* No checkpoint on media (e.g. power loss before first CP flush): infer the
+ * journal head from contiguous programmed user pages starting at the journal
+ * origin so orphan OOB replay can run. Assumes writes began at page 0 without
+ * gaps — true for a fresh chip / empty journal until the first checkpoint.
+ */
+static int journal_resume_empty_checkpoint(struct dhara_journal *j,
+					   dhara_error_t *err)
+{
+	const dhara_page_t chip_pages = j->nand->num_blocks << j->nand->log2_ppb;
+	dhara_page_t p;
+	dhara_page_t last_user = DHARA_PAGE_NONE;
+	unsigned int iter;
+
+	reset_journal(j);
+	/* Cookie lives in page_buf; keep logical sector count at 0 until replay. */
+	dhara_w32(j->page_buf + DHARA_HEADER_SIZE, 0);
+
+	p = dhara_journal_next_upage(j, j->root);
+	for (iter = 0; iter < chip_pages + 8u; iter++) {
+		if (dhara_nand_is_free(j->nand, p))
+			break;
+
+		{
+			dhara_sector_t oob_lpn;
+
+			if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0)
+				return -1;
+			if (oob_lpn == DHARA_OOB_LPN_NONE)
+				break;
+		}
+
+		last_user = p;
+		p = dhara_journal_next_upage(j, p);
+	}
+
+	j->head = p;
+	if (last_user != DHARA_PAGE_NONE) {
+		j->tail = last_user;
+		j->tail_sync = last_user;
+	}
+
+	if (err)
+		dhara_set_error(err, DHARA_E_NONE);
+
+	return 0;
 }
 
 int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
@@ -433,11 +482,9 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
     dhara_block_t first, last;
     dhara_page_t last_group;
 
-    /* Find the first checkpoint-containing block */
-    if (find_checkblock(j, 0, &first, err) < 0) {
-        reset_journal(j);
-        return -1;
-    }
+	/* Find the first checkpoint-containing block */
+	if (find_checkblock(j, 0, &first, err) < 0)
+		return journal_resume_empty_checkpoint(j, err);
 
     /* Find the last checkpoint-containing block in this epoch */
     j->epoch = hdr_get_epoch(j->page_buf);
@@ -700,18 +747,18 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
         dhara_error_t my_err;
 
-        /* Try to dump metadata on this page */
-        if (!(prepare_head(j, &my_err) ||
-                dhara_nand_prog(j->nand, j->head,
-                                j->page_buf, &my_err))) {
-            j->recover_meta = j->head;
-            j->head = next_upage(j, j->head);
-            if (!j->head) {
-                roll_stats(j);
-            }
-            hdr_clear_user(j->page_buf, j->nand->log2_page_size);
-            return 0;
-        }
+		/* Try to dump metadata on this page */
+		if (!(prepare_head(j, &my_err) ||
+		      dhara_nand_prog(j->nand, j->head,
+				      j->page_buf, DHARA_OOB_LPN_NONE,
+				      &my_err))) {
+			j->recover_meta = j->head;
+			j->head = next_upage(j, j->head);
+			if (!j->head)
+				roll_stats(j);
+			hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+			return 0;
+		}
 
         /* Report fatal errors */
         if (my_err != DHARA_E_BAD_BLOCK) {
@@ -828,9 +875,9 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
     hdr_set_bb_current(j->page_buf, j->bb_current);
     hdr_set_bb_last(j->page_buf, j->bb_last);
 
-    if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0) {
-        return recover_from(j, my_err, err);
-    }
+	if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf,
+			    DHARA_OOB_LPN_NONE, &my_err) < 0)
+		return recover_from(j, my_err, err);
 
     j->flags &= ~DHARA_JOURNAL_F_DIRTY;
 
@@ -859,12 +906,13 @@ int dhara_journal_enqueue(struct dhara_journal *j,
     dhara_error_t my_err;
     int i;
 
-    for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                (data && dhara_nand_prog(j->nand, j->head, data,
-                                         &my_err)))) {
-            return push_meta(j, meta, err);
-        }
+	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
+		if (!(prepare_head(j, &my_err) ||
+		      (data && dhara_nand_prog(j->nand, j->head, data,
+					       meta ? dhara_r32(meta) :
+					       DHARA_OOB_LPN_NONE,
+					       &my_err))))
+			return push_meta(j, meta, err);
 
         if (recover_from(j, my_err, err) < 0) {
             return -1;
@@ -882,11 +930,12 @@ int dhara_journal_copy(struct dhara_journal *j,
     dhara_error_t my_err;
     int i;
 
-    for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                dhara_nand_copy(j->nand, p, j->head, &my_err))) {
-            return push_meta(j, meta, err);
-        }
+	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
+		if (!(prepare_head(j, &my_err) ||
+		      dhara_nand_copy(j->nand, p, j->head,
+				      meta ? dhara_r32(meta) :
+				      DHARA_OOB_LPN_NONE, &my_err)))
+			return push_meta(j, meta, err);
 
         if (recover_from(j, my_err, err) < 0) {
             return -1;
@@ -916,4 +965,10 @@ dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j)
     }
 
     return n;
+}
+
+dhara_page_t dhara_journal_next_upage(const struct dhara_journal *j,
+				      dhara_page_t p)
+{
+	return next_upage(j, p);
 }

@@ -12,13 +12,23 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Modified by Martin Havlik <omnitex.git@gmail.com>, 2026
+ *
  */
 
 #include <string.h>
 #include "bytes.h"
 #include "map.h"
 
-#define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
+#ifdef DHARA_TRACE_REPLAY
+#include <stdio.h>
+#define REPLAY_TRACE(fmt, ...) \
+	fprintf(stderr, "[dhara replay] " fmt "\n", ##__VA_ARGS__)
+#else
+#define REPLAY_TRACE(fmt, ...) do { } while (0)
+#endif
+
+#define DHARA_RADIX_DEPTH	(sizeof(dhara_sector_t) << 3)
 
 static inline dhara_sector_t d_bit(int depth)
 {
@@ -86,8 +96,14 @@ int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
         return -1;
     }
 
-    m->count = ck_get_count(dhara_journal_cookie(&m->journal));
-    return 0;
+	m->count = ck_get_count(dhara_journal_cookie(&m->journal));
+
+	if (dhara_map_replay_orphans(m, err) < 0) {
+		m->count = 0;
+		return -1;
+	}
+
+	return 0;
 }
 
 void dhara_map_clear(struct dhara_map *m)
@@ -144,9 +160,8 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
     while (depth < DHARA_RADIX_DEPTH) {
         const dhara_sector_t id = meta_get_id(meta);
 
-        if (id == DHARA_SECTOR_NONE) {
-            goto not_found;
-        }
+		if (id == DHARA_OOB_LPN_NONE)
+			goto not_found;
 
         if ((target ^ id) & d_bit(depth)) {
             if (new_meta) {
@@ -179,14 +194,76 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
     return 0;
 
 not_found:
-    if (new_meta) {
-        while (depth < DHARA_RADIX_DEPTH) {
-            meta_set_alt(new_meta, depth++, DHARA_SECTOR_NONE);
-        }
-    }
+	if (new_meta) {
+		while (depth < DHARA_RADIX_DEPTH)
+			meta_set_alt(new_meta, depth++, DHARA_OOB_LPN_NONE);
+	}
 
     dhara_set_error(err, DHARA_E_NOT_FOUND);
     return -1;
+}
+
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
+{
+	struct dhara_journal *j = &m->journal;
+	const dhara_page_t ppc_mask = (1u << j->log2_ppc) - 1u;
+	dhara_page_t p = dhara_journal_next_upage(j, j->root);
+#ifdef DHARA_TRACE_REPLAY
+	unsigned replay_count = 0;
+#endif
+
+	for (;;) {
+		dhara_sector_t oob_lpn;
+		uint8_t new_meta[DHARA_META_SIZE];
+		dhara_page_t slot;
+		size_t offset;
+		dhara_error_t my_err;
+
+		if (p == j->head)
+			break;
+
+		if (dhara_nand_is_free(j->nand, p))
+			break;
+
+		if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0)
+			return -1;
+
+		REPLAY_TRACE("scanning page %u: oob_lpn=%u", (unsigned)p,
+			     (unsigned)oob_lpn);
+
+		if (oob_lpn == DHARA_OOB_LPN_NONE)
+			break;
+
+		if (trace_path(m, oob_lpn, NULL, new_meta, &my_err) < 0) {
+			if (my_err == DHARA_E_NOT_FOUND)
+				m->count++;
+			else {
+				if (err)
+					*err = my_err;
+				return -1;
+			}
+		}
+
+		slot = p & ppc_mask;
+		offset = DHARA_HEADER_SIZE + DHARA_COOKIE_SIZE +
+			 slot * DHARA_META_SIZE;
+		memcpy(j->page_buf + offset, new_meta, DHARA_META_SIZE);
+
+		j->root = p;
+#ifdef DHARA_TRACE_REPLAY
+		replay_count++;
+#endif
+		REPLAY_TRACE("replayed orphan at page %u, m->count=%u",
+			     (unsigned)p, (unsigned)m->count);
+		p = dhara_journal_next_upage(j, p);
+	}
+
+	ck_set_count(dhara_journal_cookie(j), m->count);
+#ifdef DHARA_TRACE_REPLAY
+	REPLAY_TRACE("replay complete: %u orphan(s) applied, m->count=%u",
+		     replay_count, (unsigned)m->count);
+#endif
+	return 0;
 }
 
 int dhara_map_find(struct dhara_map *m, dhara_sector_t target,
@@ -231,11 +308,10 @@ static int raw_gc(struct dhara_map *m, dhara_page_t src,
         return -1;
     }
 
-    /* Is the page just filler/garbage? */
-    target = meta_get_id(meta);
-    if (target == DHARA_SECTOR_NONE) {
-        return 0;
-    }
+	/* Is the page just filler/garbage? */
+	target = meta_get_id(meta);
+	if (target == DHARA_OOB_LPN_NONE)
+		return 0;
 
     /* Find out where the sector once represented by this page
      * currently resides (if anywhere).

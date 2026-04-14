@@ -12,6 +12,8 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Modified by Martin Havlik <omnitex.git@gmail.com>, 2026
+ *
  */
 
 #ifndef DHARA_NAND_H_
@@ -20,6 +22,20 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "error.h"
+
+/* Logical page number (sector id) type. DHARA_OOB_LPN_NONE is used as a
+ * sentinel to indicate "no LPN" (e.g. for checkpoint pages). The type is also
+ * defined in map.h; identical typedef redefinition is valid in C11.
+ */
+typedef uint32_t dhara_sector_t;
+#ifndef DHARA_OOB_LPN_NONE
+#define DHARA_OOB_LPN_NONE	0xffffffff
+#endif
+
+/* Backward-compatible alias; prefer DHARA_OOB_LPN_NONE in new code. */
+#ifndef DHARA_SECTOR_NONE
+#define DHARA_SECTOR_NONE DHARA_OOB_LPN_NONE
+#endif
 
 /* Each page in a NAND device is indexed, starting at 0. It's required
  * that there be a power-of-two number of pages in a eraseblock, so you can
@@ -77,10 +93,14 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  *
  * Pages will be programmed sequentially within a block, and will not be
  * reprogrammed.
+ *
+ * oob_lpn is the logical page number (LPN) being written. For checkpoint
+ * pages and recovery metadata dumps, pass DHARA_OOB_LPN_NONE. The driver
+ * should store this in OOB to enable orphan-page replay on remount.
  */
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data,
-                    dhara_error_t *err);
+		    const uint8_t *data, dhara_sector_t oob_lpn,
+		    dhara_error_t *err);
 
 /* Check that the given page is erased */
 int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p);
@@ -97,9 +117,25 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 /* Read a page from one location and reprogram it in another location.
  * This might be done using the chip's internal buffers, but it must use
  * ECC.
+ *
+ * oob_lpn is the LPN of the user data being copied (same as the source page's
+ * LPN). The driver should write it to OOB on the destination page so that
+ * orphan-page replay on remount can identify it.
  */
 int dhara_nand_copy(const struct dhara_nand *n,
-                    dhara_page_t src, dhara_page_t dst,
-                    dhara_error_t *err);
+		    dhara_page_t src, dhara_page_t dst,
+		    dhara_sector_t oob_lpn,
+		    dhara_error_t *err);
+
+/* Read the logical page number (LPN / sector id) stored in OOB for page p.
+ * Returns 0 and writes the LPN to *oob_lpn_out on success.
+ * Returns 0 and writes DHARA_OOB_LPN_NONE if the OOB is erased or carries no LPN.
+ * Returns -1 and sets *err on ECC/hardware error.
+ * If OOB-LPN is not supported by the driver, implement as:
+ *   *oob_lpn_out = DHARA_OOB_LPN_NONE; return 0;
+ */
+int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+			dhara_sector_t *oob_lpn_out,
+			dhara_error_t *err);
 
 #endif

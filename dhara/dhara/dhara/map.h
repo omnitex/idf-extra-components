@@ -12,6 +12,8 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Modified by Martin Havlik <omnitex.git@gmail.com>, 2026
+ *
  */
 
 #ifndef DHARA_MAP_H_
@@ -24,8 +26,10 @@
  */
 typedef uint32_t dhara_sector_t;
 
-/* This sector value is reserved */
-#define DHARA_SECTOR_NONE   0xffffffff
+/* Reserved dhara_sector_t value (no LPN / erased OOB) */
+#ifndef DHARA_OOB_LPN_NONE
+#define DHARA_OOB_LPN_NONE	0xffffffff
+#endif
 
 struct dhara_map {
     struct dhara_journal    journal;
@@ -49,6 +53,14 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
  * on the chip, -1 is returned, and an empty map is initialized.
  */
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err);
+
+/* Replay orphan user pages (written after last checkpoint, before power loss).
+ * Called automatically by dhara_map_resume() after dhara_journal_resume() succeeds.
+ * For each user page between the page after j->root and the first free page (head),
+ * reads LPN from OOB, reconstructs metadata, and patches page_buf.
+ * Returns 0 on success; -1 on NAND error (not on truncation).
+ */
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err);
 
 /* Clear the map (delete all sectors). */
 void dhara_map_clear(struct dhara_map *m);
