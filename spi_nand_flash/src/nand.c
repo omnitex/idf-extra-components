@@ -33,6 +33,7 @@ esp_err_t spi_nand_flash_init_device(spi_nand_flash_config_t *config, spi_nand_f
 
     esp_err_t ret = nand_init_device(config, handle);
     if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize spi_nand_flash");
         return ret;
     }
 

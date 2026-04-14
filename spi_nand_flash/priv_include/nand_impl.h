@@ -46,9 +46,14 @@ esp_err_t nand_mark_bad(spi_nand_flash_device_t *handle, uint32_t b);
 esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle);
 esp_err_t nand_erase_block(spi_nand_flash_device_t *handle, uint32_t b);
 esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data);
+esp_err_t nand_prog_ext(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data,
+                        uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data);
 esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t p, bool *is_free_status);
 esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t p, size_t offset, size_t length, uint8_t *data);
 esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
+esp_err_t nand_copy_ext(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
+                        uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data);
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *oob_lpn_out);
 esp_err_t nand_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page);
 
 #ifdef __cplusplus

@@ -21,6 +21,62 @@
 #include <stddef.h>
 #include "error.h"
 
+/* DHARA_NAND_API_VERSION tracks breaking changes to the HAL function signatures
+ * that ports must implement.
+ *
+ * History:
+ *   1 — original API: dhara_nand_prog(n, p, data, err)
+ *                     dhara_nand_copy(n, src, dst, err)
+ *                     dhara_nand_read_lpn did not exist
+ *   2 — oob_lpn parameter added to dhara_nand_prog and dhara_nand_copy;
+ *       dhara_nand_read_lpn added (required, see stub below)
+ *
+ * Porting guide (v1 → v2):
+ *   dhara_nand_prog: add `dhara_sector_t oob_lpn` before `dhara_error_t *err`.
+ *     If your driver does not use OOB, ignore the value.
+ *   dhara_nand_copy: same — add `dhara_sector_t oob_lpn` before `dhara_error_t *err`.
+ *   dhara_nand_read_lpn: new required function. Minimal no-op implementation:
+ *
+ *       int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+ *                               dhara_sector_t *oob_lpn_out, dhara_error_t *err)
+ *       {
+ *           (void)n; (void)p; (void)err;
+ *           *oob_lpn_out = DHARA_OOB_LPN_NONE;
+ *           return 0;
+ *       }
+ *
+ *   With the no-op, orphan-page replay after power loss is disabled (pages
+ *   written since the last checkpoint will be lost on remount), but all other
+ *   dhara functionality is unaffected.
+ */
+#define DHARA_NAND_API_VERSION 2
+
+/* Verbose logging shim — keeps dhara library source free of ESP-IDF includes.
+ * On ESP-IDF builds (ESP_IDF_VERSION defined by the build system) this maps to
+ * ESP_LOGV; on any other platform (host tests, third-party ports) it is a
+ * no-op that the compiler optimises away entirely.
+ */
+#ifdef ESP_IDF_VERSION
+#include "esp_log.h"
+#define DHARA_LOG_VERBOSE(tag, fmt, ...) ESP_LOGV(tag, fmt, ##__VA_ARGS__)
+#else
+#define DHARA_LOG_VERBOSE(tag, fmt, ...) ((void)0)
+#endif
+
+/* Logical page number (sector id) type. DHARA_OOB_LPN_NONE is used as a
+ * sentinel to indicate "no LPN" (e.g. for checkpoint pages). The type is also
+ * defined in map.h; identical typedef redefinition is valid in C11.
+ */
+typedef uint32_t dhara_sector_t;
+#ifndef DHARA_OOB_LPN_NONE
+#define DHARA_OOB_LPN_NONE  0xffffffff
+#endif
+
+/* Backward-compatible alias; prefer DHARA_OOB_LPN_NONE in new code. */
+#ifndef DHARA_SECTOR_NONE
+#define DHARA_SECTOR_NONE DHARA_OOB_LPN_NONE
+#endif
+
 /* Each page in a NAND device is indexed, starting at 0. It's required
  * that there be a power-of-two number of pages in a eraseblock, so you can
  * view a page number is being a concatenation (in binary) of a block
@@ -77,9 +133,13 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  *
  * Pages will be programmed sequentially within a block, and will not be
  * reprogrammed.
+ *
+ * oob_lpn is the logical page number (LPN) being written. For checkpoint
+ * pages and recovery metadata dumps, pass DHARA_OOB_LPN_NONE. The driver
+ * should store this in OOB to enable orphan-page replay on remount.
  */
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data,
+                    const uint8_t *data, dhara_sector_t oob_lpn,
                     dhara_error_t *err);
 
 /* Check that the given page is erased */
@@ -97,9 +157,25 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 /* Read a page from one location and reprogram it in another location.
  * This might be done using the chip's internal buffers, but it must use
  * ECC.
+ *
+ * oob_lpn is the LPN of the user data being copied (same as the source page's
+ * LPN). The driver should write it to OOB on the destination page so that
+ * orphan-page replay on remount can identify it.
  */
 int dhara_nand_copy(const struct dhara_nand *n,
                     dhara_page_t src, dhara_page_t dst,
+                    dhara_sector_t oob_lpn,
                     dhara_error_t *err);
+
+/* Read the logical page number (LPN / sector id) stored in OOB for page p.
+ * Returns 0 and writes the LPN to *oob_lpn_out on success.
+ * Returns 0 and writes DHARA_OOB_LPN_NONE if the OOB is erased or carries no LPN.
+ * Returns -1 and sets *err on ECC/hardware error.
+ * If OOB-LPN is not supported by the driver, implement as:
+ *   *oob_lpn_out = DHARA_OOB_LPN_NONE; return 0;
+ */
+int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+                        dhara_sector_t *oob_lpn_out,
+                        dhara_error_t *err);
 
 #endif

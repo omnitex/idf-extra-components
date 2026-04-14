@@ -56,6 +56,16 @@ esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t page, const u
     return ret;
 }
 
+esp_err_t nand_wrap_prog_ext(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data,
+                             uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
+{
+    esp_err_t ret = ESP_OK;
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    ret = nand_prog_ext(handle, page, data, oob_offset, oob_len, oob_data);
+    xSemaphoreGive(handle->mutex);
+    return ret;
+}
+
 esp_err_t nand_wrap_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_free_status)
 {
     esp_err_t ret = ESP_OK;
@@ -79,6 +89,25 @@ esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t
     esp_err_t ret = ESP_OK;
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
     ret = nand_copy(handle, src, dst);
+    xSemaphoreGive(handle->mutex);
+    return ret;
+}
+
+esp_err_t nand_wrap_copy_ext(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
+                             uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
+{
+    esp_err_t ret = ESP_OK;
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    ret = nand_copy_ext(handle, src, dst, oob_offset, oob_len, oob_data);
+    xSemaphoreGive(handle->mutex);
+    return ret;
+}
+
+esp_err_t nand_wrap_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *oob_lpn_out)
+{
+    esp_err_t ret = ESP_OK;
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    ret = nand_read_lpn(handle, page, oob_lpn_out);
     xSemaphoreGive(handle->mutex);
     return ret;
 }

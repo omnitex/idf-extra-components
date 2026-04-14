@@ -14,9 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <assert.h>
+#include <inttypes.h>
 #include <string.h>
 #include "bytes.h"
 #include "map.h"
+
+#define DHARA_TAG "dhara_map"
 
 #define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
 
@@ -87,6 +91,12 @@ int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
     }
 
     m->count = ck_get_count(dhara_journal_cookie(&m->journal));
+
+    if (dhara_map_replay_orphans(m, err) < 0) {
+        m->count = 0;
+        return -1;
+    }
+
     return 0;
 }
 
@@ -187,6 +197,136 @@ not_found:
 
     dhara_set_error(err, DHARA_E_NOT_FOUND);
     return -1;
+}
+
+/* Orphan-page replay (implementation). Public contract: map.h.
+ *
+ * Dhara stores a radix-tree index in the journal checkpoint page_buf: each
+ * user page's DHARA_META_SIZE slice describes how to reach that logical sector
+ * from the root. On sync/checkpoint, metadata for pages up through j->root is
+ * consistent with what is on NAND.
+ *
+ * If power is lost after further map writes but before the next checkpoint,
+ * those newer user pages are still programmed (data + OOB logical page number),
+ * yet their meta slots in page_buf were never updated. They are "orphans" from
+ * the perspective of the in-RAM index. map_find / GC / prepare_write would
+ * otherwise ignore them or follow stale alt pointers.
+ *
+ * This pass walks the linear orphan tail and patches page_buf in RAM only; it
+ * does not rewrite user data on flash.
+ *
+ * Journal layout along the user-page ring (CP = checkpoint page, not scanned):
+ *
+ *   ... [user @ root, page_buf meta valid] | orphan | orphan | (free @ head)
+ *                                        ^ p = next_upage(root) ...........^
+ *
+ * For each orphan page p:
+ *   1. Read logical sector (LPN) from NAND OOB.
+ *   2. trace_path(target=LPN, new_meta) walks the current tree and fills
+ *      new_meta with the alt-pointer path that would lead to this page (same
+ *      metadata shape as prepare_write uses before enqueue).
+ *   3. memcpy new_meta into page_buf at the slot for p within its checkpoint
+ *      group (pages per checkpoint = 2**log2_ppc).
+ *   4. Set j->root = p so the replayed page is the journal front for map ops.
+ *
+ * If trace_path reports DHARA_E_NOT_FOUND, the LPN was not yet in the tree
+ * (first allocation before crash); increment m->count. If trace_path succeeds,
+ * the sector was already mapped and this orphan is an update — count unchanged.
+ *
+ * Scan stops (success, no error) when any of: p == head, page is erased/free,
+ * OOB LPN is DHARA_OOB_LPN_NONE, or we have consumed the contiguous programmed
+ * tail that journal resume left between root and head.
+ */
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
+{
+    struct dhara_journal *j = &m->journal;
+    /* Index of p within its checkpoint group (0 .. 2**log2_ppc - 1). */
+    const dhara_page_t ppc_mask = (1u << j->log2_ppc) - 1u;
+    /* First page after the last checkpoint-covered user page. */
+    dhara_page_t p = dhara_journal_next_upage(j, j->root);
+    unsigned replay_count = 0;
+
+    for (;;) {
+        dhara_sector_t oob_lpn;
+        uint8_t new_meta[DHARA_META_SIZE];
+        dhara_page_t slot;
+        size_t offset;
+        dhara_error_t my_err;
+
+        /* Erased / never-written page ends the contiguous programmed run.
+         * Checked before the j->head guard so that a programmed page that
+         * coincides with j->head (e.g. when find_head underestimated due to
+         * a bad-block skip) is still replayed rather than silently skipped. */
+        if (dhara_nand_is_free(j->nand, p)) {
+            break;
+        }
+
+        /* Reached journal head: no more programmed pages in the orphan tail. */
+        if (p == j->head) {
+            break;
+        }
+
+        /* Driver stores the logical sector in OOB at program time. */
+        if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0) {
+            return -1;
+        }
+
+        DHARA_LOG_VERBOSE(DHARA_TAG, "replay scan page=%" PRIu32 " oob_lpn=%" PRIu32,
+                          (uint32_t)p, (uint32_t)oob_lpn);
+
+        /* Padding or non-user content: treat like end of tail. */
+        if (oob_lpn == DHARA_OOB_LPN_NONE) {
+            break;
+        }
+
+        /* Build radix alt-path meta for this LPN as if we were about to
+         * enqueue page p. loc is NULL because we only need new_meta, not the
+         * previous physical page for this sector.
+         */
+        if (trace_path(m, oob_lpn, NULL, new_meta, &my_err) < 0) {
+            if (my_err == DHARA_E_NOT_FOUND) {
+                /* New sector allocated before crash; cookie count was stale. */
+                m->count++;
+            } else {
+                if (err) {
+                    *err = my_err;
+                }
+                return -1;
+            }
+        }
+
+        /* page_buf layout: [header][cookie][meta[0]]..[meta[ppc-1]] on the
+         * checkpoint page for this group; slot selects which user page.
+         *
+         * Invariant: orphans are always within a single in-progress group.
+         * Any group whose checkpoint reached NAND is found by find_root on
+         * resume and advances j->root past it, so power loss can only leave
+         * an incomplete tail of at most (ppc - 1) orphan user pages. The slot
+         * calculation p & ppc_mask is therefore always in range for page_buf.
+         */
+        assert(replay_count < (1u << j->log2_ppc));
+        slot = p & ppc_mask;
+        offset = DHARA_HEADER_SIZE + DHARA_COOKIE_SIZE +
+                 slot * DHARA_META_SIZE;
+        memcpy(j->page_buf + offset, new_meta, DHARA_META_SIZE);
+
+        /* Advance map front to this orphan; last replayed page wins.
+         * j->root mid-group is normal: push_meta does the same (sets
+         * j->root = j->head after every user page). Callers that need
+         * group alignment use j->head and is_aligned(), not j->root.
+         */
+        j->root = p;
+        replay_count++;
+        DHARA_LOG_VERBOSE(DHARA_TAG, "replay orphan page=%" PRIu32 " count=%" PRIu32,
+                          (uint32_t)p, (uint32_t)m->count);
+        p = dhara_journal_next_upage(j, p);
+    }
+
+    /* Keep persistent cookie in page_buf aligned with replay-adjusted count. */
+    ck_set_count(dhara_journal_cookie(j), m->count);
+    DHARA_LOG_VERBOSE(DHARA_TAG, "replay done orphans=%u count=%" PRIu32,
+                      replay_count, (uint32_t)m->count);
+    return 0;
 }
 
 int dhara_map_find(struct dhara_map *m, dhara_sector_t target,

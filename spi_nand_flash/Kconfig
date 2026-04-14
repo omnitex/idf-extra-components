@@ -32,4 +32,24 @@ menu "SPI NAND Flash configuration"
         help
             This option enables gathering host test statistics and SPI NAND flash wear levelling simulation.
 
+    config NAND_FLASH_OOB_LPN_OFFSET
+        int "OOB byte offset for the 4-byte LPN field"
+        default 4
+        range 4 28
+        help
+            Byte offset of the 4-byte little-endian Logical Page Number (LPN) within the OOB
+            spare area, measured from OOB byte 0 (i.e. the first byte after main page data).
+
+            The default layout is: [0-1: bad-block marker][2-3: page-used marker][4-7: LPN].
+
+            Range constraints:
+              - Minimum 4: bytes 0-1 are the bad-block marker and bytes 2-3 are the
+                page-used marker; the LPN must not overlap either.
+              - Maximum 28: guarantees the 4-byte LPN field (offset+3) fits within the
+                first 32 OOB bytes, which is the minimum writable user-spare area across
+                all supported SPI NAND chips. A future per-chip oob_size field will allow
+                this bound to be relaxed for chips with larger spare areas.
+
+            Consult the chip datasheet's spare-area layout table before changing this value.
+
 endmenu

@@ -1,2 +1,3 @@
 idf_component_register(INCLUDE_DIRS dhara
-                       SRC_DIRS "dhara/dhara")
+                       SRC_DIRS "dhara/dhara"
+                       REQUIRES log)

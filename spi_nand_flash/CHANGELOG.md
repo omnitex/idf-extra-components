@@ -2,6 +2,18 @@
 
 Versioning policy: see [VERSIONING.md](VERSIONING.md). From **v1.0.0** onward this component follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0]
+
+### New Features
+
+- **Orphan-page replay after power loss**: LPNs are now stored in each page's OOB spare area at program time via `nand_prog_ext` / `nand_copy_ext`. On remount, `dhara_map_resume` automatically recovers pages written since the last checkpoint, preventing silent data loss after sudden power loss.
+- New internal functions `nand_prog_ext`, `nand_copy_ext`, `nand_read_lpn` (and their `nand_wrap_*` mutex-safe counterparts) implement OOB LPN storage on both the hardware and Linux mmap emulation paths.
+- New BDL ioctl commands `ESP_BLOCKDEV_CMD_PROG_PAGE_EXT`, `ESP_BLOCKDEV_CMD_COPY_PAGE_EXT`, `ESP_BLOCKDEV_CMD_READ_PAGE_LPN` with corresponding argument structs in `esp_nand_blockdev.h`.
+
+### Dependencies
+
+- Requires `espressif/dhara >= 2.0.0` (NAND HAL API updated for OOB LPN support; see dhara CHANGELOG for migration details).
+
 ## [1.2.0]
 - feat: added support for Gigadevice GD5F4GM7UExxG NAND flash
 

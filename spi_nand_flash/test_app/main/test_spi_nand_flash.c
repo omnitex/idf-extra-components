@@ -18,6 +18,7 @@
 #include "freertos/semphr.h"
 #include "driver/spi_master.h"
 #include "spi_nand_flash.h"
+#include "dhara/nand.h"
 #include "nand_private/nand_impl_wrap.h"
 #include "unity.h"
 #include "soc/spi_pins.h"
