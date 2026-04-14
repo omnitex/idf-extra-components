@@ -287,7 +287,7 @@ static void test_nand_operations(spi_nand_flash_io_mode_t mode, uint8_t flags)
     TEST_ESP_OK(nand_wrap_is_free(nand_flash_device_handle, test_page, &is_page_free));
     TEST_ASSERT_TRUE(is_page_free == true);
     // Write/program test_page
-    TEST_ESP_OK(nand_wrap_prog(nand_flash_device_handle, test_page, pattern_buf));
+    TEST_ESP_OK(nand_wrap_prog(nand_flash_device_handle, test_page, pattern_buf, 0xFFFFFFFF));
     // Verify if test_page is used/programmed
     TEST_ESP_OK(nand_wrap_is_free(nand_flash_device_handle, test_page, &is_page_free));
     TEST_ASSERT_TRUE(is_page_free == false);
@@ -295,7 +295,7 @@ static void test_nand_operations(spi_nand_flash_io_mode_t mode, uint8_t flags)
     TEST_ESP_OK(nand_wrap_read(nand_flash_device_handle, test_page, 0, page_size, temp_buf));
     TEST_ASSERT_EQUAL(0, spi_nand_flash_check_buffer(temp_buf, page_size / sizeof(uint32_t)));
     // Copy test_page to dst_page
-    TEST_ESP_OK(nand_wrap_copy(nand_flash_device_handle, test_page, dst_page));
+    TEST_ESP_OK(nand_wrap_copy(nand_flash_device_handle, test_page, dst_page, 0xFFFFFFFF));
     // read dst_page and verify with pattern_buf
     TEST_ESP_OK(nand_wrap_read(nand_flash_device_handle, dst_page, 0, page_size, temp_buf));
     TEST_ASSERT_EQUAL(0, spi_nand_flash_check_buffer(temp_buf, page_size / sizeof(uint32_t)));

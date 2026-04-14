@@ -684,7 +684,8 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 		/* Try to dump metadata on this page */
 		if (!(prepare_head(j, &my_err) ||
 		      dhara_nand_prog(j->nand, j->head,
-				      j->page_buf, &my_err))) {
+				      j->page_buf, DHARA_SECTOR_NONE,
+				      &my_err))) {
 			j->recover_meta = j->head;
 			j->head = next_upage(j, j->head);
 			if (!j->head)
@@ -804,7 +805,8 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
 	hdr_set_bb_current(j->page_buf, j->bb_current);
 	hdr_set_bb_last(j->page_buf, j->bb_last);
 
-	if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0)
+	if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf,
+			    DHARA_SECTOR_NONE, &my_err) < 0)
 		return recover_from(j, my_err, err);
 
 	j->flags &= ~DHARA_JOURNAL_F_DIRTY;
@@ -834,6 +836,8 @@ int dhara_journal_enqueue(struct dhara_journal *j,
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
 		if (!(prepare_head(j, &my_err) ||
 		      (data && dhara_nand_prog(j->nand, j->head, data,
+					       meta ? dhara_r32(meta) :
+					       DHARA_SECTOR_NONE,
 					       &my_err))))
 			return push_meta(j, meta, err);
 
@@ -854,7 +858,9 @@ int dhara_journal_copy(struct dhara_journal *j,
 
 	for (i = 0; i < DHARA_MAX_RETRIES; i++) {
 		if (!(prepare_head(j, &my_err) ||
-		      dhara_nand_copy(j->nand, p, j->head, &my_err)))
+		      dhara_nand_copy(j->nand, p, j->head,
+				      meta ? dhara_r32(meta) :
+				      DHARA_SECTOR_NONE, &my_err)))
 			return push_meta(j, meta, err);
 
 		if (recover_from(j, my_err, err) < 0)
@@ -881,4 +887,10 @@ dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j)
 		j->recover_next = next_upage(j, j->recover_next);
 
 	return n;
+}
+
+dhara_page_t dhara_journal_next_upage(const struct dhara_journal *j,
+				      dhara_page_t p)
+{
+	return next_upage(j, p);
 }

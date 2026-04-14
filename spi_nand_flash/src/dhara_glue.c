@@ -207,7 +207,8 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
     return 0;
 }
 
-int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data, dhara_error_t *err)
+int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data,
+                    dhara_sector_t sector, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     esp_err_t ret = ESP_OK;
@@ -216,9 +217,11 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
     esp_blockdev_handle_t bdl_handle = dhara_priv_data->bdl_handle;
     ret = bdl_handle->ops->write(bdl_handle, data, (p * bdl_handle->geometry.write_size),
                                  bdl_handle->geometry.write_size);
+    /* TODO: BDL path does not yet write LPN to OOB — sector arg ignored here */
+    (void)sector;
 #else
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_prog(dev_handle, p, data);
+    ret = nand_prog(dev_handle, p, data, sector);
 #endif
     if (ret) {
         if (ret == ESP_ERR_NOT_FINISHED) {
@@ -312,7 +315,8 @@ int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
     return 0;
 }
 
-int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst, dhara_error_t *err)
+int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst,
+                    dhara_sector_t sector, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     spi_nand_flash_device_t *dev_handle = NULL;
@@ -327,9 +331,11 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
         .dst_page = dst
     };
     ret = dhara_priv_data->bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_COPY_PAGE, &copy_arg);
+    /* TODO: BDL path does not yet write LPN to OOB — sector arg ignored here */
+    (void)sector;
 #else
     dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_copy(dev_handle, src, dst);
+    ret = nand_copy(dev_handle, src, dst, sector);
 #endif
     if (ret) {
         if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
@@ -341,4 +347,24 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
         return -1;
     }
     return 0;
+}
+
+int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+                         dhara_sector_t *sector_out, dhara_error_t *err)
+{
+    spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    /* TODO: BDL path does not yet support OOB LPN read — return SECTOR_NONE */
+    (void)dhara_priv_data; (void)p; (void)err;
+    *sector_out = DHARA_SECTOR_NONE;
+    return 0;
+#else
+    spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
+    esp_err_t ret = nand_read_lpn(dev_handle, p, sector_out);
+    if (ret != ESP_OK) {
+        dhara_set_error(err, DHARA_E_ECC);
+        return -1;
+    }
+    return 0;
+#endif
 }
