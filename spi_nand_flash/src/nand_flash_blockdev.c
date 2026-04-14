@@ -5,6 +5,7 @@
  */
 
 #include <string.h>
+#include "dhara/nand.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -110,7 +111,8 @@ static esp_err_t nand_flash_blockdev_write(esp_blockdev_handle_t handle, const u
 
     esp_err_t res = ESP_OK;
     for (uint32_t page_id = start_page; page_id < start_page + page_count; page_id++) {
-        res = nand_prog(dev_handle, page_id, src_buf);
+        /* TODO: BDL write path has no LPN available at this layer; pass DHARA_SECTOR_NONE */
+        res = nand_prog(dev_handle, page_id, src_buf, DHARA_SECTOR_NONE);
         if (res != ESP_OK) {
             ESP_LOGE(TAG, "Failed to write page %" PRIu32, page_id);
             return res;
@@ -233,7 +235,8 @@ static esp_err_t nand_flash_blockdev_ioctl(esp_blockdev_handle_t handle, const u
 
     case ESP_BLOCKDEV_CMD_COPY_PAGE: {
         esp_blockdev_cmd_arg_copy_page_t *copy_cmd = (esp_blockdev_cmd_arg_copy_page_t *)args;
-        esp_err_t ret = nand_copy(dev, copy_cmd->src_page, copy_cmd->dst_page);
+        /* TODO: BDL IOCTL copy path has no LPN available at this layer; pass DHARA_SECTOR_NONE */
+        esp_err_t ret = nand_copy(dev, copy_cmd->src_page, copy_cmd->dst_page, DHARA_SECTOR_NONE);
         return ret;
     }
 
