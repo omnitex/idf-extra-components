@@ -47,11 +47,11 @@ esp_err_t nand_wrap_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
     return ret;
 }
 
-esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data)
+esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, uint32_t sector)
 {
     esp_err_t ret = ESP_OK;
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
-    ret = nand_prog(handle, page, data);
+    ret = nand_prog(handle, page, data, sector);
     xSemaphoreGive(handle->mutex);
     return ret;
 }
@@ -74,11 +74,20 @@ esp_err_t nand_wrap_read(spi_nand_flash_device_t *handle, uint32_t page, size_t 
     return ret;
 }
 
-esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
+esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t sector)
 {
     esp_err_t ret = ESP_OK;
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
-    ret = nand_copy(handle, src, dst);
+    ret = nand_copy(handle, src, dst, sector);
+    xSemaphoreGive(handle->mutex);
+    return ret;
+}
+
+esp_err_t nand_wrap_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *sector_out)
+{
+    esp_err_t ret = ESP_OK;
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    ret = nand_read_lpn(handle, page, sector_out);
     xSemaphoreGive(handle->mutex);
     return ret;
 }

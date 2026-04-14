@@ -253,4 +253,12 @@ static inline int dhara_journal_in_recovery(const struct dhara_journal *j)
 
 dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j);
 
+/* Advance to the next user page after p, skipping the checkpoint page at
+ * the end of each group and wrapping around the chip. This is the canonical
+ * way to iterate user pages in the journal; used by the orphan-page replay
+ * engine in map.c.
+ */
+dhara_page_t dhara_journal_next_upage(const struct dhara_journal *j,
+				      dhara_page_t p);
+
 #endif

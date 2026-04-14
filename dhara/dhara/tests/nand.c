@@ -40,7 +40,8 @@ int main(void)
 				dabort("erase", err);
 
 			seq_gen(p, block, sizeof(block));
-			if (dhara_nand_prog(&sim_nand, p, block, &err) < 0)
+			if (dhara_nand_prog(&sim_nand, p, block,
+					    DHARA_SECTOR_NONE, &err) < 0)
 				dabort("prog", err);
 		}
 	}

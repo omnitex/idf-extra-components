@@ -160,11 +160,14 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t bno,
 }
 
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-		    const uint8_t *data, dhara_error_t *err)
+		    const uint8_t *data, dhara_sector_t sector,
+		    dhara_error_t *err)
 {
 	const int bno = p >> LOG2_PAGES_PER_BLOCK;
 	const int pno = p & ((1 << LOG2_PAGES_PER_BLOCK) - 1);
 	uint8_t *page = pages + (p << LOG2_PAGE_SIZE);
+
+	(void)sector; /* OOB not simulated */
 
 	if ((bno < 0) || (bno >= NUM_BLOCKS)) {
 		fprintf(stderr, "sim: NAND_prog called on "
@@ -252,14 +255,25 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 
 int dhara_nand_copy(const struct dhara_nand *n,
 		    dhara_page_t src, dhara_page_t dst,
+		    dhara_sector_t sector,
 		    dhara_error_t *err)
 {
 	uint8_t buf[PAGE_SIZE];
 
+	(void)sector; /* OOB not simulated */
 	if ((dhara_nand_read(n, src, 0, PAGE_SIZE, buf, err) < 0) ||
-	    (dhara_nand_prog(n, dst, buf, err) < 0))
+	    (dhara_nand_prog(n, dst, buf, DHARA_SECTOR_NONE, err) < 0))
 		return -1;
 
+	return 0;
+}
+
+int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+			dhara_sector_t *sector_out,
+			dhara_error_t *err)
+{
+	(void)n; (void)p; (void)err;
+	*sector_out = DHARA_SECTOR_NONE; /* OOB not simulated */
 	return 0;
 }
 

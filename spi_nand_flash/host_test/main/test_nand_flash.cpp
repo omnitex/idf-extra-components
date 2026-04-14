@@ -70,7 +70,7 @@ TEST_CASE("verify nand_prog, nand_read, nand_copy, nand_is_free works", "[spi_na
     REQUIRE(nand_wrap_is_free(device_handle, test_page, &is_page_free) == 0);
     REQUIRE(is_page_free == true);
     // Write/program test_page
-    REQUIRE(nand_wrap_prog(device_handle, test_page, pattern_buf) == 0);
+    REQUIRE(nand_wrap_prog(device_handle, test_page, pattern_buf, 0xFFFFFFFF) == 0);
     // Verify if test_page is used/programmed
     REQUIRE(nand_wrap_is_free(device_handle, test_page, &is_page_free) == 0);
     REQUIRE(is_page_free == false);
@@ -78,7 +78,7 @@ TEST_CASE("verify nand_prog, nand_read, nand_copy, nand_is_free works", "[spi_na
     REQUIRE(nand_wrap_read(device_handle, test_page, 0, sector_size, temp_buf) == 0);
     REQUIRE(spi_nand_flash_check_buffer(temp_buf, sector_size / sizeof(uint32_t)) == 0);
 
-    REQUIRE(nand_wrap_copy(device_handle, test_page, dst_page) == 0);
+    REQUIRE(nand_wrap_copy(device_handle, test_page, dst_page, 0xFFFFFFFF) == 0);
 
     REQUIRE(nand_wrap_read(device_handle, dst_page, 0, sector_size, temp_buf) == 0);
     REQUIRE(spi_nand_flash_check_buffer(temp_buf, sector_size / sizeof(uint32_t)) == 0);
