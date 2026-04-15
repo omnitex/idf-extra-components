@@ -334,6 +334,53 @@ TEST_CASE("Dhara orphan replay: writes after checkpoint are recovered on remount
     (void)unlink(k_nand_dump);
 }
 
+TEST_CASE("Dhara orphan replay: single logical page before any checkpoint survives remount", "[dhara_oob][replay]")
+{
+    /* Power-loss with zero prior sync: journal may have no flushed CP yet; OOB LPN replay
+     * must still recover the one programmed user sector on remount. */
+    static const char k_nand_dump[] = "/tmp/dhara_replay_no_checkpoint_yet.nand";
+    (void)unlink(k_nand_dump);
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    const uint8_t marker = 0x5A;
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        REQUIRE(page_size > 0);
+        std::vector<uint8_t> pattern(page_size, marker);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), 0, page_size) == ESP_OK);
+        /* Deliberately no wl_bdl->ops->sync — simulate power loss before first checkpoint. */
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, 0, page_size) == ESP_OK);
+        REQUIRE(buf[0] == marker);
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
+}
+
 TEST_CASE("Dhara orphan replay: orphans span NAND block boundary", "[dhara_oob][replay][boundary]")
 {
     /* Task 4.2 Step 3: many post-sync writes so journal programs cross at least one

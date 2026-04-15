@@ -419,16 +419,61 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
 	return 0;
 }
 
+/* No checkpoint on media (e.g. power loss before first CP flush): infer the
+ * journal head from contiguous programmed user pages starting at the journal
+ * origin so orphan OOB replay can run. Assumes writes began at page 0 without
+ * gaps — true for a fresh chip / empty journal until the first checkpoint.
+ */
+static int journal_resume_empty_checkpoint(struct dhara_journal *j,
+					   dhara_error_t *err)
+{
+	const dhara_page_t chip_pages = j->nand->num_blocks << j->nand->log2_ppb;
+	dhara_page_t p;
+	dhara_page_t last_user = DHARA_PAGE_NONE;
+	unsigned int iter;
+
+	reset_journal(j);
+	/* Cookie lives in page_buf; keep logical sector count at 0 until replay. */
+	dhara_w32(j->page_buf + DHARA_HEADER_SIZE, 0);
+
+	p = dhara_journal_next_upage(j, j->root);
+	for (iter = 0; iter < chip_pages + 8u; iter++) {
+		if (dhara_nand_is_free(j->nand, p))
+			break;
+
+		{
+			dhara_sector_t oob_lpn;
+
+			if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0)
+				return -1;
+			if (oob_lpn == DHARA_OOB_LPN_NONE)
+				break;
+		}
+
+		last_user = p;
+		p = dhara_journal_next_upage(j, p);
+	}
+
+	j->head = p;
+	if (last_user != DHARA_PAGE_NONE) {
+		j->tail = last_user;
+		j->tail_sync = last_user;
+	}
+
+	if (err)
+		dhara_set_error(err, DHARA_E_NONE);
+
+	return 0;
+}
+
 int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 {
 	dhara_block_t first, last;
 	dhara_page_t last_group;
 
 	/* Find the first checkpoint-containing block */
-	if (find_checkblock(j, 0, &first, err) < 0) {
-		reset_journal(j);
-		return -1;
-	}
+	if (find_checkblock(j, 0, &first, err) < 0)
+		return journal_resume_empty_checkpoint(j, err);
 
 	/* Find the last checkpoint-containing block in this epoch */
 	j->epoch = hdr_get_epoch(j->page_buf);
