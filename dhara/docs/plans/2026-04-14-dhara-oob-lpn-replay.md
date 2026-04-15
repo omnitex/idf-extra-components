@@ -68,7 +68,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ## Plan execution checklist
 
-Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test` (`idf.py` build, Catch2, pytest): **not re-run** for this update.
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Phase 3 (partial): Tasks **3.1** (OOB LPN round-trip) and **3.2** (remount orphan replay) in `test_nand_flash_bdl.cpp`; BDL Dhara glue uses raw `nand_prog` / `nand_read_lpn` / `nand_copy` for OOB LPN; Linux mmap emulator preserves backing file on re-open when `keep_dump` and file size already match image size. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test`: `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local). Pytest `pytest_nand_flash_linux.py`: **not re-run** here.
 
 ---
 
@@ -299,7 +299,7 @@ git commit -m "feat(dhara): extend nand_prog/nand_copy with oob_lpn arg, add rea
 
 ### Task 1.4: Update `dhara_glue.c` in `spi_nand_flash`
 
-- [x] **Task:** `dhara_glue.c` forwards `oob_lpn` / `nand_read_lpn` (BDL path still TODO-commented: no OOB LPN yet).
+- [x] **Task:** `dhara_glue.c` forwards `oob_lpn` / `nand_read_lpn` / `nand_copy` on BDL via raw `nand_*` on `bdl_handle->ctx` (OOB LPN end-to-end for Dhara journal + replay).
 
 **Files:**
 - Modify: `spi_nand_flash/src/dhara_glue.c`
@@ -682,11 +682,11 @@ git commit -m "feat(dhara): add orphan page replay on resume via OOB LPN"
 
 ## Phase 3 — Tests
 
-- [ ] **Phase:** Planned Catch2 coverage in `test_nand_flash_bdl.cpp` not added (grep shows no `[dhara_oob]` / replay cases there yet).
+- [ ] **Phase:** Task **3.3** (edge-case Catch2) still open. Tasks **3.1**–**3.2** landed in `test_nand_flash_bdl.cpp` with tags `[dhara_oob]` / `[replay]`; supporting fixes in `dhara_glue.c` (BDL OOB) and `nand_linux_mmap_emul.c` (remount dump preserve).
 
 ### Task 3.1: Add OOB LPN round-trip test to `spi_nand_flash/host_test`
 
-- [ ] **Task:** No dedicated OOB LPN round-trip `TEST_CASE` in `test_nand_flash_bdl.cpp` (wrap helpers exist elsewhere: `test_nand_flash.cpp`).
+- [x] **Task:** OOB LPN round-trip `TEST_CASE` in `test_nand_flash_bdl.cpp` (`[dhara_oob]`); uses `nand_flash_get_blockdev` + `bdl->ctx` + `nand_wrap_*` (BDL builds do not use `spi_nand_flash_init_device`).
 
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
@@ -774,7 +774,7 @@ git commit -m "test(spi_nand_flash): add OOB LPN round-trip test"
 
 ### Task 3.2: Add orphan page replay integration test
 
-- [ ] **Task:** No remount / orphan replay integration test in tree.
+- [x] **Task:** Remount / orphan replay integration `TEST_CASE` in `test_nand_flash_bdl.cpp` (`[dhara_oob][replay]`); named `keep_dump` file + second `nand_flash_get_blockdev` / `spi_nand_flash_wl_get_blockdev` mount.
 
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
@@ -1093,12 +1093,12 @@ git commit -m "feat(spi_nand_flash): stub OOB LPN write/read in hardware nand_im
 
 ## Phase 5 — Run full test suite and verify
 
-- [ ] **Phase:** Full release gate not completed in this session (host IDF + pytest not re-run for doc update).
+- [ ] **Phase:** Full release gate not completed (pytest not re-run here; host Catch2 re-run **pass** 2026-04-15).
 
 ### Task 5.1: Run all tests
 
 - [x] **Step 1 (upstream native):** `make -C dhara/dhara` and all `tests/*.test` — **pass** (2026-04-15, local).
-- [ ] **Step 2 (host Catch2):** `spi_nand_flash/host_test` — `idf.py build` + `./build/nand_flash_host_test.elf` — not re-run here.
+- [x] **Step 2 (host Catch2):** `spi_nand_flash/host_test` — `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local).
 - [ ] **Step 3 (pytest):** `pytest_nand_flash_linux.py` — not re-run here.
 - [ ] **Step 4:** Fix failures — N/A until host/pytest runs.
 
