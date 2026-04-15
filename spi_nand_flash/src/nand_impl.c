@@ -7,6 +7,7 @@
  */
 
 #include <string.h>
+#include "dhara/nand.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "spi_nand_oper.h"
@@ -365,7 +366,7 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
      * The OOB byte layout is: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
      * This requires a separate spi_nand_program_load call at column_addr + page_size + 4.
      * oob_lpn is intentionally ignored here until per-chip OOB write is implemented.
-     * When DHARA_SECTOR_NONE (0xFFFFFFFF), the OOB will read as 0xFF after erase -- correct.
+     * When DHARA_OOB_LPN_NONE (0xFFFFFFFF), the OOB will read as 0xFF after erase -- correct.
      */
     (void)oob_lpn;
 
@@ -588,10 +589,10 @@ esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t
     /* TODO: Read OOB bytes 4-7 from real NAND hardware to get stored LPN.
      * OOB layout: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
      * This requires a spi_nand_read call at column_addr + page_size + 4, length 4.
-     * Until implemented, return DHARA_SECTOR_NONE (0xFFFFFFFF) which causes replay
+     * Until implemented, return DHARA_OOB_LPN_NONE which causes replay
      * to truncate immediately — safe: behavior is identical to pre-OOB-replay.
      */
     (void)handle; (void)page;
-    *oob_lpn_out = 0xFFFFFFFF; /* DHARA_SECTOR_NONE */
+    *oob_lpn_out = DHARA_OOB_LPN_NONE;
     return ESP_OK;
 }

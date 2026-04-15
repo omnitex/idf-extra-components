@@ -354,9 +354,9 @@ int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
-    /* TODO: BDL path does not yet support OOB LPN read — return SECTOR_NONE */
+    /* TODO: BDL path does not yet support OOB LPN read — return DHARA_OOB_LPN_NONE */
     (void)dhara_priv_data; (void)p; (void)err;
-    *oob_lpn_out = DHARA_SECTOR_NONE;
+    *oob_lpn_out = DHARA_OOB_LPN_NONE;
     return 0;
 #else
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;

@@ -272,7 +272,7 @@ esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t
                         TAG, "Error in nand_read_lpn", 0);
 
     /* Reconstruct as little-endian 32-bit value.
-     * 0xFFFFFFFF = erased (DHARA_SECTOR_NONE), meaning no LPN stored.
+     * 0xFFFFFFFF = erased (DHARA_OOB_LPN_NONE), meaning no LPN stored.
      */
     *oob_lpn_out = (uint32_t)lpn_buf[0]
                 | ((uint32_t)lpn_buf[1] << 8)
