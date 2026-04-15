@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <vector>
 
 #include "spi_nand_flash.h"
@@ -271,5 +272,65 @@ TEST_CASE("OOB LPN round-trip: prog writes LPN, read_lpn reads it back", "[dhara
     REQUIRE(oob_lpn_out == DHARA_OOB_LPN_NONE);
 
     bdl->ops->release(bdl);
+}
+
+TEST_CASE("Dhara orphan replay: writes after checkpoint are recovered on remount", "[dhara_oob][replay]")
+{
+    static const char k_nand_dump[] = "/tmp/dhara_replay_test.nand";
+    (void)unlink(k_nand_dump);
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    /* First mount: checkpointed writes, then orphan writes, power-loss (no final sync). */
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        REQUIRE(page_size > 0);
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        for (uint32_t s = 0; s < 4; s++) {
+            memset(pattern.data(), (int)(uint8_t)(0xA0 + s), page_size);
+            REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s * page_size, page_size) == ESP_OK);
+        }
+
+        REQUIRE(wl_bdl->ops->sync(wl_bdl) == ESP_OK);
+
+        for (uint32_t s = 4; s < 6; s++) {
+            memset(pattern.data(), (int)(uint8_t)(0xA0 + s), page_size);
+            REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s * page_size, page_size) == ESP_OK);
+        }
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    /* Second mount: orphan sectors must replay from OOB LPN. */
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+
+        for (uint32_t s = 0; s < 6; s++) {
+            memset(buf.data(), 0, buf.size());
+            REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s * page_size, page_size) == ESP_OK);
+            REQUIRE(buf[0] == (uint8_t)(0xA0 + s));
+        }
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
 }
 

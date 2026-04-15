@@ -41,6 +41,18 @@ static esp_err_t nand_emul_mmap_init(nand_mmap_emul_handle_t *emul_handle)
         return ESP_ERR_NOT_FOUND;
     }
 
+    struct stat st;
+    if (fstat(emul_handle->mem_file_fd, &st) != 0) {
+        ESP_LOGE(TAG, "Failed to stat NAND file %s: %s",
+                 emul_handle->file_mmap_ctrl.flash_file_name, strerror(errno));
+        close(emul_handle->mem_file_fd);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    /* Remount tests: keep_dump + existing file already at image size → preserve contents. */
+    const int preserve_dump = emul_handle->file_mmap_ctrl.keep_dump &&
+                              st.st_size == (off_t)emul_handle->file_mmap_ctrl.flash_file_size;
+
     // Set file size
     if (ftruncate(emul_handle->mem_file_fd, emul_handle->file_mmap_ctrl.flash_file_size) != 0) {
         ESP_LOGE(TAG, "Failed to set NAND file size: %s", strerror(errno));
@@ -58,8 +70,10 @@ static esp_err_t nand_emul_mmap_init(nand_mmap_emul_handle_t *emul_handle)
         return ESP_ERR_NO_MEM;
     }
 
-    // Initialize with 0xFF (erased state)
-    memset(emul_handle->mem_file_buf, 0xFF, emul_handle->file_mmap_ctrl.flash_file_size);
+    // Initialize with 0xFF (erased state) unless reusing a persisted dump
+    if (!preserve_dump) {
+        memset(emul_handle->mem_file_buf, 0xFF, emul_handle->file_mmap_ctrl.flash_file_size);
+    }
 
     ESP_LOGI(TAG, "NAND flash emulation initialized: %s (size: %zu bytes)",
              emul_handle->file_mmap_ctrl.flash_file_name,
