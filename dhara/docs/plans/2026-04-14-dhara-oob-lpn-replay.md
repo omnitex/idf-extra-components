@@ -23,7 +23,7 @@
 
 Dhara is a NAND FTL at `dhara/dhara/dhara/`. It has three layers:
 
-1. **`nand.h`** — seven driver callbacks you provide; Dhara calls them. Currently no OOB in any signature.
+1. **`nand.h`** — NAND operations you implement (`dhara_nand_*`). On this branch, **prog** and **copy** take `oob_lpn`; **`dhara_nand_read_lpn`** reads LPN from OOB for replay.
 2. **`journal.h/.c`** — manages a circular write queue partitioned into *checkpoint groups*. Each group has `2^log2_ppc` pages: `(2^log2_ppc - 1)` user pages followed by one checkpoint (CP) page. A CP page stores a 16-byte header (magic, epoch, tail, bb_current, bb_last) + 4-byte cookie + `N × 132`-byte metadata blobs. Between checkpoints, metadata lives only in RAM (`j->page_buf`).
 3. **`map.h/.c`** — a persistent functional radix tree over the journal. Maps `dhara_sector_t` (32-bit logical sector) → `dhara_page_t` (32-bit physical page). Each update record (132 bytes = `DHARA_META_SIZE`) stores `sector_id` + 32 alt-pointers (one per bit of the sector address).
 
@@ -46,7 +46,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 | File | What to read |
 |---|---|
-| `dhara/dhara/dhara/nand.h` | Current callback signatures (you will change 2 + add 1) |
+| `dhara/dhara/dhara/nand.h` | Callback signatures (`oob_lpn` on prog/copy, `read_lpn`) — implemented on branch |
 | `dhara/dhara/dhara/journal.h` | `struct dhara_journal`, constants (`DHARA_META_SIZE=132`, `DHARA_HEADER_SIZE=16`, `DHARA_COOKIE_SIZE=4`, `DHARA_OOB_LPN_NONE`; legacy alias `DHARA_SECTOR_NONE`) |
 | `dhara/dhara/dhara/journal.c` | `dhara_journal_resume()`, `push_meta()`, `next_upage()`, `align_eq()` |
 | `dhara/dhara/dhara/map.c` | `dhara_map_resume()`, `trace_path()`, `prepare_write()`, `push_meta_buf()` |
@@ -66,9 +66,19 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ---
 
+## Plan execution checklist
+
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15, HEAD `289f143`. Checkboxes below were checked against the working tree and commits `a6eba42`…`289f143`. Native `make -C dhara/dhara` and all `dhara/dhara/tests/*.test`: **pass** (local run). `spi_nand_flash/host_test` (`idf.py` build, Catch2 elf, pytest): **not re-run** for this documentation-only update.
+
+---
+
 ## Phase 0 — Spec and OOB layout (no code)
 
+- [x] **Phase:** Spec, OOB layout, and appendix decisions captured in this document. Task 0.1 is still a manual pre-flight for whoever implements Phase 2+.
+
 ### Task 0.1: Read and understand all key files
+
+- [ ] **Task:** Reading / quiz-style mastery — not evidenced by git commits.
 
 Before writing any code, read these files completely:
 
@@ -90,7 +100,11 @@ Before writing any code, read these files completely:
 
 ## Phase 1 — Extend NAND interface and write path
 
+- [x] **Phase:** Dhara NAND callback signatures, journal/sim call sites, glue + Linux mmap OOB read/write, and hardware `nand_impl.c` stubs are on branch (`a6eba42` and follow-ups through `289f143`).
+
 ### Task 1.1: Extend `dhara_nand_prog` signature in `nand.h`
+
+- [x] **Task:** `nand.h` extended (`oob_lpn` on prog/copy, `dhara_nand_read_lpn`, `DHARA_OOB_LPN_NONE`, `DHARA_SECTOR_NONE` alias).
 
 **Files:**
 - Modify: `dhara/dhara/dhara/nand.h`
@@ -158,6 +172,8 @@ Expected: compile error because `journal.c` still calls old signature. That is e
 
 ### Task 1.2: Update all call sites in `journal.c`
 
+- [x] **Task:** `journal.c` passes `oob_lpn` / `DHARA_OOB_LPN_NONE` at all prog/copy sites.
+
 **Files:**
 - Modify: `dhara/dhara/dhara/journal.c`
 
@@ -214,6 +230,8 @@ Expected: may still fail on undefined `dhara_nand_prog` (correct) or may pass sy
 ---
 
 ### Task 1.3: Update `dhara_nand_prog` and `dhara_nand_copy` in the test simulator
+
+- [x] **Task:** `dhara/dhara/tests/sim.c` (+ `tests/nand.c`) updated; `read_lpn` returns `DHARA_OOB_LPN_NONE`.
 
 **Files:**
 - Modify: `dhara/dhara/tests/sim.c`
@@ -280,6 +298,8 @@ git commit -m "feat(dhara): extend nand_prog/nand_copy with oob_lpn arg, add rea
 ---
 
 ### Task 1.4: Update `dhara_glue.c` in `spi_nand_flash`
+
+- [x] **Task:** `dhara_glue.c` forwards `oob_lpn` / `nand_read_lpn` (BDL path still TODO-commented: no OOB LPN yet).
 
 **Files:**
 - Modify: `spi_nand_flash/src/dhara_glue.c`
@@ -360,6 +380,8 @@ int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
 ---
 
 ### Task 1.5: Add LPN to `nand_impl_linux.c` and `nand_impl.h`
+
+- [x] **Task:** `nand_impl.h` + `nand_impl_linux.c` implement OOB bytes 4–7 LE for prog/copy/read_lpn.
 
 **Files:**
 - Modify: `spi_nand_flash/priv_include/nand_impl.h`
@@ -462,7 +484,11 @@ git commit -m "feat(spi_nand_flash): wire LPN OOB write/read through nand_impl a
 
 ## Phase 2 — Replay engine in `map.c`
 
+- [ ] **Phase:** Not started on branch — `dhara_map_replay_orphans` absent; `dhara_map_resume` only restores `m->count` after `dhara_journal_resume`.
+
 ### Task 2.1: Add `dhara_map_replay_orphans` function to `map.c`
+
+- [ ] **Task:** No `dhara_map_replay_orphans` in `map.c` / `map.h` yet.
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
@@ -598,6 +624,8 @@ gcc -fsyntax-only -I dhara/dhara dhara/dhara/dhara/map.c
 
 ### Task 2.2: Call `dhara_map_replay_orphans` from `dhara_map_resume`
 
+- [ ] **Task:** `dhara_map_resume` does not call replay (no orphan reconciliation).
+
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
 
@@ -654,7 +682,11 @@ git commit -m "feat(dhara): add orphan page replay on resume via OOB LPN"
 
 ## Phase 3 — Tests
 
+- [ ] **Phase:** Planned Catch2 coverage in `test_nand_flash_bdl.cpp` not added (grep shows no `[dhara_oob]` / replay cases there yet).
+
 ### Task 3.1: Add OOB LPN round-trip test to `spi_nand_flash/host_test`
+
+- [ ] **Task:** No dedicated OOB LPN round-trip `TEST_CASE` in `test_nand_flash_bdl.cpp` (wrap helpers exist elsewhere: `test_nand_flash.cpp`).
 
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
@@ -741,6 +773,8 @@ git commit -m "test(spi_nand_flash): add OOB LPN round-trip test"
 ---
 
 ### Task 3.2: Add orphan page replay integration test
+
+- [ ] **Task:** No remount / orphan replay integration test in tree.
 
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
@@ -854,6 +888,8 @@ git commit -m "test(spi_nand_flash): add orphan page replay integration test"
 
 ### Task 3.3: Edge case tests
 
+- [ ] **Task:** Edge-case `TEST_CASE`s from plan not present.
+
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
 
@@ -916,7 +952,11 @@ git commit -m "test(spi_nand_flash): add edge case tests for OOB replay (boundar
 
 ## Phase 4 — Hardening and diagnostics
 
+- [ ] **Phase:** Mostly open. Exception: public `dhara_journal_next_upage()` already landed (same feature commit series as NAND API) ahead of replay.
+
 ### Task 4.1: Add compile-time trace logging
+
+- [ ] **Task:** No `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`.
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
@@ -963,6 +1003,8 @@ git commit -m "feat(dhara): add DHARA_TRACE_REPLAY compile-time diagnostics for 
 
 ### Task 4.2: Handle block boundaries in replay scan
 
+- [ ] **Task:** Replay scan not implemented. **`dhara_journal_next_upage()` is already public** in `journal.h` / `journal.c` (ready for Phase 2). Block-boundary test still outstanding.
+
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
 
@@ -997,6 +1039,8 @@ git commit -m "fix(dhara): use next_upage for block-boundary-safe orphan scan"
 ---
 
 ### Task 4.3: Verify `nand_impl.c` (hardware path) compiles with new signatures
+
+- [x] **Task:** `nand_impl.c` carries new `nand_prog` / `nand_copy` / `nand_read_lpn` signatures; OOB LPN read/write left as explicit TODO stubs (`DHARA_OOB_LPN_NONE` / ignored `oob_lpn`).
 
 **Files:**
 - Modify: `spi_nand_flash/src/nand_impl.c` (hardware SPI implementation)
@@ -1051,7 +1095,14 @@ git commit -m "feat(spi_nand_flash): stub OOB LPN write/read in hardware nand_im
 
 ## Phase 5 — Run full test suite and verify
 
+- [ ] **Phase:** Full release gate not completed in this session (host IDF + pytest not re-run for doc update).
+
 ### Task 5.1: Run all tests
+
+- [x] **Step 1 (upstream native):** `make -C dhara/dhara` and all `tests/*.test` — **pass** (2026-04-15, local).
+- [ ] **Step 2 (host Catch2):** `spi_nand_flash/host_test` — `idf.py build` + `./build/nand_flash_host_test.elf` — not re-run here.
+- [ ] **Step 3 (pytest):** `pytest_nand_flash_linux.py` — not re-run here.
+- [ ] **Step 4:** Fix failures — N/A until host/pytest runs.
 
 **Step 1: Run upstream native tests**
 
