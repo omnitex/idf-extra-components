@@ -600,3 +600,192 @@ TEST_CASE("Replay: two syncs leave no pending orphans", "[dhara_oob][replay]")
     (void)unlink(k_nand_dump);
 }
 
+TEST_CASE("Dhara orphan replay: permuted arbitrary logical sector order before sync", "[dhara_oob][replay]")
+{
+    static const char k_nand_dump[] = "/tmp/dhara_replay_permuted_lpn.nand";
+    (void)unlink(k_nand_dump);
+
+    /* Sparse small logical sector indices (not 0,1,2…); WL capacity always >> 100 here. */
+    const uint32_t sa = 17u;
+    const uint32_t sb = 59u;
+    const uint32_t sc = 83u;
+    const uint8_t tag_sa = 0x4Du;
+    const uint8_t tag_sb = 0x92u;
+    const uint8_t tag_sc = 0xE4u;
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        /* Physical journal order != ascending LPN: write sc, then sa, then sb — all before any sync. */
+        memset(pattern.data(), (int)tag_sc, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)sc * page_size, page_size) == ESP_OK);
+        memset(pattern.data(), (int)tag_sa, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)sa * page_size, page_size) == ESP_OK);
+        memset(pattern.data(), (int)tag_sb, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)sb * page_size, page_size) == ESP_OK);
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)sa * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_sa);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)sb * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_sb);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)sc * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_sc);
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
+}
+
+TEST_CASE("Dhara orphan replay: two physical writes same arbitrary LPN — last wins", "[dhara_oob][replay]")
+{
+    static const char k_nand_dump[] = "/tmp/dhara_replay_double_lpn.nand";
+    (void)unlink(k_nand_dump);
+
+    const uint32_t sid = 37u;
+    const uint8_t tag_first = 0x71u;
+    const uint8_t tag_second = 0xE8u;
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        memset(pattern.data(), (int)tag_first, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)sid * page_size, page_size) == ESP_OK);
+        memset(pattern.data(), (int)tag_second, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)sid * page_size, page_size) == ESP_OK);
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)sid * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_second);
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
+}
+
+TEST_CASE("Dhara orphan replay: two power-loss generations on same dump", "[dhara_oob][replay]")
+{
+    static const char k_nand_dump[] = "/tmp/dhara_replay_two_generations.nand";
+    (void)unlink(k_nand_dump);
+
+    const uint32_t s1 = 11u;
+    const uint32_t s2 = 47u;
+    const uint32_t s3 = 91u;
+    const uint8_t tag_s1 = 0x55u;
+    const uint8_t tag_s2 = 0xAAu;
+    const uint8_t tag_s3 = 0x5Au;
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    /* Generation 1: two orphans, no sync. */
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        memset(pattern.data(), (int)tag_s1, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s1 * page_size, page_size) == ESP_OK);
+        memset(pattern.data(), (int)tag_s2, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s2 * page_size, page_size) == ESP_OK);
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    /* Remount 1: recover gen1, add gen2 orphan, no sync again. */
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+
+        std::vector<uint8_t> buf(page_size, 0);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s1 * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_s1);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s2 * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_s2);
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        memset(pattern.data(), (int)tag_s3, page_size);
+        REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s3 * page_size, page_size) == ESP_OK);
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    /* Remount 2: all three sectors must match (gen1 + gen2 orphans replayed). */
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s1 * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_s1);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s2 * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_s2);
+        memset(buf.data(), 0, buf.size());
+        REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s3 * page_size, page_size) == ESP_OK);
+        REQUIRE(buf[0] == tag_s3);
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
+}
+
