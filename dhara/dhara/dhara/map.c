@@ -139,7 +139,7 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
 	while (depth < DHARA_RADIX_DEPTH) {
 		const dhara_sector_t id = meta_get_id(meta);
 
-		if (id == DHARA_SECTOR_NONE)
+		if (id == DHARA_OOB_LPN_NONE)
 			goto not_found;
 
 		if ((target ^ id) & d_bit(depth)) {
@@ -172,7 +172,7 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
 not_found:
 	if (new_meta) {
 		while (depth < DHARA_RADIX_DEPTH)
-			meta_set_alt(new_meta, depth++, DHARA_SECTOR_NONE);
+			meta_set_alt(new_meta, depth++, DHARA_OOB_LPN_NONE);
 	}
 
 	dhara_set_error(err, DHARA_E_NOT_FOUND);
@@ -222,7 +222,7 @@ static int raw_gc(struct dhara_map *m, dhara_page_t src,
 
 	/* Is the page just filler/garbage? */
 	target = meta_get_id(meta);
-	if (target == DHARA_SECTOR_NONE)
+	if (target == DHARA_OOB_LPN_NONE)
 		return 0;
 
 	/* Find out where the sector once represented by this page

@@ -24,8 +24,10 @@
  */
 typedef uint32_t dhara_sector_t;
 
-/* This sector value is reserved */
-#define DHARA_SECTOR_NONE	0xffffffff
+/* Reserved dhara_sector_t value (no LPN / erased OOB) */
+#ifndef DHARA_OOB_LPN_NONE
+#define DHARA_OOB_LPN_NONE	0xffffffff
+#endif
 
 struct dhara_map {
 	struct dhara_journal	journal;

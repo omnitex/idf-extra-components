@@ -21,13 +21,13 @@
 #include <stddef.h>
 #include "error.h"
 
-/* Logical page number (sector id) type. DHARA_SECTOR_NONE is used as a
+/* Logical page number (sector id) type. DHARA_OOB_LPN_NONE is used as a
  * sentinel to indicate "no LPN" (e.g. for checkpoint pages). The type is also
  * defined in map.h; identical typedef redefinition is valid in C11.
  */
 typedef uint32_t dhara_sector_t;
-#ifndef DHARA_SECTOR_NONE
-#define DHARA_SECTOR_NONE	0xffffffff
+#ifndef DHARA_OOB_LPN_NONE
+#define DHARA_OOB_LPN_NONE	0xffffffff
 #endif
 
 /* Each page in a NAND device is indexed, starting at 0. It's required
@@ -88,7 +88,7 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  * reprogrammed.
  *
  * oob_lpn is the logical page number (LPN) being written. For checkpoint
- * pages and recovery metadata dumps, pass DHARA_SECTOR_NONE. The driver
+ * pages and recovery metadata dumps, pass DHARA_OOB_LPN_NONE. The driver
  * should store this in OOB to enable orphan-page replay on remount.
  */
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
@@ -122,10 +122,10 @@ int dhara_nand_copy(const struct dhara_nand *n,
 
 /* Read the logical page number (LPN / sector id) stored in OOB for page p.
  * Returns 0 and writes the LPN to *oob_lpn_out on success.
- * Returns 0 and writes DHARA_SECTOR_NONE if the OOB is erased or carries no LPN.
+ * Returns 0 and writes DHARA_OOB_LPN_NONE if the OOB is erased or carries no LPN.
  * Returns -1 and sets *err on ECC/hardware error.
  * If OOB-LPN is not supported by the driver, implement as:
- *   *oob_lpn_out = DHARA_SECTOR_NONE; return 0;
+ *   *oob_lpn_out = DHARA_OOB_LPN_NONE; return 0;
  */
 int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
 			dhara_sector_t *oob_lpn_out,

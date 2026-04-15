@@ -262,7 +262,7 @@ int dhara_nand_copy(const struct dhara_nand *n,
 
 	(void)oob_lpn; /* OOB not simulated */
 	if ((dhara_nand_read(n, src, 0, PAGE_SIZE, buf, err) < 0) ||
-	    (dhara_nand_prog(n, dst, buf, DHARA_SECTOR_NONE, err) < 0))
+	    (dhara_nand_prog(n, dst, buf, DHARA_OOB_LPN_NONE, err) < 0))
 		return -1;
 
 	return 0;
@@ -273,7 +273,7 @@ int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
 			dhara_error_t *err)
 {
 	(void)n; (void)p; (void)err;
-	*oob_lpn_out = DHARA_SECTOR_NONE; /* OOB not simulated */
+	*oob_lpn_out = DHARA_OOB_LPN_NONE; /* OOB not simulated */
 	return 0;
 }
 
