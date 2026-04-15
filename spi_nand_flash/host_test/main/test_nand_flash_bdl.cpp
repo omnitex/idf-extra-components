@@ -8,10 +8,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <cstdlib>
+#include <vector>
 
 #include "spi_nand_flash.h"
+#include "dhara/nand.h"
 #include "spi_nand_flash_test_helpers.h"
 #include "nand_linux_mmap_emul.h"
+#include "nand_private/nand_impl_wrap.h"
 #include "esp_blockdev.h"
 #include "esp_nand_blockdev.h"
 
@@ -775,4 +778,34 @@ TEST_CASE("WL BDL hot-set with interleaved MARK_DELETED", "[spi_nand_flash][bdl]
     free(w);
     free(r);
     wl_bdl->ops->release(wl_bdl);
+}
+
+TEST_CASE("OOB LPN round-trip: prog writes LPN, read_lpn reads it back", "[dhara_oob]")
+{
+    /* BDL builds: use blockdev (nand_flash_get_blockdev); ctx is the underlying spi_nand_flash_device_t. */
+    nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    esp_blockdev_handle_t bdl = nullptr;
+    REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &bdl) == ESP_OK);
+    auto *handle = static_cast<spi_nand_flash_device_t *>(bdl->ctx);
+    REQUIRE(handle != nullptr);
+
+    uint32_t page_size = bdl->geometry.write_size;
+    REQUIRE(page_size > 0);
+
+    std::vector<uint8_t> data(page_size, 0xAB);
+    REQUIRE(nand_wrap_prog(handle, 0, data.data(), 42) == ESP_OK);
+
+    uint32_t oob_lpn_out = 0xDEADBEEF;
+    REQUIRE(nand_wrap_read_lpn(handle, 0, &oob_lpn_out) == ESP_OK);
+    REQUIRE(oob_lpn_out == 42U);
+
+    REQUIRE(nand_wrap_read_lpn(handle, 1, &oob_lpn_out) == ESP_OK);
+    REQUIRE(oob_lpn_out == DHARA_OOB_LPN_NONE);
+
+    REQUIRE(nand_wrap_prog(handle, 2, data.data(), DHARA_OOB_LPN_NONE) == ESP_OK);
+    REQUIRE(nand_wrap_read_lpn(handle, 2, &oob_lpn_out) == ESP_OK);
+    REQUIRE(oob_lpn_out == DHARA_OOB_LPN_NONE);
+
+    bdl->ops->release(bdl);
 }
