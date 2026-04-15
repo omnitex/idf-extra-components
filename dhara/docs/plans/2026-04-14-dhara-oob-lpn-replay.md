@@ -68,7 +68,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ## Plan execution checklist
 
-Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Phase 3 (partial): Tasks **3.1** (OOB LPN round-trip) and **3.2** (remount orphan replay) in `test_nand_flash_bdl.cpp`; BDL Dhara glue uses raw `nand_prog` / `nand_read_lpn` / `nand_copy` for OOB LPN; Linux mmap emulator preserves backing file on re-open when `keep_dump` and file size already match image size. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test`: `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local). Pytest `pytest_nand_flash_linux.py`: **not re-run** here.
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Task **4.2** Step 3: block-boundary orphan replay Catch2 (`[boundary]`). Phase 3 (partial): Tasks **3.1**–**3.2** in `test_nand_flash_bdl.cpp`; BDL Dhara glue uses raw `nand_prog` / `nand_read_lpn` / `nand_copy` for OOB LPN; Linux mmap emulator preserves backing file on re-open when `keep_dump` and file size already match image size. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test`: `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local). Pytest `pytest_nand_flash_linux.py`: **not re-run** here.
 
 ---
 
@@ -952,7 +952,7 @@ git commit -m "test(spi_nand_flash): add edge case tests for OOB replay (boundar
 
 ## Phase 4 — Hardening and diagnostics
 
-- [ ] **Phase:** Mostly open. Exception: public `dhara_journal_next_upage()` already landed (same feature commit series as NAND API) ahead of replay. Task 4.1 (trace logging) is done.
+- [ ] **Phase:** Partially closed: `dhara_journal_next_upage()`, Task 4.1 (trace), Task 4.2 (replay scan + block-boundary host test). Further hardening TBD if needed.
 
 ### Task 4.1: Add compile-time trace logging
 
@@ -1003,7 +1003,7 @@ git commit -m "feat(dhara): add DHARA_TRACE_REPLAY compile-time diagnostics for 
 
 ### Task 4.2: Handle block boundaries in replay scan
 
-- [ ] **Task:** Replay scan implemented with **`dhara_journal_next_upage()`** (wrap + CP skip). **Still open:** block-boundary integration `TEST_CASE` / verification called out in Step 3 below.
+- [x] **Task:** Replay scan uses **`dhara_journal_next_upage()`**; block-boundary integration `TEST_CASE` in `test_nand_flash_bdl.cpp` (`[boundary]`, remount after `ppb*3+24` logical sectors with mid-stream `sync`).
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
