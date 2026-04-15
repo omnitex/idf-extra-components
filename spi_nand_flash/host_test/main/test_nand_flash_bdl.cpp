@@ -334,3 +334,73 @@ TEST_CASE("Dhara orphan replay: writes after checkpoint are recovered on remount
     (void)unlink(k_nand_dump);
 }
 
+TEST_CASE("Dhara orphan replay: orphans span NAND block boundary", "[dhara_oob][replay][boundary]")
+{
+    /* Task 4.2 Step 3: many post-sync writes so journal programs cross at least one
+     * physical erase-block boundary; remount must replay all orphans via next_upage. */
+    static const char k_nand_dump[] = "/tmp/dhara_replay_block_boundary.nand";
+    (void)unlink(k_nand_dump);
+
+    nand_file_mmap_emul_config_t emul_cfg = {};
+    strncpy(emul_cfg.flash_file_name, k_nand_dump, sizeof(emul_cfg.flash_file_name) - 1);
+    emul_cfg.flash_file_name[sizeof(emul_cfg.flash_file_name) - 1] = '\0';
+    emul_cfg.flash_file_size = 50 * 1024 * 1024;
+    emul_cfg.keep_dump = true;
+    spi_nand_flash_config_t nand_flash_config = {&emul_cfg, 0, SPI_NAND_IO_MODE_SIO, 0};
+
+    uint32_t ppb = 0;
+    uint32_t total_sectors = 0;
+    uint32_t sync_at = 0;
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+
+        esp_blockdev_cmd_arg_nand_flash_info_t flash_info = {};
+        memset(&flash_info, 0, sizeof(flash_info));
+        REQUIRE(flash_bdl->ops->ioctl(flash_bdl, ESP_BLOCKDEV_CMD_GET_NAND_FLASH_INFO, &flash_info) == ESP_OK);
+        ppb = 1u << flash_info.geometry.log2_ppb;
+        REQUIRE(ppb >= 4u);
+
+        /* One checkpoint mid-stream, then enough unsynced logical writes to cross >=1 PPB boundary. */
+        sync_at = ppb;
+        total_sectors = ppb * 3u + 24u;
+
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        REQUIRE(page_size > 0);
+
+        std::vector<uint8_t> pattern(page_size, 0);
+        for (uint32_t s = 0; s < total_sectors; s++) {
+            memset(pattern.data(), (int)(uint8_t)(0x40 + (s & 0x3Fu)), page_size);
+            REQUIRE(wl_bdl->ops->write(wl_bdl, pattern.data(), (uint64_t)s * page_size, page_size) == ESP_OK);
+            if (s + 1u == sync_at) {
+                REQUIRE(wl_bdl->ops->sync(wl_bdl) == ESP_OK);
+            }
+        }
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    {
+        esp_blockdev_handle_t flash_bdl = nullptr;
+        esp_blockdev_handle_t wl_bdl = nullptr;
+        REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
+        REQUIRE(spi_nand_flash_wl_get_blockdev(flash_bdl, &wl_bdl) == ESP_OK);
+
+        uint32_t page_size = wl_bdl->geometry.write_size;
+        std::vector<uint8_t> buf(page_size, 0);
+
+        for (uint32_t s = 0; s < total_sectors; s++) {
+            memset(buf.data(), 0, buf.size());
+            REQUIRE(wl_bdl->ops->read(wl_bdl, buf.data(), page_size, (uint64_t)s * page_size, page_size) == ESP_OK);
+            REQUIRE(buf[0] == (uint8_t)(0x40 + (s & 0x3Fu)));
+        }
+
+        wl_bdl->ops->release(wl_bdl);
+    }
+
+    (void)unlink(k_nand_dump);
+}
+
