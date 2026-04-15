@@ -18,6 +18,14 @@
 #include "bytes.h"
 #include "map.h"
 
+#ifdef DHARA_TRACE_REPLAY
+#include <stdio.h>
+#define REPLAY_TRACE(fmt, ...) \
+	fprintf(stderr, "[dhara replay] " fmt "\n", ##__VA_ARGS__)
+#else
+#define REPLAY_TRACE(fmt, ...) do { } while (0)
+#endif
+
 #define DHARA_RADIX_DEPTH	(sizeof(dhara_sector_t) << 3)
 
 static inline dhara_sector_t d_bit(int depth)
@@ -190,6 +198,9 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
 	struct dhara_journal *j = &m->journal;
 	const dhara_page_t ppc_mask = (1u << j->log2_ppc) - 1u;
 	dhara_page_t p = dhara_journal_next_upage(j, j->root);
+#ifdef DHARA_TRACE_REPLAY
+	unsigned replay_count = 0;
+#endif
 
 	for (;;) {
 		dhara_sector_t oob_lpn;
@@ -206,6 +217,9 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
 
 		if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0)
 			return -1;
+
+		REPLAY_TRACE("scanning page %u: oob_lpn=%u", (unsigned)p,
+			     (unsigned)oob_lpn);
 
 		if (oob_lpn == DHARA_OOB_LPN_NONE)
 			break;
@@ -226,10 +240,19 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
 		memcpy(j->page_buf + offset, new_meta, DHARA_META_SIZE);
 
 		j->root = p;
+#ifdef DHARA_TRACE_REPLAY
+		replay_count++;
+#endif
+		REPLAY_TRACE("replayed orphan at page %u, m->count=%u",
+			     (unsigned)p, (unsigned)m->count);
 		p = dhara_journal_next_upage(j, p);
 	}
 
 	ck_set_count(dhara_journal_cookie(j), m->count);
+#ifdef DHARA_TRACE_REPLAY
+	REPLAY_TRACE("replay complete: %u orphan(s) applied, m->count=%u",
+		     replay_count, (unsigned)m->count);
+#endif
 	return 0;
 }
 
