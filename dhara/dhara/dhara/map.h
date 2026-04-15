@@ -52,6 +52,14 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
  */
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err);
 
+/* Replay orphan user pages (written after last checkpoint, before power loss).
+ * Called automatically by dhara_map_resume() after dhara_journal_resume() succeeds.
+ * For each user page between the page after j->root and the first free page (head),
+ * reads LPN from OOB, reconstructs metadata, and patches page_buf.
+ * Returns 0 on success; -1 on NAND error (not on truncation).
+ */
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err);
+
 /* Clear the map (delete all sectors). */
 void dhara_map_clear(struct dhara_map *m);
 
