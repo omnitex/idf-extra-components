@@ -68,7 +68,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ## Plan execution checklist
 
-Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Task **4.2** Step 3: block-boundary orphan replay Catch2 (`[boundary]`). Phase 3 (partial): Tasks **3.1**–**3.2** in `test_nand_flash_bdl.cpp`; BDL Dhara glue uses raw `nand_prog` / `nand_read_lpn` / `nand_copy` for OOB LPN; Linux mmap emulator preserves backing file on re-open when `keep_dump` and file size already match image size. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test`: `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local). Pytest `pytest_nand_flash_linux.py`: **not re-run** here.
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Task **4.2** Step 3: block-boundary orphan replay Catch2 (`[boundary]`). Phase 3: Tasks **3.1**–**3.3** (edge remount cases: clean shutdown, single orphan, double-sync) in `test_nand_flash_bdl.cpp`; BDL Dhara glue uses raw `nand_prog` / `nand_read_lpn` / `nand_copy` for OOB LPN; Linux mmap emulator preserves backing file on re-open when `keep_dump` and file size already match image size. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test`: `idf.py build` + `./build/nand_flash_host_test.elf` — **pass** (2026-04-15, local). Pytest `pytest_nand_flash_linux.py`: **not re-run** here.
 
 ---
 
@@ -682,7 +682,7 @@ git commit -m "feat(dhara): add orphan page replay on resume via OOB LPN"
 
 ## Phase 3 — Tests
 
-- [ ] **Phase:** Task **3.3** (edge-case Catch2) still open. Tasks **3.1**–**3.2** landed in `test_nand_flash_bdl.cpp` with tags `[dhara_oob]` / `[replay]`; supporting fixes in `dhara_glue.c` (BDL OOB) and `nand_linux_mmap_emul.c` (remount dump preserve).
+- [x] **Phase:** Phase 3 Catch2 in `test_nand_flash_bdl.cpp`: **3.1**–**3.3** (incl. edge remount cases). Optional **OOB mid-extent truncation** case from design note still **not** automated (Linux mmap emul uses AND-only OOB writes; cannot reset programmed LPN to erased pattern without block erase or a test hook).
 
 ### Task 3.1: Add OOB LPN round-trip test to `spi_nand_flash/host_test`
 
@@ -888,7 +888,7 @@ git commit -m "test(spi_nand_flash): add orphan page replay integration test"
 
 ### Task 3.3: Edge case tests
 
-- [ ] **Task:** Edge-case `TEST_CASE`s from plan not present.
+- [x] **Task:** Edge remount `TEST_CASE`s in `test_nand_flash_bdl.cpp`: **clean shutdown** (final `sync` before remount), **single orphan** (one logical write after `sync`), **two syncs / no pending tail** (substitute for “zero orphans” / checkpoint-boundary style coverage). **OOB invalid mid-extent** truncation test **not** implemented on Linux mmap emul (AND-only spare writes; see Phase 3 note).
 
 **Files:**
 - Modify: `spi_nand_flash/host_test/main/test_nand_flash_bdl.cpp`
