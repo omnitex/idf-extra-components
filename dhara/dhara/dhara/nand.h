@@ -30,6 +30,11 @@ typedef uint32_t dhara_sector_t;
 #define DHARA_OOB_LPN_NONE	0xffffffff
 #endif
 
+/* Backward-compatible alias; prefer DHARA_OOB_LPN_NONE in new code. */
+#ifndef DHARA_SECTOR_NONE
+#define DHARA_SECTOR_NONE DHARA_OOB_LPN_NONE
+#endif
+
 /* Each page in a NAND device is indexed, starting at 0. It's required
  * that there be a power-of-two number of pages in a eraseblock, so you can
  * view a page number is being a concatenation (in binary) of a block
