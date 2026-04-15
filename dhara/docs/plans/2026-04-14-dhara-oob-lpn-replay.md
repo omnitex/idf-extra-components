@@ -4,9 +4,16 @@
 
 **Goal:** After an unclean shutdown, reconstruct the in-RAM radix-map metadata for user pages written after the last checkpoint ("orphan pages") by storing the logical page number (LPN = sector id) in NAND OOB at program time and replaying it on mount.
 
-**Architecture:** Extend `dhara_nand_prog` and `dhara_nand_copy` signatures to carry a `dhara_sector_t sector` argument (the LPN); the driver writes it to OOB atomically with each user-page program. On `dhara_map_resume`, after `dhara_journal_resume` establishes `j->root` and `j->head`, scan forward from `j->root+1` to the first free page: for each non-checkpoint page, read LPN via a new `dhara_nand_read_lpn` callback, reconstruct the 132-byte metadata blob using the existing `trace_path` logic (updating `j->root` after each page), patch it into the in-RAM `page_buf` at the correct slot, and reconcile `m->count`.
+**Architecture:** Extend `dhara_nand_prog` and `dhara_nand_copy` signatures to carry a `dhara_sector_t oob_lpn` argument (the LPN); the driver writes it to OOB (see `nand_impl_linux.c` layout: bytes 4–7 LE) with each user-page program. On `dhara_map_resume`, after `dhara_journal_resume` establishes `j->root` and `j->head`, scan forward from `j->root+1` to the first free page: for each non-checkpoint page, read LPN via `dhara_nand_read_lpn`, reconstruct the 132-byte metadata blob using the existing `trace_path` logic (updating `j->root` after each page), patch it into the in-RAM `page_buf` at the correct slot, and reconcile `m->count`.
 
 **Tech Stack:** C11, Dhara FTL library (vendored at `dhara/dhara/`), ESP-IDF host-test framework (IDF_TARGET=linux), Catch2 v3, mmap-backed NAND emulator (`spi_nand_flash/src/nand_impl_linux.c` + `nand_linux_mmap_emul.c`), pytest-embedded.
+
+### Naming (as implemented in this fork)
+
+- Program / copy callbacks take **`oob_lpn`** (`dhara_sector_t`): logical page number written to OOB for replay.
+- **`dhara_nand_read_lpn`** writes the recovered value to **`oob_lpn_out`**.
+- Sentinel “no LPN” / CP page / erased OOB: **`DHARA_OOB_LPN_NONE`** (`0xffffffff`). **`DHARA_SECTOR_NONE`** in `dhara/nand.h` is a **backward-compatible alias** of `DHARA_OOB_LPN_NONE`.
+- **`dhara_sector_t`** remains the map’s logical sector / radix key type; avoid confusing it with BDL eraseblock “sectors” or the old parameter name `sector`.
 
 ---
 
@@ -30,9 +37,9 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ### What this plan adds
 
-- **Write path:** `dhara_nand_prog(nand, page, data, sector, err)` — new `sector` arg. Driver writes `sector` (4 bytes LE) at OOB offset 0. For CP pages, Dhara passes `DHARA_SECTOR_NONE` (0xFFFFFFFF); driver may skip OOB write or write the sentinel.
-- **Write path (GC):** `dhara_nand_copy(nand, src, dst, sector, err)` — same pattern.
-- **Read path (replay only):** new `dhara_nand_read_lpn(nand, page, &sector, err)` callback. Driver reads OOB offset 0, returns 4-byte LE as `sector`. Returns non-zero if ECC error or unsupported; `DHARA_SECTOR_NONE` means "no LPN / erased."
+- **Write path:** `dhara_nand_prog(nand, page, data, oob_lpn, err)` — new `oob_lpn` arg. Driver writes LPN (4 bytes LE) in OOB (bytes 4–7 in `spi_nand_flash`). For CP pages, Dhara passes `DHARA_OOB_LPN_NONE` (`0xffffffff`); driver may skip OOB write or write the sentinel.
+- **Write path (GC):** `dhara_nand_copy(nand, src, dst, oob_lpn, err)` — same pattern.
+- **Read path (replay only):** `dhara_nand_read_lpn(nand, page, &oob_lpn_out, err)`. Driver reads OOB LPN bytes; returns non-zero on ECC/hardware error; `DHARA_OOB_LPN_NONE` means "no LPN / erased."
 - **Replay engine:** `dhara_map_replay_orphans()` — called from `dhara_map_resume()` after `journal_resume`. Scans `[j->root+1 .. first_free_page)`, skipping CP pages, calling `read_lpn`, reconstructing metadata, patching `page_buf`, updating `j->root`.
 
 ### Key code locations
@@ -40,7 +47,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 | File | What to read |
 |---|---|
 | `dhara/dhara/dhara/nand.h` | Current callback signatures (you will change 2 + add 1) |
-| `dhara/dhara/dhara/journal.h` | `struct dhara_journal`, constants (`DHARA_META_SIZE=132`, `DHARA_HEADER_SIZE=16`, `DHARA_COOKIE_SIZE=4`, `DHARA_SECTOR_NONE=0xFFFFFFFF`) |
+| `dhara/dhara/dhara/journal.h` | `struct dhara_journal`, constants (`DHARA_META_SIZE=132`, `DHARA_HEADER_SIZE=16`, `DHARA_COOKIE_SIZE=4`, `DHARA_OOB_LPN_NONE`; legacy alias `DHARA_SECTOR_NONE`) |
 | `dhara/dhara/dhara/journal.c` | `dhara_journal_resume()`, `push_meta()`, `next_upage()`, `align_eq()` |
 | `dhara/dhara/dhara/map.c` | `dhara_map_resume()`, `trace_path()`, `prepare_write()`, `push_meta_buf()` |
 | `dhara/dhara/dhara/bytes.h` | `dhara_r32()`, `dhara_w32()` — portable LE read/write |
@@ -97,16 +104,16 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
                     dhara_error_t *err);
 ```
 
-**Step 2: Change signature to add sector parameter**
+**Step 2: Change signature to add `oob_lpn` parameter**
 
 Change to:
 ```c
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data, dhara_sector_t sector,
+                    const uint8_t *data, dhara_sector_t oob_lpn,
                     dhara_error_t *err);
 ```
 
-The `sector` is `DHARA_SECTOR_NONE` (0xFFFFFFFF) when programming a CP page.
+`oob_lpn` is `DHARA_OOB_LPN_NONE` when programming a CP page or metadata dump.
 
 **Step 3: Extend `dhara_nand_copy` signature**
 
@@ -118,7 +125,7 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 to:
 ```c
 int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst,
-                    dhara_sector_t sector,
+                    dhara_sector_t oob_lpn,
                     dhara_error_t *err);
 ```
 
@@ -126,14 +133,14 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 
 After the `dhara_nand_copy` declaration, add:
 ```c
-/* Read the logical page number (sector id) stored in OOB for page p.
- * Returns 0 and writes the sector to *sector_out on success.
- * Returns 0 and writes DHARA_SECTOR_NONE if the OOB is erased or carries no LPN.
+/* Read the logical page number (LPN) stored in OOB for page p.
+ * Returns 0 and writes the value to *oob_lpn_out on success.
+ * Returns 0 and writes DHARA_OOB_LPN_NONE if the OOB is erased or carries no LPN.
  * Returns -1 and sets *err on ECC/hardware error.
- * If OOB-LPN is not supported by the driver, implement as: *sector_out = DHARA_SECTOR_NONE; return 0;
+ * If OOB-LPN is not supported by the driver, implement as: *oob_lpn_out = DHARA_OOB_LPN_NONE; return 0;
  */
 int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
-                         dhara_sector_t *sector_out,
+                         dhara_sector_t *oob_lpn_out,
                          dhara_error_t *err);
 ```
 
@@ -154,10 +161,7 @@ Expected: compile error because `journal.c` still calls old signature. That is e
 **Files:**
 - Modify: `dhara/dhara/dhara/journal.c`
 
-There are exactly two places where `dhara_nand_prog` is called in `journal.c`:
-1. In `journal_enqueue` (or `push_meta`): programs the user data page.
-2. In `push_meta`: programs the CP page when the group is full.
-There is one place where `dhara_nand_copy` is called.
+There are **three** `dhara_nand_prog` call sites in `journal.c` (enqueue user data, `push_meta` CP flush, `dump_meta` recovery) and one `dhara_nand_copy` call site — grep to list them.
 
 **Step 1: Find all call sites**
 
@@ -179,17 +183,17 @@ Where `meta_get_id(meta)` reads the 4-byte LE sector id from the meta blob. Chec
 
 **Step 3: Update CP page prog call**
 
-The call that programs the CP page (the `page_buf` flush in `push_meta`) passes `DHARA_SECTOR_NONE`:
+The call that programs the CP page (the `page_buf` flush in `push_meta`) passes `DHARA_OOB_LPN_NONE`:
 ```c
 // Before:
 if (dhara_nand_prog(j->nand, j->head, j->page_buf, err) < 0)
 // After:
-if (dhara_nand_prog(j->nand, j->head, j->page_buf, DHARA_SECTOR_NONE, err) < 0)
+if (dhara_nand_prog(j->nand, j->head, j->page_buf, DHARA_OOB_LPN_NONE, err) < 0)
 ```
 
 **Step 4: Update `dhara_nand_copy` call**
 
-Find the GC copy call (in `dhara_journal_copy` or `raw_copy` — check). It programs a user page at the destination, so the sector is available from the meta blob being processed:
+Find the GC copy call (in `dhara_journal_copy` or `raw_copy` — check). It programs a user page at the destination, so the LPN (`dhara_sector_t`) is available from the meta blob being processed:
 ```c
 // Before:
 if (dhara_nand_copy(j->nand, src, j->head, err) < 0)
@@ -222,14 +226,14 @@ The upstream test suite's simulator implements `dhara_nand_prog` and `dhara_nand
 grep -n "dhara_nand_prog\|dhara_nand_copy" dhara/dhara/tests/sim.c
 ```
 
-Add the `sector` parameter; the test simulator ignores it (no OOB simulation needed at this stage):
+Add the `oob_lpn` parameter; the test simulator ignores it (no OOB simulation needed at this stage):
 ```c
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data, dhara_sector_t sector,
+                    const uint8_t *data, dhara_sector_t oob_lpn,
                     dhara_error_t *err)
 {
-    /* existing body unchanged — sector is intentionally unused in sim */
-    (void)sector;
+    /* existing body unchanged — oob_lpn is intentionally unused in sim */
+    (void)oob_lpn;
     ...
 }
 ```
@@ -238,10 +242,10 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
 
 ```c
 int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst,
-                    dhara_sector_t sector,
+                    dhara_sector_t oob_lpn,
                     dhara_error_t *err)
 {
-    (void)sector;
+    (void)oob_lpn;
     ...
 }
 ```
@@ -250,11 +254,11 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 
 ```c
 int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
-                         dhara_sector_t *sector_out,
+                         dhara_sector_t *oob_lpn_out,
                          dhara_error_t *err)
 {
     (void)n; (void)p; (void)err;
-    *sector_out = DHARA_SECTOR_NONE;  /* OOB not simulated */
+    *oob_lpn_out = DHARA_OOB_LPN_NONE;  /* OOB not simulated */
     return 0;
 }
 ```
@@ -270,7 +274,7 @@ Expected: all tests pass (the existing tests should be unaffected).
 
 ```bash
 git add dhara/dhara/dhara/nand.h dhara/dhara/dhara/journal.c dhara/dhara/tests/sim.c
-git commit -m "feat(dhara): extend nand_prog/nand_copy with sector arg, add read_lpn callback"
+git commit -m "feat(dhara): extend nand_prog/nand_copy with oob_lpn arg, add read_lpn callback"
 ```
 
 ---
@@ -290,15 +294,15 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
                     const uint8_t *data, dhara_error_t *err)
 ```
 
-Change to accept the new `sector` parameter. Store it for use by `nand_prog`:
+Change to accept the new `oob_lpn` parameter and forward it to `nand_prog` (non-BDL path; BDL path may ignore `oob_lpn` until wired):
 ```c
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data, dhara_sector_t sector,
+                    const uint8_t *data, dhara_sector_t oob_lpn,
                     dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *priv =
         __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
-    esp_err_t ret = nand_prog(priv->parent_handle, p, data, sector);
+    esp_err_t ret = nand_prog(priv->parent_handle, p, data, oob_lpn);
     if (ret != ESP_OK) {
         *err = DHARA_E_BAD_BLOCK;
         return -1;
@@ -307,7 +311,7 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
 }
 ```
 
-Note: `nand_prog` in `nand_impl.h` / `nand_impl_linux.c` currently has signature `nand_prog(handle, page, data)`. You will update it in Task 1.5.
+Note: `nand_prog` in `nand_impl.h` / `nand_impl_linux.c` gains a fourth argument `uint32_t oob_lpn` (Task 1.5).
 
 **Step 2: Update `dhara_nand_copy` in `dhara_glue.c`**
 
@@ -320,11 +324,11 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 Change to:
 ```c
 int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst,
-                    dhara_sector_t sector, dhara_error_t *err)
+                    dhara_sector_t oob_lpn, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *priv =
         __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
-    esp_err_t ret = nand_copy(priv->parent_handle, src, dst, sector);
+    esp_err_t ret = nand_copy(priv->parent_handle, src, dst, oob_lpn);
     if (ret != ESP_OK) {
         *err = DHARA_E_BAD_BLOCK;
         return -1;
@@ -338,11 +342,11 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
 After the copy function, add:
 ```c
 int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
-                         dhara_sector_t *sector_out, dhara_error_t *err)
+                         dhara_sector_t *oob_lpn_out, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *priv =
         __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
-    esp_err_t ret = nand_read_lpn(priv->parent_handle, p, sector_out);
+    esp_err_t ret = nand_read_lpn(priv->parent_handle, p, oob_lpn_out);
     if (ret != ESP_OK) {
         *err = DHARA_E_ECC;
         return -1;
@@ -373,7 +377,7 @@ Look for `emulated_page_size`, `oob_size`, and the existing OOB byte assignments
 // Before:
 esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data);
 // After:
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t sector);
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t oob_lpn);
 ```
 
 **Step 3: Update `nand_copy` signature in `nand_impl.h`**
@@ -382,31 +386,31 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *
 // Before:
 esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
 // After:
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t sector);
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t oob_lpn);
 ```
 
 **Step 4: Add `nand_read_lpn` to `nand_impl.h`**
 
 ```c
-esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *sector_out);
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *oob_lpn_out);
 ```
 
 **Step 5: Implement `nand_prog` update in `nand_impl_linux.c`**
 
-Inside the existing `nand_prog` body, after writing the main page data, write the sector as 4 bytes LE to OOB offset 4:
+Inside the existing `nand_prog` body, after writing the main page data, write `oob_lpn` as 4 bytes LE to OOB offset 4:
 
 ```c
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t sector)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t oob_lpn)
 {
     /* existing main page write code */
     ...
 
     /* Write LPN to OOB bytes 4-7 (little-endian) */
     uint8_t *oob_base = /* pointer to OOB area of page p in mmap */;
-    oob_base[4] = (uint8_t)(sector & 0xFF);
-    oob_base[5] = (uint8_t)((sector >> 8) & 0xFF);
-    oob_base[6] = (uint8_t)((sector >> 16) & 0xFF);
-    oob_base[7] = (uint8_t)((sector >> 24) & 0xFF);
+    oob_base[4] = (uint8_t)(oob_lpn & 0xFF);
+    oob_base[5] = (uint8_t)((oob_lpn >> 8) & 0xFF);
+    oob_base[6] = (uint8_t)((oob_lpn >> 16) & 0xFF);
+    oob_base[7] = (uint8_t)((oob_lpn >> 24) & 0xFF);
 
     return ESP_OK;
 }
@@ -416,20 +420,20 @@ Look at how `nand_prog` in `nand_impl_linux.c` currently accesses the mmap buffe
 
 **Step 6: Implement `nand_copy` update in `nand_impl_linux.c`**
 
-Add the `sector` parameter and write it to OOB bytes 4–7 of the destination page, same as `nand_prog`.
+Add the `oob_lpn` parameter and write it to OOB bytes 4–7 of the destination page, same as `nand_prog`.
 
 **Step 7: Implement `nand_read_lpn` in `nand_impl_linux.c`**
 
 ```c
-esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *sector_out)
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *oob_lpn_out)
 {
     /* Read OOB bytes 4-7 from page p in the mmap buffer */
     uint8_t *oob_base = /* pointer to OOB area of page p */;
-    uint32_t sector = (uint32_t)oob_base[4]
+    uint32_t read_lpn = (uint32_t)oob_base[4]
                     | ((uint32_t)oob_base[5] << 8)
                     | ((uint32_t)oob_base[6] << 16)
                     | ((uint32_t)oob_base[7] << 24);
-    *sector_out = sector;
+    *oob_lpn_out = read_lpn;
     return ESP_OK;
 }
 ```
@@ -506,7 +510,7 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
     p = j->root;
 
     for (;;) {
-        dhara_sector_t sector;
+        dhara_sector_t oob_lpn;
         uint8_t new_meta[DHARA_META_SIZE];
         dhara_page_t slot;
         size_t offset;
@@ -531,18 +535,18 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
         }
 
         /* Read LPN from OOB */
-        if (dhara_nand_read_lpn(j->nand, p, &sector, err) < 0) {
+        if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0) {
             return -1;  /* hard NAND error */
         }
 
         /* Truncate if no valid LPN (erased OOB or unsupported driver) */
-        if (sector == DHARA_SECTOR_NONE) {
+        if (oob_lpn == DHARA_OOB_LPN_NONE) {
             break;
         }
 
-        /* Build the 132-byte metadata blob for this sector at the current root */
+        /* Build the 132-byte metadata blob for this logical sector at the current root */
         /* trace_path walks from j->root; new_meta gets the alt-pointers */
-        if (trace_path(m, sector, NULL, new_meta, &my_err) < 0) {
+        if (trace_path(m, oob_lpn, NULL, new_meta, &my_err) < 0) {
             if (my_err == DHARA_E_NOT_FOUND) {
                 /* New sector — not previously mapped, increment count */
                 m->count++;
@@ -555,7 +559,7 @@ int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
         }
 
         /* Set sector id in the meta blob (trace_path may not set it on NOT_FOUND) */
-        meta_set_id(new_meta, sector);
+        meta_set_id(new_meta, oob_lpn);
 
         /* Patch the meta blob into page_buf at the slot for page p */
         slot = p & ppc_mask;
@@ -659,7 +663,7 @@ This test verifies that `nand_prog` writes LPN to OOB and `nand_read_lpn` reads 
 
 **Step 1: Write the failing test**
 
-Add a new `TEST_CASE` at the end of `test_nand_flash_bdl.cpp`:
+Add a new `TEST_CASE` at the end of `test_nand_flash_bdl.cpp`. Include `dhara/nand.h` so `DHARA_OOB_LPN_NONE` is in scope (same pattern as `host_test/main/test_nand_flash.cpp` and `test_app/main/test_spi_nand_flash.c`).
 
 ```cpp
 TEST_CASE("OOB LPN round-trip: prog writes LPN, read_lpn reads it back", "[dhara_oob]")
@@ -675,31 +679,31 @@ TEST_CASE("OOB LPN round-trip: prog writes LPN, read_lpn reads it back", "[dhara
     spi_nand_flash_device_t *handle = nullptr;
     CHECK(nand_init_device(&flash_cfg, &handle) == ESP_OK);
 
-    // Program page 0 with sector = 42
+    // Program page 0 with oob_lpn = 42
     std::vector<uint8_t> data(handle->chip.page_size, 0xAB);
     CHECK(nand_wrap_prog(handle, 0, data.data(), 42) == ESP_OK);
 
     // Read LPN back from page 0
-    uint32_t sector_out = 0xDEADBEEF;
-    CHECK(nand_read_lpn(handle, 0, &sector_out) == ESP_OK);
-    CHECK(sector_out == 42);
+    uint32_t oob_lpn_out = 0xDEADBEEF;
+    CHECK(nand_read_lpn(handle, 0, &oob_lpn_out) == ESP_OK);
+    CHECK(oob_lpn_out == 42);
 
-    // Erased page (page 1) should return DHARA_SECTOR_NONE (0xFFFFFFFF)
-    CHECK(nand_read_lpn(handle, 1, &sector_out) == ESP_OK);
-    CHECK(sector_out == 0xFFFFFFFF);
+    // Erased page (page 1) should return DHARA_OOB_LPN_NONE
+    CHECK(nand_read_lpn(handle, 1, &oob_lpn_out) == ESP_OK);
+    CHECK(oob_lpn_out == DHARA_OOB_LPN_NONE);
 
-    // DHARA_SECTOR_NONE as sector value should round-trip
-    CHECK(nand_wrap_prog(handle, 2, data.data(), 0xFFFFFFFF) == ESP_OK);
-    CHECK(nand_read_lpn(handle, 2, &sector_out) == ESP_OK);
-    CHECK(sector_out == 0xFFFFFFFF);
+    // DHARA_OOB_LPN_NONE as programmed oob_lpn should round-trip
+    CHECK(nand_wrap_prog(handle, 2, data.data(), DHARA_OOB_LPN_NONE) == ESP_OK);
+    CHECK(nand_read_lpn(handle, 2, &oob_lpn_out) == ESP_OK);
+    CHECK(oob_lpn_out == DHARA_OOB_LPN_NONE);
 
     nand_deinit_device(handle);
 }
 ```
 
-Note: `nand_wrap_prog` wraps `nand_prog` — check `nand_impl_wrap.h` for the current signature. If it doesn't yet pass `sector`, update it in the same patch.
+Note: `nand_wrap_prog` wraps `nand_prog` — check `nand_impl_wrap.h` for the current signature (fourth arg `oob_lpn`).
 
-**Step 2: Run the test to verify it fails** (because `nand_read_lpn` doesn't exist yet in the public test API, or `nand_wrap_prog` doesn't accept sector):
+**Step 2: Run the test to verify it fails** (because `nand_read_lpn` doesn't exist yet in the public test API, or `nand_wrap_prog` doesn't accept `oob_lpn`):
 
 ```bash
 cd spi_nand_flash/host_test && idf.py build 2>&1 | head -30
@@ -708,13 +712,13 @@ Expected: compile error.
 
 **Step 3: Update `nand_impl_wrap.h` and `nand_impl_wrap.c`**
 
-The `nand_wrap_prog` wrapper (used by tests) must also pass `sector`:
+The `nand_wrap_prog` wrapper (used by tests) must also pass `oob_lpn`:
 ```c
 // nand_impl_wrap.h
-esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t sector);
+esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t oob_lpn);
 ```
 
-Update `nand_impl_wrap.c` to forward `sector` to `nand_prog`.
+Update `nand_impl_wrap.c` to forward `oob_lpn` to `nand_prog`.
 
 **Step 4: Build and run**
 
@@ -933,7 +937,7 @@ At the top of `map.c`, after includes:
 **Step 2: Add trace calls in `dhara_map_replay_orphans`**
 
 ```c
-REPLAY_TRACE("scanning page %u: sector=%u", (unsigned)p, (unsigned)sector);
+REPLAY_TRACE("scanning page %u: oob_lpn=%u", (unsigned)p, (unsigned)oob_lpn);
 REPLAY_TRACE("replayed %u orphan page(s), new count=%u", replay_count, (unsigned)m->count);
 ```
 
@@ -1001,12 +1005,12 @@ The hardware implementation `nand_impl.c` also implements `nand_prog`, `nand_cop
 
 **Step 1: Update `nand_prog` in `nand_impl.c`**
 
-Add `sector` parameter. For real SPI NAND hardware, the LPN should be written to the OOB spare area using the chip's program sequence. The exact implementation depends on the SPI NAND driver's spare-write API. For now, a stub is acceptable:
+Add `oob_lpn` parameter. For real SPI NAND hardware, the LPN should be written to the OOB spare area using the chip's program sequence. The exact implementation depends on the SPI NAND driver's spare-write API. For now, a stub is acceptable:
 
 ```c
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t sector)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *data, uint32_t oob_lpn)
 {
-    /* TODO: write sector to OOB bytes 4-7 in the same PROGRAM EXECUTE command */
+    /* TODO: write oob_lpn to OOB bytes 4-7 in the same PROGRAM EXECUTE command */
     /* Existing implementation writes main area; OOB write to be added per-chip */
     ...existing code...
 }
@@ -1017,11 +1021,11 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t p, const uint8_t *
 **Step 3: Add `nand_read_lpn` stub in `nand_impl.c`**
 
 ```c
-esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *sector_out)
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t p, uint32_t *oob_lpn_out)
 {
     /* TODO: read OOB bytes 4-7 from real NAND hardware */
-    /* Stub: return SECTOR_NONE until hardware OOB read is implemented */
-    *sector_out = 0xFFFFFFFF;
+    /* Stub: return DHARA_OOB_LPN_NONE until hardware OOB read is implemented */
+    *oob_lpn_out = DHARA_OOB_LPN_NONE;
     return ESP_OK;
 }
 ```
@@ -1081,15 +1085,16 @@ Expected: all pass.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| OOB interface | Extend `dhara_nand_prog/copy` signatures + add `dhara_nand_read_lpn` callback | Dhara has LPN at program time (in meta blob); passing it directly is clean. No separate vtable needed. |
-| OOB layout | 4 bytes LE at OOB offset 4 (bytes 0–3 reserved for bad-block/free markers per nand_impl_linux convention) | Minimal. `0xFFFFFFFF` = erased/no-LPN. |
+| OOB interface | Extend `dhara_nand_prog/copy` with `oob_lpn` + add `dhara_nand_read_lpn` (`oob_lpn_out`) | Dhara has LPN at program time (in meta blob); passing it directly is clean. No separate vtable needed. |
+| OOB layout | 4 bytes LE at OOB offset 4 (bytes 0–3 reserved for bad-block/free markers per `nand_impl` / `nand_impl_linux` convention) | Minimal. `DHARA_OOB_LPN_NONE` = erased/no-LPN. |
 | Extent discovery | Forward scan from `j->root+1` until `dhara_nand_is_free` returns true | Simple and correct for sequential-write journals. |
 | Invalid OOB mid-extent | Truncate (stop replay) | Conservative, safe. |
 | Replay metadata | Full `trace_path` per orphan, updating `j->root` after each | Correct radix-tree semantics. |
 | Sector count | Reconcile via `trace_path` return value (`DHARA_E_NOT_FOUND` = new sector, increment `m->count`) | Same logic as normal write path. |
 | Test location | Extend `spi_nand_flash/host_test/` | Already has mmap NAND emulator + IDF pytest infra. |
-| Feature enable | Always enabled; driver stubs `read_lpn` returning `DHARA_SECTOR_NONE` to opt out | Zero overhead for non-OOB drivers. No Kconfig needed. |
+| Feature enable | Always enabled; driver stubs `read_lpn` returning `DHARA_OOB_LPN_NONE` to opt out | Zero overhead for non-OOB drivers. No Kconfig needed. |
 | Diagnostics | `DHARA_TRACE_REPLAY` compile-time flag in `map.c` | Quiet in production, verbose in debug. |
+| Naming / API drift | Parameters `oob_lpn` / `oob_lpn_out`; sentinel `DHARA_OOB_LPN_NONE`; `DHARA_SECTOR_NONE` alias in `nand.h` | Avoids overloading “sector” (BDL geometry vs map logical id vs OOB LPN). |
 
 ## Appendix: Edge Cases (test checklist)
 
@@ -1100,6 +1105,6 @@ Expected: all pass.
 | Single orphan page | One sector recovered | Task 3.3 |
 | Invalid OOB mid-extent | Replay truncates, earlier orphans recovered | Task 3.3 |
 | Orphans span block boundary | All orphans recovered | Task 4.2 |
-| `read_lpn` returns `DHARA_SECTOR_NONE` (driver opt-out) | Replay truncates immediately, no crash | Implicit in round-trip test |
+| `read_lpn` returns `DHARA_OOB_LPN_NONE` (driver opt-out) | Replay truncates immediately, no crash | Implicit in round-trip test |
 | Duplicate LPN (should not occur normally) | Last physical page wins (trace_path is idempotent: last `j->root` update wins) | Not tested (undefined behavior per design) |
 | Fresh device (no checkpoint) | `journal_resume` returns -1; `map_resume` returns -1 before replay is called | Existing upstream tests |
