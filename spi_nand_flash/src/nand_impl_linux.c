@@ -177,9 +177,9 @@ esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle)
     return ret;
 }
 
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, uint32_t sector)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, uint32_t oob_lpn)
 {
-    ESP_LOGV(TAG, "prog, page=%"PRIu32", sector=%"PRIu32"", page, sector);
+    ESP_LOGV(TAG, "prog, page=%"PRIu32", oob_lpn=%"PRIu32"", page, oob_lpn);
     esp_err_t ret = ESP_OK;
     uint16_t used_marker = 0;
     uint32_t data_offset = page * handle->chip.emulated_page_size;
@@ -191,15 +191,15 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 2,
                                         (uint8_t *)&used_marker, 2), TAG, "Error in nand_prog %d", ret);
 
-    /* Write LPN (sector) to OOB bytes 4-7 (little-endian).
+    /* Write LPN (oob_lpn) to OOB bytes 4-7 (little-endian).
      * TODO: consider consolidating all OOB writes (including used-marker) into Dhara
      *       callbacks so the OOB layout is fully owned by one layer.
      */
     uint8_t lpn_buf[4] = {
-        (uint8_t)(sector & 0xFF),
-        (uint8_t)((sector >> 8) & 0xFF),
-        (uint8_t)((sector >> 16) & 0xFF),
-        (uint8_t)((sector >> 24) & 0xFF),
+        (uint8_t)(oob_lpn & 0xFF),
+        (uint8_t)((oob_lpn >> 8) & 0xFF),
+        (uint8_t)((oob_lpn >> 16) & 0xFF),
+        (uint8_t)((oob_lpn >> 24) & 0xFF),
     };
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 4,
                                         lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_prog (LPN) %d", ret);
@@ -232,9 +232,9 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     return ret;
 }
 
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t sector)
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t oob_lpn)
 {
-    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", sector=%"PRIu32"", src, dst, sector);
+    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", oob_lpn=%"PRIu32"", src, dst, oob_lpn);
     esp_err_t ret = ESP_OK;
     uint32_t dst_offset = dst * handle->chip.emulated_page_size;
     uint32_t src_offset = src * handle->chip.emulated_page_size;
@@ -251,10 +251,10 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
      * TODO: consolidate used-marker ownership (currently written by nand_prog only).
      */
     uint8_t lpn_buf[4] = {
-        (uint8_t)(sector & 0xFF),
-        (uint8_t)((sector >> 8) & 0xFF),
-        (uint8_t)((sector >> 16) & 0xFF),
-        (uint8_t)((sector >> 24) & 0xFF),
+        (uint8_t)(oob_lpn & 0xFF),
+        (uint8_t)((oob_lpn >> 8) & 0xFF),
+        (uint8_t)((oob_lpn >> 16) & 0xFF),
+        (uint8_t)((oob_lpn >> 24) & 0xFF),
     };
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, dst_offset + handle->chip.page_size + 4,
                                         lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_copy (LPN) %d", ret);
@@ -262,7 +262,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
     return ret;
 }
 
-esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *sector_out)
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *oob_lpn_out)
 {
     ESP_LOGV(TAG, "read_lpn, page=%"PRIu32"", page);
     uint8_t lpn_buf[4];
@@ -274,7 +274,7 @@ esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t
     /* Reconstruct as little-endian 32-bit value.
      * 0xFFFFFFFF = erased (DHARA_SECTOR_NONE), meaning no LPN stored.
      */
-    *sector_out = (uint32_t)lpn_buf[0]
+    *oob_lpn_out = (uint32_t)lpn_buf[0]
                 | ((uint32_t)lpn_buf[1] << 8)
                 | ((uint32_t)lpn_buf[2] << 16)
                 | ((uint32_t)lpn_buf[3] << 24);

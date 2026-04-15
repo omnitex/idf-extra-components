@@ -341,9 +341,9 @@ esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle)
     return ret;
 }
 
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, uint32_t sector)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, uint32_t oob_lpn)
 {
-    ESP_LOGV(TAG, "prog, page=%"PRIu32", sector=%"PRIu32"", page, sector);
+    ESP_LOGV(TAG, "prog, page=%"PRIu32", oob_lpn=%"PRIu32"", page, oob_lpn);
     esp_err_t ret = ESP_OK;
     // Markers layout: [bad_block_marker (bytes 0-1)][page_used_marker (bytes 2-3)]
     // For good block with used page: bad=0xFFFF, used=0x0000
@@ -361,13 +361,13 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, (uint8_t *)&markers,
                                             column_addr + handle->chip.page_size, 4), fail, TAG, "");
 
-    /* TODO: write 'sector' (LPN) to OOB bytes 4-7 using spi_nand_program_load.
+    /* TODO: write oob_lpn to OOB bytes 4-7 using spi_nand_program_load.
      * The OOB byte layout is: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
      * This requires a separate spi_nand_program_load call at column_addr + page_size + 4.
-     * The sector arg is intentionally ignored here until per-chip OOB write is implemented.
+     * oob_lpn is intentionally ignored here until per-chip OOB write is implemented.
      * When DHARA_SECTOR_NONE (0xFFFFFFFF), the OOB will read as 0xFF after erase -- correct.
      */
-    (void)sector;
+    (void)oob_lpn;
 
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, page, &status), fail, TAG, "");
 
@@ -468,14 +468,14 @@ fail:
     return ret;
 }
 
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t sector)
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t oob_lpn)
 {
-    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", sector=%"PRIu32"", src, dst, sector);
-    /* TODO: write 'sector' (LPN) to OOB bytes 4-7 of destination page.
+    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", oob_lpn=%"PRIu32"", src, dst, oob_lpn);
+    /* TODO: write oob_lpn to OOB bytes 4-7 of destination page.
      * Same approach as nand_prog: a spi_nand_program_load call at column_addr + page_size + 4.
-     * The sector arg is intentionally ignored until per-chip OOB write is implemented.
+     * oob_lpn is intentionally ignored until per-chip OOB write is implemented.
      */
-    (void)sector;
+    (void)oob_lpn;
     esp_err_t ret = ESP_OK;
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
     uint8_t *temp_buf = NULL;
@@ -583,7 +583,7 @@ fail:
     return ret;
 }
 
-esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *sector_out)
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *oob_lpn_out)
 {
     /* TODO: Read OOB bytes 4-7 from real NAND hardware to get stored LPN.
      * OOB layout: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
@@ -592,6 +592,6 @@ esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t
      * to truncate immediately — safe: behavior is identical to pre-OOB-replay.
      */
     (void)handle; (void)page;
-    *sector_out = 0xFFFFFFFF; /* DHARA_SECTOR_NONE */
+    *oob_lpn_out = 0xFFFFFFFF; /* DHARA_SECTOR_NONE */
     return ESP_OK;
 }
