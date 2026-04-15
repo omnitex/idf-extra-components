@@ -68,7 +68,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ## Plan execution checklist
 
-Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15, HEAD `289f143`. Checkboxes below were checked against the working tree and commits `a6eba42`…`289f143`. Native `make -C dhara/dhara` and all `dhara/dhara/tests/*.test`: **pass** (local run). `spi_nand_flash/host_test` (`idf.py` build, Catch2 elf, pytest): **not re-run** for this documentation-only update.
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test` (`idf.py` build, Catch2, pytest): **not re-run** for this update.
 
 ---
 
@@ -484,11 +484,11 @@ git commit -m "feat(spi_nand_flash): wire LPN OOB write/read through nand_impl a
 
 ## Phase 2 — Replay engine in `map.c`
 
-- [ ] **Phase:** Not started on branch — `dhara_map_replay_orphans` absent; `dhara_map_resume` only restores `m->count` after `dhara_journal_resume`.
+- [x] **Phase:** `dhara_map_replay_orphans` in `map.c` / declared in `map.h`; `dhara_map_resume` loads cookie count then calls replay (failure clears `m->count`).
 
 ### Task 2.1: Add `dhara_map_replay_orphans` function to `map.c`
 
-- [ ] **Task:** No `dhara_map_replay_orphans` in `map.c` / `map.h` yet.
+- [x] **Task:** Implemented in `map.c` (placed after `trace_path` so the helper stays `static`); public declaration in `map.h`. Scan uses `dhara_journal_next_upage()` from `next_upage(j->root)` to `j->head` (not the literal `p++` / CP-mask sketch below).
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
@@ -624,7 +624,7 @@ gcc -fsyntax-only -I dhara/dhara dhara/dhara/dhara/map.c
 
 ### Task 2.2: Call `dhara_map_replay_orphans` from `dhara_map_resume`
 
-- [ ] **Task:** `dhara_map_resume` does not call replay (no orphan reconciliation).
+- [x] **Task:** `dhara_map_resume` calls `dhara_map_replay_orphans` after `ck_get_count`; replay failure returns -1 and sets `m->count` to 0.
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
@@ -1003,12 +1003,10 @@ git commit -m "feat(dhara): add DHARA_TRACE_REPLAY compile-time diagnostics for 
 
 ### Task 4.2: Handle block boundaries in replay scan
 
-- [ ] **Task:** Replay scan not implemented. **`dhara_journal_next_upage()` is already public** in `journal.h` / `journal.c` (ready for Phase 2). Block-boundary test still outstanding.
+- [ ] **Task:** Replay scan implemented with **`dhara_journal_next_upage()`** (wrap + CP skip). **Still open:** block-boundary integration `TEST_CASE` / verification called out in Step 3 below.
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
-
-The current `dhara_map_replay_orphans` uses a simplified page advance (`p++`, then skip if CP). This works within a single block. Verify it handles the case where orphan pages span a block boundary (the head advanced to a new block).
 
 **Step 1: Review `next_upage()` in `journal.c`**
 
@@ -1016,12 +1014,12 @@ The current `dhara_map_replay_orphans` uses a simplified page advance (`p++`, th
 
 **Step 2: Replace manual advance in `dhara_map_replay_orphans` with `next_upage`**
 
-If `next_upage` is static in `journal.c`, either:
+- [x] **Done in Phase 2:** replay uses `dhara_journal_next_upage(j, p)` (public wrapper in `journal.h`).
+
+Historical options (if `next_upage` had stayed static):
 - Move the replay loop into `journal.c` (less clean), or
 - Duplicate the `next_upage` logic in `map.c` as a local static helper (2-3 lines, acceptable), or
 - Expose `next_upage` from `journal.c` with a non-static declaration in `journal.h` (cleanest).
-
-Preferred: expose `next_upage` via `journal.h` as `dhara_journal_next_upage(j, p)`.
 
 **Step 3: Add a test with orphans spanning a block boundary**
 

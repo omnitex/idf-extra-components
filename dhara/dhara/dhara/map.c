@@ -86,6 +86,12 @@ int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
 	}
 
 	m->count = ck_get_count(dhara_journal_cookie(&m->journal));
+
+	if (dhara_map_replay_orphans(m, err) < 0) {
+		m->count = 0;
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -177,6 +183,54 @@ not_found:
 
 	dhara_set_error(err, DHARA_E_NOT_FOUND);
 	return -1;
+}
+
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err)
+{
+	struct dhara_journal *j = &m->journal;
+	const dhara_page_t ppc_mask = (1u << j->log2_ppc) - 1u;
+	dhara_page_t p = dhara_journal_next_upage(j, j->root);
+
+	for (;;) {
+		dhara_sector_t oob_lpn;
+		uint8_t new_meta[DHARA_META_SIZE];
+		dhara_page_t slot;
+		size_t offset;
+		dhara_error_t my_err;
+
+		if (p == j->head)
+			break;
+
+		if (dhara_nand_is_free(j->nand, p))
+			break;
+
+		if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0)
+			return -1;
+
+		if (oob_lpn == DHARA_OOB_LPN_NONE)
+			break;
+
+		if (trace_path(m, oob_lpn, NULL, new_meta, &my_err) < 0) {
+			if (my_err == DHARA_E_NOT_FOUND)
+				m->count++;
+			else {
+				if (err)
+					*err = my_err;
+				return -1;
+			}
+		}
+
+		slot = p & ppc_mask;
+		offset = DHARA_HEADER_SIZE + DHARA_COOKIE_SIZE +
+			 slot * DHARA_META_SIZE;
+		memcpy(j->page_buf + offset, new_meta, DHARA_META_SIZE);
+
+		j->root = p;
+		p = dhara_journal_next_upage(j, p);
+	}
+
+	ck_set_count(dhara_journal_cookie(j), m->count);
+	return 0;
 }
 
 int dhara_map_find(struct dhara_map *m, dhara_sector_t target,
