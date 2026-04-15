@@ -68,7 +68,7 @@ Any user pages written **after** `j->root` but **before** power loss exist physi
 
 ## Plan execution checklist
 
-Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test` (`idf.py` build, Catch2, pytest): **not re-run** for this update.
+Snapshot: branch `feat/dhara_orphaned_pages_metadata_replay`, 2026-04-15. Phase 2 (Tasks 2.1–2.2): `dhara_map_replay_orphans` + `dhara_map_resume` wiring; replay iteration uses `dhara_journal_next_upage()`. Task 4.1: `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`. Native `make -C dhara/dhara test`: **pass** (local). `spi_nand_flash/host_test` (`idf.py` build, Catch2, pytest): **not re-run** for this update.
 
 ---
 
@@ -952,11 +952,11 @@ git commit -m "test(spi_nand_flash): add edge case tests for OOB replay (boundar
 
 ## Phase 4 — Hardening and diagnostics
 
-- [ ] **Phase:** Mostly open. Exception: public `dhara_journal_next_upage()` already landed (same feature commit series as NAND API) ahead of replay.
+- [ ] **Phase:** Mostly open. Exception: public `dhara_journal_next_upage()` already landed (same feature commit series as NAND API) ahead of replay. Task 4.1 (trace logging) is done.
 
 ### Task 4.1: Add compile-time trace logging
 
-- [ ] **Task:** No `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c`.
+- [x] **Task:** `DHARA_TRACE_REPLAY` / `REPLAY_TRACE` in `map.c` (stderr; `replay_count` only when the flag is defined).
 
 **Files:**
 - Modify: `dhara/dhara/dhara/map.c`
