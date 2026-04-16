@@ -18,16 +18,16 @@
 #define DHARA_ERROR_H_
 
 typedef enum {
-	DHARA_E_NONE = 0,
-	DHARA_E_BAD_BLOCK,
-	DHARA_E_ECC,
-	DHARA_E_TOO_BAD,
-	DHARA_E_RECOVER,
-	DHARA_E_JOURNAL_FULL,
-	DHARA_E_NOT_FOUND,
-	DHARA_E_MAP_FULL,
-	DHARA_E_CORRUPT_MAP,
-	DHARA_E_MAX
+    DHARA_E_NONE = 0,
+    DHARA_E_BAD_BLOCK,
+    DHARA_E_ECC,
+    DHARA_E_TOO_BAD,
+    DHARA_E_RECOVER,
+    DHARA_E_JOURNAL_FULL,
+    DHARA_E_NOT_FOUND,
+    DHARA_E_MAP_FULL,
+    DHARA_E_CORRUPT_MAP,
+    DHARA_E_MAX
 } dhara_error_t;
 
 /* Produce a human-readable error message. This function is kept in a
@@ -38,8 +38,9 @@ const char *dhara_strerror(dhara_error_t err);
 /* Save an error */
 static inline void dhara_set_error(dhara_error_t *err, dhara_error_t v)
 {
-	if (err)
-		*err = v;
+    if (err) {
+        *err = v;
+    }
 }
 
 #endif

@@ -19,24 +19,26 @@
 
 const char *dhara_strerror(dhara_error_t err)
 {
-	static const char *const messages[DHARA_E_MAX] = {
-		[DHARA_E_NONE] = "No error",
-		[DHARA_E_BAD_BLOCK] = "Bad page/eraseblock",
-		[DHARA_E_ECC] = "ECC failure",
-		[DHARA_E_TOO_BAD] = "Too many bad blocks",
-		[DHARA_E_RECOVER] = "Journal recovery is required",
-		[DHARA_E_JOURNAL_FULL] = "Journal is full",
-		[DHARA_E_NOT_FOUND] = "No such sector",
-		[DHARA_E_MAP_FULL] = "Sector map is full",
-		[DHARA_E_CORRUPT_MAP] = "Sector map is corrupted"
-	};
-	const char *msg = NULL;
+    static const char *const messages[DHARA_E_MAX] = {
+        [DHARA_E_NONE] = "No error",
+        [DHARA_E_BAD_BLOCK] = "Bad page/eraseblock",
+        [DHARA_E_ECC] = "ECC failure",
+        [DHARA_E_TOO_BAD] = "Too many bad blocks",
+        [DHARA_E_RECOVER] = "Journal recovery is required",
+        [DHARA_E_JOURNAL_FULL] = "Journal is full",
+        [DHARA_E_NOT_FOUND] = "No such sector",
+        [DHARA_E_MAP_FULL] = "Sector map is full",
+        [DHARA_E_CORRUPT_MAP] = "Sector map is corrupted"
+    };
+    const char *msg = NULL;
 
-	if ((err >= 0) && (err < DHARA_E_MAX))
-		msg = messages[err];
+    if ((err >= 0) && (err < DHARA_E_MAX)) {
+        msg = messages[err];
+    }
 
-	if (msg)
-		return msg;
+    if (msg) {
+        return msg;
+    }
 
-	return "Unknown error";
+    return "Unknown error";
 }

@@ -20,9 +20,9 @@
 #include <stdint.h>
 
 /* Galois field tables of order 2^13-1 */
-#define GF13_ORDER	8191
+#define GF13_ORDER  8191
 
-typedef uint16_t	gf13_elem_t;
+typedef uint16_t    gf13_elem_t;
 
 /* If you need to reduce the code size, you can define GF13_NO_TABLES.
  *
@@ -36,17 +36,18 @@ gf13_elem_t gf13_div(gf13_elem_t a, gf13_elem_t b);
 
 static inline gf13_elem_t gf13_divx(gf13_elem_t a)
 {
-	return gf13_mul(a, 0x100d);
+    return gf13_mul(a, 0x100d);
 }
 
 static inline gf13_elem_t gf13_mulx(gf13_elem_t a)
 {
-	gf13_elem_t r = a << 1;
+    gf13_elem_t r = a << 1;
 
-	if (r & 8192)
-		r ^= 0x201b;
+    if (r & 8192) {
+        r ^= 0x201b;
+    }
 
-	return r;
+    return r;
 }
 
 #else
@@ -57,27 +58,27 @@ extern const gf13_elem_t gf13_log[8192];
 /* Wrappers for field arithmetic */
 static inline gf13_elem_t gf13_wrap(gf13_elem_t s)
 {
-	return (s >= GF13_ORDER) ? (s - GF13_ORDER) : s;
+    return (s >= GF13_ORDER) ? (s - GF13_ORDER) : s;
 }
 
 static inline gf13_elem_t gf13_mul(gf13_elem_t a, gf13_elem_t b)
 {
-	return gf13_exp[gf13_wrap(gf13_log[a] + gf13_log[b])];
+    return gf13_exp[gf13_wrap(gf13_log[a] + gf13_log[b])];
 }
 
 static inline gf13_elem_t gf13_div(gf13_elem_t a, gf13_elem_t b)
 {
-	return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - gf13_log[b])];
+    return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - gf13_log[b])];
 }
 
 static inline gf13_elem_t gf13_divx(gf13_elem_t a)
 {
-	return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - 1)];
+    return gf13_exp[gf13_wrap(gf13_log[a] + GF13_ORDER - 1)];
 }
 
 static inline gf13_elem_t gf13_mulx(gf13_elem_t a)
 {
-	return gf13_exp[gf13_wrap(gf13_log[a] + 1)];
+    return gf13_exp[gf13_wrap(gf13_log[a] + 1)];
 }
 
 #endif

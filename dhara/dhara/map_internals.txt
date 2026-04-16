@@ -276,7 +276,7 @@ Dequeueing the page in question, we get:
 This is a fine scheme for removing obsolete pages from the leftmost end
 of the queue, but what if the queue contains garbage in the middle? In
 the diagram above, the journal contains at least one garbage page (the
-first occurance of 1010), but the leftmost page isn't garbage.
+first occurrence of 1010), but the leftmost page isn't garbage.
 
 There is an operation, which we call "repack", that we can perform which
 preserves the mapping while obsoleting the leftmost page. We simply

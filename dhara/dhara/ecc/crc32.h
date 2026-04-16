@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define CRC32_INIT	((uint32_t)0xffffffff)
+#define CRC32_INIT  ((uint32_t)0xffffffff)
 
 /* Calculate the checksum over the given block of data, optionally
  * specifying a checksum to be carried.
@@ -41,6 +41,6 @@
  * 0-7695-1597-5. Retrieved 14 January 2011.
  */
 uint32_t crc32_nand(const uint8_t *block, size_t len,
-		    uint32_t carry);
+                    uint32_t carry);
 
 #endif

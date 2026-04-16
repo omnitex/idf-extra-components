@@ -39,18 +39,18 @@ typedef uint32_t dhara_block_t;
  * provided and satisfy the documented conditions.
  */
 struct dhara_nand {
-	/* Base-2 logarithm of the page size. If your device supports
-	 * partial programming, you may want to subdivide the actual
-	 * pages into separate ECC-correctable regions and present those
-	 * as pages.
-	 */
-	uint8_t		log2_page_size;
+    /* Base-2 logarithm of the page size. If your device supports
+     * partial programming, you may want to subdivide the actual
+     * pages into separate ECC-correctable regions and present those
+     * as pages.
+     */
+    uint8_t     log2_page_size;
 
-	/* Base-2 logarithm of the number of pages within an eraseblock */
-	uint8_t		log2_ppb;
+    /* Base-2 logarithm of the number of pages within an eraseblock */
+    uint8_t     log2_ppb;
 
-	/* Total number of eraseblocks */
-	unsigned int	num_blocks;
+    /* Total number of eraseblocks */
+    unsigned int    num_blocks;
 };
 
 /* Is the given block bad? */
@@ -68,7 +68,7 @@ void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t b);
  * operation fails, return -1 and set err to E_BAD_BLOCK.
  */
 int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
-		     dhara_error_t *err);
+                     dhara_error_t *err);
 
 /* Program the given page. The data pointer is a pointer to an entire
  * page ((1 << log2_page_size) bytes). The operation status should be
@@ -79,27 +79,27 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  * reprogrammed.
  */
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-		    const uint8_t *data,
-		    dhara_error_t *err);
+                    const uint8_t *data,
+                    dhara_error_t *err);
 
 /* Check that the given page is erased */
 int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p);
 
 /* Read a portion of a page. ECC must be handled by the NAND
- * implementation. Returns 0 on sucess or -1 if an error occurs. If an
+ * implementation. Returns 0 on success or -1 if an error occurs. If an
  * uncorrectable ECC error occurs, return -1 and set err to E_ECC.
  */
 int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
-		    size_t offset, size_t length,
-		    uint8_t *data,
-		    dhara_error_t *err);
+                    size_t offset, size_t length,
+                    uint8_t *data,
+                    dhara_error_t *err);
 
 /* Read a page from one location and reprogram it in another location.
  * This might be done using the chip's internal buffers, but it must use
  * ECC.
  */
 int dhara_nand_copy(const struct dhara_nand *n,
-		    dhara_page_t src, dhara_page_t dst,
-		    dhara_error_t *err);
+                    dhara_page_t src, dhara_page_t dst,
+                    dhara_error_t *err);
 
 #endif

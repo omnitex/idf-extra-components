@@ -21,30 +21,30 @@
 
 static inline uint16_t dhara_r16(const uint8_t *data)
 {
-	return ((uint16_t)data[0]) |
-	       (((uint16_t)data[1]) << 8);
+    return ((uint16_t)data[0]) |
+           (((uint16_t)data[1]) << 8);
 }
 
 static inline void dhara_w16(uint8_t *data, uint16_t v)
 {
-	data[0] = v;
-	data[1] = v >> 8;
+    data[0] = v;
+    data[1] = v >> 8;
 }
 
 static inline uint32_t dhara_r32(const uint8_t *data)
 {
-	return ((uint32_t)data[0]) |
-	       (((uint32_t)data[1]) << 8) |
-	       (((uint32_t)data[2]) << 16) |
-	       (((uint32_t)data[3]) << 24);
+    return ((uint32_t)data[0]) |
+           (((uint32_t)data[1]) << 8) |
+           (((uint32_t)data[2]) << 16) |
+           (((uint32_t)data[3]) << 24);
 }
 
 static inline void dhara_w32(uint8_t *data, uint32_t v)
 {
-	data[0] = v;
-	data[1] = v >> 8;
-	data[2] = v >> 16;
-	data[3] = v >> 24;
+    data[0] = v;
+    data[1] = v >> 8;
+    data[2] = v >> 16;
+    data[3] = v >> 24;
 }
 
 #endif

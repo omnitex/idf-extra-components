@@ -21,35 +21,35 @@
 #include "nand.h"
 
 /* Number of bytes used by the journal checkpoint header. */
-#define DHARA_HEADER_SIZE		16
+#define DHARA_HEADER_SIZE       16
 
 /* Global metadata available for a higher layer. This metadata is
  * persistent once the journal reaches a checkpoint, and is restored on
  * startup.
  */
-#define DHARA_COOKIE_SIZE		4
+#define DHARA_COOKIE_SIZE       4
 
 /* This is the size of the metadata slice which accompanies each written
  * page. This is independent of the underlying page/OOB size.
  */
-#define DHARA_META_SIZE			132
+#define DHARA_META_SIZE         132
 
 /* When a block fails, or garbage is encountered, we try again on the
  * next block/checkpoint. We can do this up to the given number of
  * times.
  */
-#define DHARA_MAX_RETRIES		8
+#define DHARA_MAX_RETRIES       8
 
 /* This is a page number which can be used to represent "no such page".
  * It's guaranteed to never be a valid user page.
  */
-#define DHARA_PAGE_NONE			((dhara_page_t)0xffffffff)
+#define DHARA_PAGE_NONE         ((dhara_page_t)0xffffffff)
 
 /* State flags */
-#define DHARA_JOURNAL_F_DIRTY		0x01
-#define DHARA_JOURNAL_F_BAD_META	0x02
-#define DHARA_JOURNAL_F_RECOVERY	0x04
-#define DHARA_JOURNAL_F_ENUM_DONE	0x08
+#define DHARA_JOURNAL_F_DIRTY       0x01
+#define DHARA_JOURNAL_F_BAD_META    0x02
+#define DHARA_JOURNAL_F_RECOVERY    0x04
+#define DHARA_JOURNAL_F_ENUM_DONE   0x08
 
 /* The journal layer presents the NAND pages as a double-ended queue.
  * Pages, with associated metadata may be pushed onto the end of the
@@ -65,57 +65,57 @@
  * to enqueue more pages.
  */
 struct dhara_journal {
-	const struct dhara_nand		*nand;
-	uint8_t				*page_buf;
+    const struct dhara_nand     *nand;
+    uint8_t             *page_buf;
 
-	/* In the journal, user data is grouped into checkpoints of
-	 * 2**log2_ppc contiguous aligned pages.
-	 *
-	 * The last page of each checkpoint contains the journal header
-	 * and the metadata for the other pages in the period (the user
-	 * pages).
-	 */
-	uint8_t				log2_ppc;
+    /* In the journal, user data is grouped into checkpoints of
+     * 2**log2_ppc contiguous aligned pages.
+     *
+     * The last page of each checkpoint contains the journal header
+     * and the metadata for the other pages in the period (the user
+     * pages).
+     */
+    uint8_t             log2_ppc;
 
-	/* Epoch counter. This is incremented whenever the journal head
-	 * passes the end of the chip and wraps around.
-	 */
-	uint8_t				epoch;
+    /* Epoch counter. This is incremented whenever the journal head
+     * passes the end of the chip and wraps around.
+     */
+    uint8_t             epoch;
 
-	/* General purpose flags field */
-	uint8_t				flags;
+    /* General purpose flags field */
+    uint8_t             flags;
 
-	/* Bad-block counters. bb_last is our best estimate of the
-	 * number of bad blocks in the chip as a whole. bb_current is
-	 * the number of bad blocks in all blocks before the current
-	 * head.
-	 */
-	dhara_block_t			bb_current;
-	dhara_block_t			bb_last;
+    /* Bad-block counters. bb_last is our best estimate of the
+     * number of bad blocks in the chip as a whole. bb_current is
+     * the number of bad blocks in all blocks before the current
+     * head.
+     */
+    dhara_block_t           bb_current;
+    dhara_block_t           bb_last;
 
-	/* Log head and tail. The tail pointer points to the last user
-	 * page in the log, and the head pointer points to the next free
-	 * raw page. The root points to the last written user page.
-	 */
-	dhara_page_t			tail_sync;
-	dhara_page_t			tail;
-	dhara_page_t			head;
+    /* Log head and tail. The tail pointer points to the last user
+     * page in the log, and the head pointer points to the next free
+     * raw page. The root points to the last written user page.
+     */
+    dhara_page_t            tail_sync;
+    dhara_page_t            tail;
+    dhara_page_t            head;
 
-	/* This points to the last written user page in the journal */
-	dhara_page_t			root;
+    /* This points to the last written user page in the journal */
+    dhara_page_t            root;
 
-	/* Recovery mode: recover_root points to the last valid user
-	 * page in the block requiring recovery. recover_next points to
-	 * the next user page needing recovery.
-	 *
-	 * If we had buffered metadata before recovery started, it will
-	 * have been dumped to a free page, indicated by recover_meta.
-	 * If this block later goes bad, we will have to defer bad-block
-	 * marking until recovery is complete (F_BAD_META).
-	 */
-	dhara_page_t			recover_next;
-	dhara_page_t			recover_root;
-	dhara_page_t			recover_meta;
+    /* Recovery mode: recover_root points to the last valid user
+     * page in the block requiring recovery. recover_next points to
+     * the next user page needing recovery.
+     *
+     * If we had buffered metadata before recovery started, it will
+     * have been dumped to a free page, indicated by recover_meta.
+     * If this block later goes bad, we will have to defer bad-block
+     * marking until recovery is complete (F_BAD_META).
+     */
+    dhara_page_t            recover_next;
+    dhara_page_t            recover_root;
+    dhara_page_t            recover_meta;
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip
@@ -126,8 +126,8 @@ struct dhara_journal {
  * No NAND operations are performed at this point.
  */
 void dhara_journal_init(struct dhara_journal *j,
-			const struct dhara_nand *n,
-			uint8_t *page_buf);
+                        const struct dhara_nand *n,
+                        uint8_t *page_buf);
 
 /* Start up the journal -- search the NAND for the journal head, or
  * initialize a blank journal if one isn't found. Returns 0 on success
@@ -153,14 +153,14 @@ dhara_page_t dhara_journal_size(const struct dhara_journal *j);
 /* Obtain a pointer to the cookie data */
 static inline uint8_t *dhara_journal_cookie(const struct dhara_journal *j)
 {
-	return j->page_buf + DHARA_HEADER_SIZE;
+    return j->page_buf + DHARA_HEADER_SIZE;
 }
 
 /* Obtain the locations of the first and last pages in the journal.
  */
 static inline dhara_page_t dhara_journal_root(const struct dhara_journal *j)
 {
-	return j->root;
+    return j->root;
 }
 
 /* Read metadata associated with a page. This assumes that the page
@@ -168,7 +168,7 @@ static inline dhara_page_t dhara_journal_root(const struct dhara_journal *j)
  * normal NAND interface.
  */
 int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
-			    uint8_t *buf, dhara_error_t *err);
+                            uint8_t *buf, dhara_error_t *err);
 
 /* Advance the tail to the next non-bad block and return the page that's
  * ready to read. If no page is ready, return DHARA_PAGE_NONE.
@@ -198,8 +198,8 @@ void dhara_journal_clear(struct dhara_journal *j);
  * be restarted.
  */
 int dhara_journal_enqueue(struct dhara_journal *j,
-			  const uint8_t *data, const uint8_t *meta,
-			  dhara_error_t *err);
+                          const uint8_t *data, const uint8_t *meta,
+                          dhara_error_t *err);
 
 /* Copy an existing page to the front of the journal. New metadata must
  * be specified. This operation is not persistent until a checkpoint is
@@ -214,13 +214,13 @@ int dhara_journal_enqueue(struct dhara_journal *j,
  * be restarted.
  */
 int dhara_journal_copy(struct dhara_journal *j,
-		       dhara_page_t p, const uint8_t *meta,
-		       dhara_error_t *err);
+                       dhara_page_t p, const uint8_t *meta,
+                       dhara_error_t *err);
 
 /* Mark the journal dirty. */
 static inline void dhara_journal_mark_dirty(struct dhara_journal *j)
 {
-	j->flags |= DHARA_JOURNAL_F_DIRTY;
+    j->flags |= DHARA_JOURNAL_F_DIRTY;
 }
 
 /* Is the journal checkpointed? If true, then all pages enqueued are now
@@ -228,7 +228,7 @@ static inline void dhara_journal_mark_dirty(struct dhara_journal *j)
  */
 static inline int dhara_journal_is_clean(const struct dhara_journal *j)
 {
-	return !(j->flags & DHARA_JOURNAL_F_DIRTY);
+    return !(j->flags & DHARA_JOURNAL_F_DIRTY);
 }
 
 /* If an operation returns E_RECOVER, you must begin the recovery
@@ -248,7 +248,7 @@ static inline int dhara_journal_is_clean(const struct dhara_journal *j)
  */
 static inline int dhara_journal_in_recovery(const struct dhara_journal *j)
 {
-	return j->flags & DHARA_JOURNAL_F_RECOVERY;
+    return j->flags & DHARA_JOURNAL_F_RECOVERY;
 }
 
 dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j);

@@ -26,50 +26,50 @@
 
 static void test(void)
 {
-	struct dhara_journal journal;
-	const size_t page_size = 1 << sim_nand.log2_page_size;
-	uint8_t page_buf[page_size];
-	int rep;
+    struct dhara_journal journal;
+    const size_t page_size = 1 << sim_nand.log2_page_size;
+    uint8_t page_buf[page_size];
+    int rep;
 
-	sim_reset();
-	sim_inject_bad(10);
-	sim_inject_failed(10);
+    sim_reset();
+    sim_inject_bad(10);
+    sim_inject_failed(10);
 
-	printf("Journal init\n");
-	dhara_journal_init(&journal, &sim_nand, page_buf);
-	printf("    capacity: %d\n", dhara_journal_capacity(&journal));
-	printf("\n");
+    printf("Journal init\n");
+    dhara_journal_init(&journal, &sim_nand, page_buf);
+    printf("    capacity: %d\n", dhara_journal_capacity(&journal));
+    printf("\n");
 
-	for (rep = 0; rep < 5; rep++) {
-		int count;
+    for (rep = 0; rep < 5; rep++) {
+        int count;
 
-		printf("Rep: %d\n", rep);
+        printf("Rep: %d\n", rep);
 
-		printf("    enqueue until error...\n");
-		count = jt_enqueue_sequence(&journal, 0, -1);
-		printf("    enqueue count: %d\n", count);
-		printf("    size: %d\n", dhara_journal_size(&journal));
+        printf("    enqueue until error...\n");
+        count = jt_enqueue_sequence(&journal, 0, -1);
+        printf("    enqueue count: %d\n", count);
+        printf("    size: %d\n", dhara_journal_size(&journal));
 
-		printf("    dequeue...\n");
-		jt_dequeue_sequence(&journal, 0, count);
-		printf("    size: %d\n", dhara_journal_size(&journal));
+        printf("    dequeue...\n");
+        jt_dequeue_sequence(&journal, 0, count);
+        printf("    size: %d\n", dhara_journal_size(&journal));
 
-		/* Only way to recover space here... */
-		journal.tail_sync = journal.tail;
-	}
+        /* Only way to recover space here... */
+        journal.tail_sync = journal.tail;
+    }
 
-	printf("\n");
+    printf("\n");
 }
 
 int main(void)
 {
-	for (int i = 0; i < 100; i++) {
-		printf("--------------------------------"
-		       "--------------------------------\n");
-		printf("Seed: %d\n", i);
-		srandom(i);
-		test();
-	}
+    for (int i = 0; i < 100; i++) {
+        printf("--------------------------------"
+               "--------------------------------\n");
+        printf("Seed: %d\n", i);
+        srandom(i);
+        test();
+    }
 
-	return 0;
+    return 0;
 }

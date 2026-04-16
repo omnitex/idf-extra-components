@@ -24,8 +24,8 @@
  * given below. Hamming codes can correct 1-bit errors and detect 2-bit
  * errors within a chunk.
  */
-#define HAMMING_MAX_CHUNK_SIZE	512
-#define HAMMING_ECC_SIZE	3
+#define HAMMING_MAX_CHUNK_SIZE  512
+#define HAMMING_ECC_SIZE    3
 
 /* Generate ECC bytes for the given page */
 void hamming_generate(const uint8_t *chunk, size_t len, uint8_t *ecc);
@@ -34,7 +34,7 @@ void hamming_generate(const uint8_t *chunk, size_t len, uint8_t *ecc);
 typedef uint32_t hamming_ecc_t;
 
 hamming_ecc_t hamming_syndrome(const uint8_t *chunk, size_t len,
-			       const uint8_t *ecc);
+                               const uint8_t *ecc);
 
 /* Attempt to repair ECC errors. Returns 0 if successful, -1 if an error
  * occurs.

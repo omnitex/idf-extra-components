@@ -19,46 +19,51 @@
 
 int main(void)
 {
-	int i;
+    int i;
 
-	sim_reset();
-	sim_inject_bad(5);
+    sim_reset();
+    sim_inject_bad(5);
 
-	for (i = 0; i < (1 << sim_nand.log2_ppb); i++) {
-		int j;
+    for (i = 0; i < (1 << sim_nand.log2_ppb); i++) {
+        int j;
 
-		for (j = 0; j < sim_nand.num_blocks; j++) {
-			uint8_t block[1 << sim_nand.log2_page_size];
-			dhara_error_t err;
-			dhara_page_t p =
-				(j << sim_nand.log2_ppb) | i;
+        for (j = 0; j < sim_nand.num_blocks; j++) {
+            uint8_t block[1 << sim_nand.log2_page_size];
+            dhara_error_t err;
+            dhara_page_t p =
+                (j << sim_nand.log2_ppb) | i;
 
-			if (dhara_nand_is_bad(&sim_nand, j))
-				continue;
+            if (dhara_nand_is_bad(&sim_nand, j)) {
+                continue;
+            }
 
-			if (!i && (dhara_nand_erase(&sim_nand, j, &err) < 0))
-				dabort("erase", err);
+            if (!i && (dhara_nand_erase(&sim_nand, j, &err) < 0)) {
+                dabort("erase", err);
+            }
 
-			seq_gen(p, block, sizeof(block));
-			if (dhara_nand_prog(&sim_nand, p, block, &err) < 0)
-				dabort("prog", err);
-		}
-	}
+            seq_gen(p, block, sizeof(block));
+            if (dhara_nand_prog(&sim_nand, p, block, &err) < 0) {
+                dabort("prog", err);
+            }
+        }
+    }
 
-	for (i = 0; i < (sim_nand.num_blocks << sim_nand.log2_ppb); i++) {
-		uint8_t block[1 << sim_nand.log2_page_size];
-		dhara_error_t err;
+    for (i = 0; i < (sim_nand.num_blocks << sim_nand.log2_ppb); i++) {
+        uint8_t block[1 << sim_nand.log2_page_size];
+        dhara_error_t err;
 
-		if (dhara_nand_is_bad(&sim_nand, i >> sim_nand.log2_ppb))
-			continue;
+        if (dhara_nand_is_bad(&sim_nand, i >> sim_nand.log2_ppb)) {
+            continue;
+        }
 
-		if (dhara_nand_read(&sim_nand, i, 0, sizeof(block),
-				    block, &err) < 0)
-			dabort("read", err);
+        if (dhara_nand_read(&sim_nand, i, 0, sizeof(block),
+                            block, &err) < 0) {
+            dabort("read", err);
+        }
 
-		seq_assert(i, block, sizeof(block));
-	}
+        seq_assert(i, block, sizeof(block));
+    }
 
-	sim_dump();
-	return 0;
+    sim_dump();
+    return 0;
 }

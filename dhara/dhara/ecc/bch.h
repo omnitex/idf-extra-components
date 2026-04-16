@@ -32,31 +32,31 @@
 typedef uint64_t bch_poly_t;
 
 struct bch_def {
-	/* Number of syndromes to compute when decoding */
-	int		syns;
+    /* Number of syndromes to compute when decoding */
+    int     syns;
 
-	/* Generator polynominal, in reciprocal form: LSB is
-	 * highest-order term.
-	 */
-	bch_poly_t	generator;
+    /* Generator polynominal, in reciprocal form: LSB is
+     * highest-order term.
+     */
+    bch_poly_t  generator;
 
-	/* Generator degree */
-	int		degree;
+    /* Generator degree */
+    int     degree;
 
-	/* Number of ECC bytes */
-	int		ecc_bytes;
+    /* Number of ECC bytes */
+    int     ecc_bytes;
 };
 
 /* Maximum number of ECC bytes (required for 4-bit codes). Some codes
  * require less than this.
  */
-#define BCH_MAX_ECC		7
+#define BCH_MAX_ECC     7
 
 /* This is fixed. We must have that the number of bits in a chunk, plus
  * the number of bits of ECC, is less than the Galois field order. You
  * can supply chunks smaller than this.
  */
-#define BCH_MAX_CHUNK_SIZE	(1023 - BCH_MAX_ECC)
+#define BCH_MAX_CHUNK_SIZE  (1023 - BCH_MAX_ECC)
 
 /* BCH codes for 1, 2, 3 and 4-bit ECC */
 extern const struct bch_def bch_1bit;
@@ -66,8 +66,8 @@ extern const struct bch_def bch_4bit;
 
 /* Generate ECC bytes for the given page. */
 void bch_generate(const struct bch_def *bch,
-		  const uint8_t *chunk, size_t len,
-		  uint8_t *ecc);
+                  const uint8_t *chunk, size_t len,
+                  uint8_t *ecc);
 
 /* Verify the page. This doesn't correct data, but it's a cheaper
  * operation than syndrome calculation. Returns 0 on success or -1 if
@@ -77,13 +77,13 @@ void bch_generate(const struct bch_def *bch,
  * verification.
  */
 int bch_verify(const struct bch_def *bch,
-	       const uint8_t *chunk, size_t len,
-	       const uint8_t *ecc);
+               const uint8_t *chunk, size_t len,
+               const uint8_t *ecc);
 
 /* Correct errors. After correction, bch_verify() should be run again to
  * check for uncorrectable errors.
  */
 void bch_repair(const struct bch_def *bch,
-		uint8_t *chunk, size_t len, uint8_t *ecc);
+                uint8_t *chunk, size_t len, uint8_t *ecc);
 
 #endif

@@ -20,84 +20,88 @@
 #include <assert.h>
 #include "ecc/bch.h"
 
-#define BCH_CHUNK_SIZE		512
-#define TEST_CHUNK_SIZE		(BCH_CHUNK_SIZE + 8)
+#define BCH_CHUNK_SIZE      512
+#define TEST_CHUNK_SIZE     (BCH_CHUNK_SIZE + 8)
 
 static void flip_one_bit(uint8_t *b, int size)
 {
-	const int which = random() % (size * 8);
-	const int byte = which >> 3;
-	const uint8_t bit = 1 << (which & 7);
+    const int which = random() % (size * 8);
+    const int byte = which >> 3;
+    const uint8_t bit = 1 << (which & 7);
 
-	b[byte] ^= bit;
+    b[byte] ^= bit;
 }
 
 static void flip_test(const struct bch_def *def,
-		      const uint8_t *good)
+                      const uint8_t *good)
 {
-	uint8_t bad[TEST_CHUNK_SIZE];
-	int i;
+    uint8_t bad[TEST_CHUNK_SIZE];
+    int i;
 
-	memcpy(bad, good, sizeof(bad));
+    memcpy(bad, good, sizeof(bad));
 
-	for (i = 0; i < def->syns; i += 2)
-		flip_one_bit(bad, TEST_CHUNK_SIZE);
+    for (i = 0; i < def->syns; i += 2) {
+        flip_one_bit(bad, TEST_CHUNK_SIZE);
+    }
 
-	if (bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE) < 0) {
-		bch_repair(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
-		i = bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
-		assert(!i);
-	}
+    if (bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE) < 0) {
+        bch_repair(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
+        i = bch_verify(def, bad, BCH_CHUNK_SIZE, bad + BCH_CHUNK_SIZE);
+        assert(!i);
+    }
 
-	i = memcmp(good, bad, BCH_CHUNK_SIZE);
-	assert(!i);
+    i = memcmp(good, bad, BCH_CHUNK_SIZE);
+    assert(!i);
 }
 
 static void test_properties(const struct bch_def *def,
-			    const uint8_t *block)
+                            const uint8_t *block)
 {
-	int i;
+    int i;
 
-	i = bch_verify(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
-	assert(!i);
+    i = bch_verify(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
+    assert(!i);
 
-	for (i = 0; i < 20; i++)
-		flip_test(def, block);
+    for (i = 0; i < 20; i++) {
+        flip_test(def, block);
+    }
 }
 
 static void test_random_block(const struct bch_def *def)
 {
-	uint8_t block[TEST_CHUNK_SIZE];
-	int i;
+    uint8_t block[TEST_CHUNK_SIZE];
+    int i;
 
-	for (i = 0; i < BCH_CHUNK_SIZE; i++)
-		block[i] = random();
+    for (i = 0; i < BCH_CHUNK_SIZE; i++) {
+        block[i] = random();
+    }
 
-	bch_generate(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
-	test_properties(def, block);
+    bch_generate(def, block, BCH_CHUNK_SIZE, block + BCH_CHUNK_SIZE);
+    test_properties(def, block);
 }
 
 static void test_code(const struct bch_def *def)
 {
-	uint8_t block[TEST_CHUNK_SIZE];
-	int i;
+    uint8_t block[TEST_CHUNK_SIZE];
+    int i;
 
-	printf("nbits: %d\n", def->syns / 2);
+    printf("nbits: %d\n", def->syns / 2);
 
-	memset(block, 0xff, sizeof(block));
-	test_properties(def, block);
+    memset(block, 0xff, sizeof(block));
+    test_properties(def, block);
 
-	for (i = 0; i < 10; i++)
-		test_random_block(def);
+    for (i = 0; i < 10; i++) {
+        test_random_block(def);
+    }
 }
 
 int main(void)
 {
-	srandom(0);
-	test_code(&bch_1bit);
-	test_code(&bch_2bit);
-	test_code(&bch_3bit);
-	test_code(&bch_4bit);
+    srandom(0);
+    test_code(&bch_1bit);
+    test_code(&bch_2bit);
+    test_code(&bch_3bit);
+    test_code(&bch_4bit);
 
-	return 0;
+    return 0;
 }
