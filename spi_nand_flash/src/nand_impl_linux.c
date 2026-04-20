@@ -89,6 +89,8 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
         ret = ESP_ERR_NO_MEM;
         goto fail;
     }
+    (*handle)->on_page_read_ecc = NULL;
+    (*handle)->on_page_read_ecc_ctx = NULL;
     return ret;
 
 fail:

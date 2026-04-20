@@ -122,6 +122,8 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
         ret = ESP_ERR_NO_MEM;
         goto fail;
     }
+    (*handle)->on_page_read_ecc = NULL;
+    (*handle)->on_page_read_ecc_ctx = NULL;
     return ret;
 
 fail:
@@ -453,6 +455,15 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     uint16_t column_addr = get_column_address(handle, block, offset);
 
     ESP_GOTO_ON_ERROR(spi_nand_read(handle, data, column_addr, length), fail, TAG, "");
+
+    {
+        nand_ecc_status_t ecc_st = handle->chip.ecc_data.ecc_corrected_bits_status;
+        if (ecc_st != NAND_ECC_OK && ecc_st != NAND_ECC_NOT_CORRECTED) {
+            if (handle->on_page_read_ecc) {
+                handle->on_page_read_ecc(page, ecc_st, handle->on_page_read_ecc_ctx);
+            }
+        }
+    }
 
     return ret;
 fail:

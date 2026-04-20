@@ -2,13 +2,13 @@
 
 ## T0 — HAL: ECC observation callback in `nand_impl.c`
 
-- [ ] T0.1 Add `on_page_read_ecc` function pointer and `on_page_read_ecc_ctx` to
+- [x] T0.1 Add `on_page_read_ecc` function pointer and `on_page_read_ecc_ctx` to
       `struct spi_nand_flash_device_t` in `priv_include/nand.h`; initialize both
       to `NULL` in `nand_init_device()` so existing behavior is unchanged
-- [ ] T0.2 In `nand_read()` (`src/nand_impl.c`): after `is_ecc_error()` runs, if
+- [x] T0.2 In `nand_read()` (`src/nand_impl.c`): after `is_ecc_error()` runs, if
       `ecc_corrected_bits_status` is neither `NAND_ECC_OK` nor `NAND_ECC_NOT_CORRECTED`,
       call `handle->on_page_read_ecc(page, status, ctx)` when non-NULL
-- [ ] T0.3 Verify the callback does NOT fire for `NAND_ECC_NOT_CORRECTED` — that
+- [x] T0.3 Verify the callback does NOT fire for `NAND_ECC_NOT_CORRECTED` — that
       is the existing hard-error path handled upstream; no double-handling
 
 - [ ] T1.1 Read `dhara/dhara/dhara/journal.h` and `journal.c` in full — understand

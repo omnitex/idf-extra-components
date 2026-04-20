@@ -58,6 +58,10 @@ struct spi_nand_flash_device_t {
     uint8_t *read_buffer;
     uint8_t *temp_buffer;
     SemaphoreHandle_t mutex;
+    /** Optional: invoked after a successful read when the page had correctable ECC
+     *  (see `nand_read()` in `nand_impl.c`). NULL disables. */
+    void (*on_page_read_ecc)(uint32_t page, nand_ecc_status_t status, void *ctx);
+    void *on_page_read_ecc_ctx;
 #ifdef CONFIG_IDF_TARGET_LINUX
     nand_mmap_emul_handle_t *emul_handle;
 #endif
