@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
+#include "dhara/nand.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "spi_nand_flash.h"
@@ -223,18 +224,17 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size,
                                         s_oob_used_page_markers, sizeof(s_oob_used_page_markers)), TAG, "Error in nand_prog %d", ret);
 
-    /* Write LPN (oob_lpn) to OOB bytes 4-7 (little-endian).
-     * TODO: consider consolidating all OOB writes (including used-marker) into Dhara
-     *       callbacks so the OOB layout is fully owned by one layer.
-     */
-    uint8_t lpn_buf[4] = {
-        (uint8_t)(oob_lpn & 0xFF),
-        (uint8_t)((oob_lpn >> 8) & 0xFF),
-        (uint8_t)((oob_lpn >> 16) & 0xFF),
-        (uint8_t)((oob_lpn >> 24) & 0xFF),
-    };
-    ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 4,
-                                        lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_prog (LPN) %d", ret);
+    /* Write LPN (oob_lpn) to OOB bytes 4-7 (little-endian), unless no LPN is recorded. */
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        uint8_t lpn_buf[4] = {
+            (uint8_t)(oob_lpn & 0xFF),
+            (uint8_t)((oob_lpn >> 8) & 0xFF),
+            (uint8_t)((oob_lpn >> 16) & 0xFF),
+            (uint8_t)((oob_lpn >> 24) & 0xFF),
+        };
+        ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + 4,
+                                            lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_prog (LPN) %d", ret);
+    }
 
     return ret;
 }
@@ -280,19 +280,21 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, (size_t)dst_offset + handle->chip.page_size,
                                         s_oob_used_page_markers, sizeof(s_oob_used_page_markers)), TAG, "Error in nand_copy %d", ret);
 
-    /* Write LPN to OOB bytes 4-7 on destination page.
+    /* Write LPN to OOB bytes 4-7 on destination page when a logical page is recorded.
      * Note: the used-marker (OOB bytes 2-3) is not written here because nand_copy
      * uses internal NAND buffers on real hardware, which do not set the marker.
      * TODO: consolidate used-marker ownership (currently written by nand_prog only).
      */
-    uint8_t lpn_buf[4] = {
-        (uint8_t)(oob_lpn & 0xFF),
-        (uint8_t)((oob_lpn >> 8) & 0xFF),
-        (uint8_t)((oob_lpn >> 16) & 0xFF),
-        (uint8_t)((oob_lpn >> 24) & 0xFF),
-    };
-    ESP_RETURN_ON_ERROR(nand_emul_write(handle, dst_offset + handle->chip.page_size + 4,
-                                        lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_copy (LPN) %d", ret);
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        uint8_t lpn_buf[4] = {
+            (uint8_t)(oob_lpn & 0xFF),
+            (uint8_t)((oob_lpn >> 8) & 0xFF),
+            (uint8_t)((oob_lpn >> 16) & 0xFF),
+            (uint8_t)((oob_lpn >> 24) & 0xFF),
+        };
+        ESP_RETURN_ON_ERROR(nand_emul_write(handle, dst_offset + handle->chip.page_size + 4,
+                                            lpn_buf, sizeof(lpn_buf)), TAG, "Error in nand_copy (LPN) %d", ret);
+    }
 
     return ret;
 }

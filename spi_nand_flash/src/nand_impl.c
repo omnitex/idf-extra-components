@@ -17,7 +17,26 @@
 
 #define ROM_WAIT_THRESHOLD_US 1000
 
+/*
+ * Experimental: byte offset of the 4-byte LPN (LE) inside OOB, counted from the
+ * first spare column after main page data (column == page_size → OOB byte 0).
+ * Default 4 places LPN after [0-1: bad-block][2-3: used-marker], matching nand_impl_linux.c.
+ * Override for parts with different spare layout, e.g. ECC metadata first:
+ *   idf.py build --compile-options='-DSPI_NAND_OOB_LPN_OFFSET=24'
+ */
+#ifndef SPI_NAND_OOB_LPN_OFFSET
+#define SPI_NAND_OOB_LPN_OFFSET 4
+#endif
+
 static const char *TAG = "nand_hal";
+
+static void nand_oob_pack_lpn_le(uint32_t oob_lpn, uint8_t lpn_buf[4])
+{
+    lpn_buf[0] = (uint8_t)(oob_lpn & 0xFF);
+    lpn_buf[1] = (uint8_t)((oob_lpn >> 8) & 0xFF);
+    lpn_buf[2] = (uint8_t)((oob_lpn >> 16) & 0xFF);
+    lpn_buf[3] = (uint8_t)((oob_lpn >> 24) & 0xFF);
+}
 
 static esp_err_t detect_chip(spi_nand_flash_device_t *dev)
 {
@@ -362,13 +381,13 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, (uint8_t *)&markers,
                                             column_addr + handle->chip.page_size, 4), fail, TAG, "");
 
-    /* TODO: write oob_lpn to OOB bytes 4-7 using spi_nand_program_load.
-     * The OOB byte layout is: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
-     * This requires a separate spi_nand_program_load call at column_addr + page_size + 4.
-     * oob_lpn is intentionally ignored here until per-chip OOB write is implemented.
-     * When DHARA_OOB_LPN_NONE (0xFFFFFFFF), the OOB will read as 0xFF after erase -- correct.
-     */
-    (void)oob_lpn;
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        uint8_t lpn_buf[4];
+        nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+        ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, lpn_buf,
+                                                column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
+                          fail, TAG, "");
+    }
 
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, page, &status), fail, TAG, "");
 
@@ -385,6 +404,14 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ret = s_verify_write(handle, (uint8_t *)&markers, column_addr + handle->chip.page_size, 4);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "%s: prog page=%"PRIu32" markers write verification failed", __func__, page);
+    }
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        uint8_t lpn_chk[4];
+        nand_oob_pack_lpn_le(oob_lpn, lpn_chk);
+        ret = s_verify_write(handle, lpn_chk, column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "%s: prog page=%"PRIu32" OOB LPN write verification failed", __func__, page);
+        }
     }
 #endif //CONFIG_NAND_FLASH_VERIFY_WRITE
 
@@ -472,11 +499,6 @@ fail:
 esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, uint32_t oob_lpn)
 {
     ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", oob_lpn=%"PRIu32"", src, dst, oob_lpn);
-    /* TODO: write oob_lpn to OOB bytes 4-7 of destination page.
-     * Same approach as nand_prog: a spi_nand_program_load call at column_addr + page_size + 4.
-     * oob_lpn is intentionally ignored until per-chip OOB write is implemented.
-     */
-    (void)oob_lpn;
     esp_err_t ret = ESP_OK;
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
     uint8_t *temp_buf = NULL;
@@ -512,6 +534,13 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
         uint8_t markers[4] = { 0xFF, 0xFF, 0x00, 0x00 };
         ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, (uint8_t *)&markers,
                                                 dst_column_addr + handle->chip.page_size, 4), fail, TAG, "");
+        if (oob_lpn != DHARA_OOB_LPN_NONE) {
+            uint8_t lpn_buf[4];
+            nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+            ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, lpn_buf,
+                                                    dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
+                              fail, TAG, "");
+        }
         ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
 
         if ((status & STAT_PROGRAM_FAILED) != 0) {
@@ -519,6 +548,13 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
             return ESP_ERR_NOT_FINISHED;
         }
         free(copy_buf);
+    } else if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        /* Same plane: src is already in the read cache; patch destination OOB LPN before program. */
+        uint8_t lpn_buf[4];
+        nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+        ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, lpn_buf,
+                                                dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
+                          fail, TAG, "");
     }
 
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
@@ -586,13 +622,24 @@ fail:
 
 esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *oob_lpn_out)
 {
-    /* TODO: Read OOB bytes 4-7 from real NAND hardware to get stored LPN.
-     * OOB layout: [0-1: bad-block][2-3: used-marker][4-7: LPN (LE)].
-     * This requires a spi_nand_read call at column_addr + page_size + 4, length 4.
-     * Until implemented, return DHARA_OOB_LPN_NONE which causes replay
-     * to truncate immediately — safe: behavior is identical to pre-OOB-replay.
-     */
-    (void)handle; (void)page;
+    esp_err_t ret = ESP_OK;
+
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, NULL), fail, TAG, "");
+
+    uint32_t block = page >> handle->chip.log2_ppb;
+    uint16_t column_addr = get_column_address(handle, block, handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET);
+
+    ESP_GOTO_ON_ERROR(spi_nand_read(handle, handle->read_buffer, column_addr, 4),
+                      fail, TAG, "");
+
+    *oob_lpn_out = (uint32_t)handle->read_buffer[0]
+                | ((uint32_t)handle->read_buffer[1] << 8)
+                | ((uint32_t)handle->read_buffer[2] << 16)
+                | ((uint32_t)handle->read_buffer[3] << 24);
+    return ret;
+
+fail:
+    ESP_LOGE(TAG, "Error in nand_read_lpn %d", ret);
     *oob_lpn_out = DHARA_OOB_LPN_NONE;
-    return ESP_OK;
+    return ret;
 }
