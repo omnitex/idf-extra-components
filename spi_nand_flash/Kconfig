@@ -32,4 +32,23 @@ menu "SPI NAND Flash configuration"
         help
             This option enables gathering host test statistics and SPI NAND flash wear levelling simulation.
 
+    config NAND_FLASH_ECC_RELIEF_DEFAULT_MAP_CAPACITY
+        int "Default ECC relief map capacity (entries)"
+        default 512
+        range 64 4096
+        help
+            Size of the in-RAM open-addressing hash table used by the page-level ECC
+            relief feature. Must be a power of 2; the driver rounds up if needed.
+            Each entry uses 6 bytes, so the default (512) consumes ~3 KB of internal RAM.
+            Only relevant when ecc_relief.enabled is set in spi_nand_flash_config_t.
+
+    config NAND_FLASH_ECC_RELIEF_ENABLE_DEFAULT
+        bool "Enable page-level ECC relief by default"
+        default n
+        help
+            When enabled, the ECC relief feature is active by default for all
+            spi_nand_flash devices (equivalent to setting ecc_relief.enabled = true
+            in spi_nand_flash_config_t with default thresholds).
+            Disabled by default to preserve backward-compatible behavior.
+
 endmenu

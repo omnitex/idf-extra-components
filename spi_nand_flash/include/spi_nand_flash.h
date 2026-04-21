@@ -55,6 +55,21 @@ struct spi_nand_flash_config_t {
     spi_nand_flash_io_mode_t io_mode;        ///< set io mode for SPI NAND communication
     uint8_t flags;                           ///< set flag with SPI_DEVICE_HALFDUPLEX for half duplex communication, 0 for full-duplex.
     ///< This flag value must match the flag value in the spi_device_interface_config_t structure.
+
+    /** @brief ECC-based page relief wear-leveling configuration.
+     *
+     * When enabled, pages with elevated correctable ECC bit-error counts are
+     * skipped (relieved) during journal writes, extending their effective lifetime.
+     * Disabled by default; existing behavior is unchanged when not configured.
+     */
+    struct {
+        bool     enabled;               /*!< Enable page relief. Default: false */
+        uint8_t  mid_threshold;         /*!< ecc_corrected_bits_status value treated as MID level */
+        uint8_t  high_threshold;        /*!< ecc_corrected_bits_status value for immediate relief flag */
+        uint8_t  mid_count_limit;       /*!< MID-level hits before page is flagged for relief */
+        uint8_t  max_consecutive_relief;/*!< Max pages relieved in a row before forcing a write */
+        uint16_t map_capacity;          /*!< Relief map entries (power of 2, default 512) */
+    } ecc_relief;
 };
 
 typedef struct spi_nand_flash_config_t spi_nand_flash_config_t;
@@ -211,6 +226,27 @@ esp_err_t spi_nand_flash_gc(spi_nand_flash_device_t *handle);
  * @return ESP_OK on success, or a flash error code if the de-initialization failed.
  */
 esp_err_t spi_nand_flash_deinit_device(spi_nand_flash_device_t *handle);
+
+/** @brief Diagnostic statistics for the ECC page relief feature. */
+typedef struct {
+    uint32_t pages_pending_relief;   /*!< Pages currently flagged ECC_RELIEF_FLAG_PENDING */
+    uint32_t total_pages_relieved;   /*!< Cumulative pages relieved (skipped) since init */
+    uint32_t map_entries_used;       /*!< Current occupied entries in the relief map */
+    uint32_t map_capacity;           /*!< Total capacity of the relief map */
+    uint32_t consecutive_cap_hits;   /*!< Times the consecutive-skip cap was reached */
+} spi_nand_ecc_relief_stats_t;
+
+/** @brief Retrieve ECC page relief statistics.
+ *
+ * @param handle  The handle to the SPI nand flash chip.
+ * @param[out] stats  Pointer to a stats structure to fill.
+ * @return
+ *   - ESP_OK: Success.
+ *   - ESP_ERR_NOT_SUPPORTED: Feature is disabled (ecc_relief.enabled == false).
+ *   - ESP_ERR_INVALID_ARG: NULL arguments.
+ */
+esp_err_t spi_nand_flash_get_ecc_relief_stats(spi_nand_flash_device_t *handle,
+                                               spi_nand_ecc_relief_stats_t *stats);
 
 //---------------------------------------------------------------------------------------------------------------------------------------------
 // NEW LAYERED ARCHITECTURE API

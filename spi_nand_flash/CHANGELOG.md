@@ -1,3 +1,17 @@
+## [Unreleased]
+### New Features
+- **ECC page relief wear leveling**: Individual NAND pages showing elevated correctable
+  ECC bit-error counts are now automatically skipped (relieved) during journal writes,
+  extending per-page lifetime. The feature is opt-in via `spi_nand_ecc_relief_config_t`
+  nested in `spi_nand_flash_config_t` — disabled by default, no behavior change for
+  existing users. See [docs/ecc-page-relief.md](docs/ecc-page-relief.md) for full
+  configuration and usage guidance.
+- Added `spi_nand_flash_get_ecc_relief_stats()` diagnostic API for monitoring relief
+  activity at runtime.
+- Added `nand_wrap_inject_ecc_event()` test helper for host-test ECC simulation.
+- Added Kconfig options `NAND_FLASH_ECC_RELIEF_DEFAULT_MAP_CAPACITY` and
+  `NAND_FLASH_ECC_RELIEF_ENABLE_DEFAULT`.
+
 ## [1.0.0]
 ### Breaking Changes
 - FATFS integration has been moved to a separate `spi_nand_flash_fatfs` component. Projects using FATFS with NAND flash must add `spi_nand_flash_fatfs` as a dependency. FatFs on SPI NAND still requires the **legacy** init path: keep **`CONFIG_NAND_FLASH_ENABLE_BDL` disabled** for that use case (no FatFs-on-BDL support in this release).

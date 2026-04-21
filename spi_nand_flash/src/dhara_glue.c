@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2025 Espressif Systems (Shanghai) CO LTD
  */
 
 #include <string.h>
@@ -13,16 +13,25 @@
 #include "dhara/error.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
+#include "esp_heap_caps.h"
 #endif
 #include "nand_impl.h"
 #include "nand.h"
 #include "nand_device_types.h"
+#include "ecc_relief_map.h"
 
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
 #include "esp_nand_blockdev.h"
 #endif
+
+static const char *TAG = "dhara_glue";
+
+/*===========================================================================
+ * ECC Relief Map — private implementation
+ *===========================================================================*/
 
 typedef struct {
     struct dhara_nand dhara_nand;
@@ -31,7 +40,218 @@ typedef struct {
     esp_blockdev_handle_t bdl_handle;
 #endif
     spi_nand_flash_device_t *parent_handle;
+
+    /* ECC relief map (NULL when feature is disabled) */
+    ecc_relief_entry_t *ecc_relief_map;
+    uint16_t            ecc_relief_capacity;   /* power of 2 */
+
+    /* Runtime statistics */
+    uint32_t            stat_pages_relieved;
+    uint32_t            stat_consecutive_cap_hits;
 } spi_nand_flash_dhara_priv_data_t;
+
+/* Hash function: capacity must be a power of 2 */
+static inline uint16_t relief_hash(dhara_page_t page, uint16_t capacity)
+{
+    return (uint16_t)(page & (capacity - 1u));
+}
+
+/**
+ * Lookup an entry for @p page.  Returns a pointer to the slot (may be
+ * TOMBSTONE or INVALID if not found; caller must check).
+ * Returns NULL if map is empty or page not found (slot is INVALID_PAGE).
+ */
+static ecc_relief_entry_t *relief_map_lookup(spi_nand_flash_dhara_priv_data_t *priv,
+                                              dhara_page_t page)
+{
+    uint16_t cap = priv->ecc_relief_capacity;
+    uint16_t idx = relief_hash(page, cap);
+
+    for (uint16_t i = 0; i < cap; i++) {
+        ecc_relief_entry_t *e = &priv->ecc_relief_map[(idx + i) & (cap - 1u)];
+        if (e->page == ECC_RELIEF_INVALID_PAGE) {
+            return NULL;  /* not found — empty slot terminates probe */
+        }
+        if (e->page == ECC_RELIEF_TOMBSTONE_PAGE) {
+            continue;     /* skip tombstones, keep probing */
+        }
+        if (e->page == page) {
+            return e;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Find a slot suitable for insertion (INVALID or TOMBSTONE) starting
+ * from the hash position.
+ */
+static ecc_relief_entry_t *relief_map_find_insert_slot(spi_nand_flash_dhara_priv_data_t *priv,
+                                                        dhara_page_t page)
+{
+    uint16_t cap = priv->ecc_relief_capacity;
+    uint16_t idx = relief_hash(page, cap);
+    ecc_relief_entry_t *tombstone_slot = NULL;
+
+    for (uint16_t i = 0; i < cap; i++) {
+        ecc_relief_entry_t *e = &priv->ecc_relief_map[(idx + i) & (cap - 1u)];
+        if (e->page == ECC_RELIEF_INVALID_PAGE) {
+            return tombstone_slot ? tombstone_slot : e;
+        }
+        if (e->page == ECC_RELIEF_TOMBSTONE_PAGE) {
+            if (!tombstone_slot) {
+                tombstone_slot = e;  /* remember first tombstone for reuse */
+            }
+            continue;
+        }
+        if (e->page == page) {
+            return e;  /* already exists — update in place */
+        }
+    }
+    return tombstone_slot;  /* map full of tombstones (pathological) */
+}
+
+/**
+ * Set ECC_RELIEF_FLAG_PENDING for a page.  Inserts if not present.
+ * If map is full (no INVALID/TOMBSTONE slot), evict a non-PENDING
+ * non-tombstone entry.
+ */
+static void relief_map_flag(spi_nand_flash_dhara_priv_data_t *priv, dhara_page_t page)
+{
+    ecc_relief_entry_t *slot = relief_map_find_insert_slot(priv, page);
+    if (slot) {
+        slot->page = page;
+        slot->flags |= ECC_RELIEF_FLAG_PENDING;
+        return;
+    }
+
+    /* Map is full — evict a non-PENDING non-tombstone entry */
+    uint16_t cap = priv->ecc_relief_capacity;
+    for (uint16_t i = 0; i < cap; i++) {
+        ecc_relief_entry_t *e = &priv->ecc_relief_map[i];
+        if (e->page != ECC_RELIEF_INVALID_PAGE &&
+            e->page != ECC_RELIEF_TOMBSTONE_PAGE &&
+            !(e->flags & ECC_RELIEF_FLAG_PENDING)) {
+            e->page = page;
+            e->mid_count = 0;
+            e->flags = ECC_RELIEF_FLAG_PENDING;
+            return;
+        }
+    }
+    ESP_LOGW(TAG, "ECC relief map full — unable to flag page %lu", (unsigned long)page);
+}
+
+/**
+ * Increment mid_count for @p page.  If it reaches the limit, flag PENDING.
+ */
+static void relief_map_increment(spi_nand_flash_dhara_priv_data_t *priv,
+                                  dhara_page_t page,
+                                  uint8_t mid_count_limit)
+{
+    ecc_relief_entry_t *e = relief_map_lookup(priv, page);
+    if (!e) {
+        /* Insert with mid_count=1 */
+        ecc_relief_entry_t *slot = relief_map_find_insert_slot(priv, page);
+        if (!slot) {
+            return;  /* map full, silently skip */
+        }
+        slot->page = page;
+        slot->mid_count = 1;
+        slot->flags = 0;
+        if (mid_count_limit <= 1) {
+            slot->flags |= ECC_RELIEF_FLAG_PENDING;
+        }
+        return;
+    }
+
+    if (e->mid_count < 0xFF) {
+        e->mid_count++;
+    }
+    if (e->mid_count >= mid_count_limit) {
+        e->flags |= ECC_RELIEF_FLAG_PENDING;
+    }
+}
+
+/**
+ * Clear ECC_RELIEF_FLAG_PENDING for @p page (after relief has been applied).
+ * Entry remains for mid_count bookkeeping.
+ */
+static void relief_map_clear_pending(spi_nand_flash_dhara_priv_data_t *priv,
+                                      dhara_page_t page)
+{
+    ecc_relief_entry_t *e = relief_map_lookup(priv, page);
+    if (e) {
+        e->flags &= ~ECC_RELIEF_FLAG_PENDING;
+    }
+}
+
+/**
+ * Evict (tombstone) all entries whose page falls in [first_page, first_page+count).
+ * Called after a successful block erase.
+ */
+static void relief_map_evict_range(spi_nand_flash_dhara_priv_data_t *priv,
+                                    dhara_page_t first_page,
+                                    dhara_page_t count)
+{
+    uint16_t cap = priv->ecc_relief_capacity;
+    for (uint16_t i = 0; i < cap; i++) {
+        ecc_relief_entry_t *e = &priv->ecc_relief_map[i];
+        if (e->page == ECC_RELIEF_INVALID_PAGE ||
+            e->page == ECC_RELIEF_TOMBSTONE_PAGE) {
+            continue;
+        }
+        if (e->page >= first_page && e->page < (first_page + count)) {
+            e->page = ECC_RELIEF_TOMBSTONE_PAGE;
+            e->mid_count = 0;
+            e->flags = 0;
+        }
+    }
+}
+
+/**
+ * Relief check callback registered with the Dhara journal.
+ * Returns 1 if the page should be relieved (PENDING flag set), 0 otherwise.
+ * Clears PENDING flag and increments stat_pages_relieved on relief.
+ */
+static int dhara_relief_check_cb(dhara_page_t page, void *ctx)
+{
+    spi_nand_flash_dhara_priv_data_t *priv = ctx;
+    ecc_relief_entry_t *e = relief_map_lookup(priv, page);
+    if (e && (e->flags & ECC_RELIEF_FLAG_PENDING)) {
+        relief_map_clear_pending(priv, page);
+        priv->stat_pages_relieved++;
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * ECC read callback registered on handle->on_page_read_ecc.
+ * Classifies the ECC status and updates the relief map accordingly.
+ */
+static void dhara_ecc_read_cb(uint32_t page, nand_ecc_status_t status, void *ctx)
+{
+    spi_nand_flash_dhara_priv_data_t *priv = ctx;
+    const struct {
+        uint8_t mid;
+        uint8_t high;
+        uint8_t mid_count_limit;
+    } cfg = {
+        .mid = priv->parent_handle->config.ecc_relief.mid_threshold,
+        .high = priv->parent_handle->config.ecc_relief.high_threshold,
+        .mid_count_limit = priv->parent_handle->config.ecc_relief.mid_count_limit,
+    };
+
+    if (status >= cfg.high) {
+        relief_map_flag(priv, (dhara_page_t)page);
+    } else if (cfg.mid_count_limit > 0 && status >= cfg.mid) {
+        relief_map_increment(priv, (dhara_page_t)page, cfg.mid_count_limit);
+    }
+}
+
+/*===========================================================================
+ * Dhara glue operations
+ *===========================================================================*/
 
 static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
 {
@@ -55,12 +275,61 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
     dhara_error_t ignored;
     dhara_map_resume(&dhara_priv_data->dhara_map, &ignored);
 
+    /* ECC relief feature init */
+    if (handle->config.ecc_relief.enabled) {
+        uint16_t cap = handle->config.ecc_relief.map_capacity;
+        if (cap == 0) {
+            cap = CONFIG_NAND_FLASH_ECC_RELIEF_DEFAULT_MAP_CAPACITY;
+        }
+        /* Capacity must be a power of 2 */
+        if (cap & (cap - 1)) {
+            ESP_LOGW(TAG, "ecc_relief.map_capacity (%u) is not a power of 2 — rounding up", cap);
+            uint16_t p = 1;
+            while (p < cap) p <<= 1;
+            cap = p;
+        }
+
+        dhara_priv_data->ecc_relief_map = heap_caps_calloc(cap,
+                                                            sizeof(ecc_relief_entry_t),
+                                                            MALLOC_CAP_INTERNAL);
+        if (!dhara_priv_data->ecc_relief_map) {
+            ESP_LOGW(TAG, "Failed to allocate ECC relief map — feature disabled");
+        } else {
+            dhara_priv_data->ecc_relief_capacity = cap;
+
+            /* Mark all slots as empty */
+            for (uint16_t i = 0; i < cap; i++) {
+                dhara_priv_data->ecc_relief_map[i].page = ECC_RELIEF_INVALID_PAGE;
+            }
+
+            /* Wire ECC observation into nand_read() for all callers */
+            handle->on_page_read_ecc     = dhara_ecc_read_cb;
+            handle->on_page_read_ecc_ctx = dhara_priv_data;
+
+            /* Wire relief decision into Dhara's journal */
+            dhara_journal_set_relief_hook(&dhara_priv_data->dhara_map.journal,
+                                          dhara_relief_check_cb,
+                                          dhara_priv_data,
+                                          handle->config.ecc_relief.max_consecutive_relief);
+        }
+    }
+
     return ESP_OK;
 }
 
 static esp_err_t dhara_deinit(spi_nand_flash_device_t *handle)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+
+    /* Deinit ECC relief feature */
+    if (dhara_priv_data->ecc_relief_map) {
+        free(dhara_priv_data->ecc_relief_map);
+        dhara_priv_data->ecc_relief_map = NULL;
+        dhara_priv_data->ecc_relief_capacity = 0;
+    }
+    handle->on_page_read_ecc     = NULL;
+    handle->on_page_read_ecc_ctx = NULL;
+
     // clear dhara map
     dhara_map_init(&dhara_priv_data->dhara_map, &dhara_priv_data->dhara_nand, handle->work_buffer, handle->config.gc_factor);
     dhara_map_clear(&dhara_priv_data->dhara_map);
@@ -248,6 +517,14 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b, dhara_error_t 
         }
         return -1;
     }
+
+    /* On successful erase, evict all relief map entries for this block's pages */
+    if (dhara_priv_data->ecc_relief_map) {
+        dhara_page_t first = (dhara_page_t)b << n->log2_ppb;
+        dhara_page_t count = (dhara_page_t)1 << n->log2_ppb;
+        relief_map_evict_range(dhara_priv_data, first, count);
+    }
+
     return 0;
 }
 
@@ -341,4 +618,48 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
         return -1;
     }
     return 0;
+}
+
+/*===========================================================================
+ * Diagnostic API
+ *===========================================================================*/
+
+esp_err_t spi_nand_flash_get_ecc_relief_stats(spi_nand_flash_device_t *handle,
+                                               spi_nand_ecc_relief_stats_t *stats)
+{
+    if (!handle || !stats) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!handle->config.ecc_relief.enabled) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    spi_nand_flash_dhara_priv_data_t *priv = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+    if (!priv || !priv->ecc_relief_map) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    uint16_t cap = priv->ecc_relief_capacity;
+    uint32_t pending = 0;
+    uint32_t used = 0;
+
+    for (uint16_t i = 0; i < cap; i++) {
+        const ecc_relief_entry_t *e = &priv->ecc_relief_map[i];
+        if (e->page == ECC_RELIEF_INVALID_PAGE ||
+            e->page == ECC_RELIEF_TOMBSTONE_PAGE) {
+            continue;
+        }
+        used++;
+        if (e->flags & ECC_RELIEF_FLAG_PENDING) {
+            pending++;
+        }
+    }
+
+    stats->pages_pending_relief  = pending;
+    stats->total_pages_relieved  = priv->stat_pages_relieved;
+    stats->map_entries_used      = used;
+    stats->map_capacity          = cap;
+    stats->consecutive_cap_hits  = priv->stat_consecutive_cap_hits;
+
+    return ESP_OK;
 }

@@ -216,7 +216,22 @@ void dhara_journal_init(struct dhara_journal *j,
     j->page_buf = page_buf;
     j->log2_ppc = choose_ppc(n->log2_page_size, n->log2_ppb);
 
+    /* Relief hook: disabled by default */
+    j->relief_check = NULL;
+    j->relief_ctx = NULL;
+    j->max_consecutive_relief = 0;
+
     reset_journal(j);
+}
+
+void dhara_journal_set_relief_hook(struct dhara_journal *j,
+                                   int (*check)(dhara_page_t, void *),
+                                   void *ctx,
+                                   int max_consecutive)
+{
+    j->relief_check = check;
+    j->relief_ctx = ctx;
+    j->max_consecutive_relief = max_consecutive;
 }
 
 /* Find the first checkpoint-containing block. If a block contains any
@@ -858,11 +873,32 @@ int dhara_journal_enqueue(struct dhara_journal *j,
 {
     dhara_error_t my_err;
     int i;
+    int relief_consecutive = 0;
+    const int max_rel = j->max_consecutive_relief > 0 ?
+                        j->max_consecutive_relief : DHARA_MAX_RETRIES;
 
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                (data && dhara_nand_prog(j->nand, j->head, data,
-                                         &my_err)))) {
+        if (prepare_head(j, &my_err) < 0) {
+            if (recover_from(j, my_err, err) < 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        /* Relief check: skip prog for this page if flagged */
+        if (j->relief_check &&
+            relief_consecutive < max_rel &&
+            j->relief_check(j->head, j->relief_ctx)) {
+            /* Relieve this page: record filler, don't prog */
+            if (push_meta(j, NULL, err) < 0) {
+                return -1;
+            }
+            relief_consecutive++;
+            continue;
+        }
+
+        /* Normal write */
+        if (!(data && dhara_nand_prog(j->nand, j->head, data, &my_err))) {
             return push_meta(j, meta, err);
         }
 
@@ -881,10 +917,30 @@ int dhara_journal_copy(struct dhara_journal *j,
 {
     dhara_error_t my_err;
     int i;
+    int relief_consecutive = 0;
+    const int max_rel = j->max_consecutive_relief > 0 ?
+                        j->max_consecutive_relief : DHARA_MAX_RETRIES;
 
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                dhara_nand_copy(j->nand, p, j->head, &my_err))) {
+        if (prepare_head(j, &my_err) < 0) {
+            if (recover_from(j, my_err, err) < 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        /* Relief check: skip prog for this page if flagged */
+        if (j->relief_check &&
+            relief_consecutive < max_rel &&
+            j->relief_check(j->head, j->relief_ctx)) {
+            if (push_meta(j, NULL, err) < 0) {
+                return -1;
+            }
+            relief_consecutive++;
+            continue;
+        }
+
+        if (!dhara_nand_copy(j->nand, p, j->head, &my_err)) {
             return push_meta(j, meta, err);
         }
 

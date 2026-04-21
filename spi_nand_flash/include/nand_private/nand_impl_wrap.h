@@ -27,6 +27,20 @@ esp_err_t nand_wrap_read(spi_nand_flash_device_t *handle, uint32_t p, size_t off
 esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst);
 esp_err_t nand_wrap_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page);
 
+/**
+ * @brief Inject a synthetic ECC event for testing the relief map.
+ *
+ * Calls handle->on_page_read_ecc(page, status, ctx) if the callback is
+ * registered.  This allows host tests to drive ECC relief logic without
+ * real hardware ECC correction events.
+ *
+ * @param handle  Device handle.
+ * @param page    Physical page number.
+ * @param status  ECC status to inject (e.g. NAND_ECC_1_TO_3_BITS_CORRECTED).
+ */
+void nand_wrap_inject_ecc_event(spi_nand_flash_device_t *handle, uint32_t page,
+                                nand_ecc_status_t status);
+
 #ifdef __cplusplus
 }
 #endif

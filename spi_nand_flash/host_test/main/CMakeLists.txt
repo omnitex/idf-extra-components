@@ -6,6 +6,8 @@ else()
     list(APPEND src "test_nand_flash.cpp")
 endif()
 
+list(APPEND src "test_ecc_relief.cpp")
+
 idf_component_register(SRCS ${src}
                        WHOLE_ARCHIVE
                        )

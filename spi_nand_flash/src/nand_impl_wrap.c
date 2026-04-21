@@ -91,3 +91,13 @@ esp_err_t nand_wrap_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t pag
     xSemaphoreGive(handle->mutex);
     return ret;
 }
+
+void nand_wrap_inject_ecc_event(spi_nand_flash_device_t *handle, uint32_t page,
+                                nand_ecc_status_t status)
+{
+    xSemaphoreTake(handle->mutex, portMAX_DELAY);
+    if (handle->on_page_read_ecc) {
+        handle->on_page_read_ecc(page, status, handle->on_page_read_ecc_ctx);
+    }
+    xSemaphoreGive(handle->mutex);
+}

@@ -116,6 +116,18 @@ struct dhara_journal {
     dhara_page_t            recover_next;
     dhara_page_t            recover_root;
     dhara_page_t            recover_meta;
+
+    /* Page relief hook. NULL = disabled.
+     * Called inside dhara_journal_enqueue() and dhara_journal_copy()
+     * after prepare_head() succeeds, before dhara_nand_prog().
+     * Returns 1 if j->head should be relieved (skipped), 0 otherwise.
+     */
+    int  (*relief_check)(dhara_page_t page, void *ctx);
+    void  *relief_ctx;
+    /* Maximum consecutive pages to relieve before forcing a write.
+     * 0 = unlimited (not recommended). Set alongside relief_check.
+     */
+    int   max_consecutive_relief;
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip
@@ -252,5 +264,18 @@ static inline int dhara_journal_in_recovery(const struct dhara_journal *j)
 }
 
 dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j);
+
+/* Set the page relief hook. When set, dhara_journal_enqueue() and
+ * dhara_journal_copy() will call check(page, ctx) before programming
+ * the target page. If check returns 1, the page is skipped (a filler
+ * slot is written instead) and the next page is tried.
+ * max_consecutive limits how many pages in a row can be relieved before
+ * a write is forced; 0 means use DHARA_MAX_RETRIES as the bound.
+ * Pass NULL for check to disable.
+ */
+void dhara_journal_set_relief_hook(struct dhara_journal *j,
+                                   int (*check)(dhara_page_t, void *),
+                                   void *ctx,
+                                   int max_consecutive);
 
 #endif
