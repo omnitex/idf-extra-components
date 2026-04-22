@@ -18,7 +18,7 @@
 TEST_CASE("verify mark_bad_block works with bdl interface", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, true};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t nand_bdl;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &nand_bdl) == 0);
 
@@ -45,7 +45,7 @@ TEST_CASE("verify mark_bad_block works with bdl interface", "[spi_nand_flash][bd
 TEST_CASE("verify nand_prog, nand_read, nand_copy, nand_is_free works with bdl interface", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t nand_bdl;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &nand_bdl) == 0);
 
@@ -85,7 +85,7 @@ TEST_CASE("verify nand_prog, nand_read, nand_copy, nand_is_free works with bdl i
 TEST_CASE("WL BDL on host: create, geometry, write/read, release", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t flash_bdl = nullptr;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &flash_bdl) == ESP_OK);
     REQUIRE(flash_bdl != nullptr);
@@ -123,7 +123,7 @@ TEST_CASE("WL BDL on host: create, geometry, write/read, release", "[spi_nand_fl
 TEST_CASE("Flash BDL geometry and ops on host", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 20 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t bdl = nullptr;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &bdl) == ESP_OK);
     REQUIRE(bdl != nullptr);
@@ -148,7 +148,7 @@ TEST_CASE("Flash BDL geometry and ops on host", "[spi_nand_flash][bdl]")
 TEST_CASE("Flash BDL COPY_PAGE ioctl on host", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t nand_bdl = nullptr;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &nand_bdl) == ESP_OK);
     REQUIRE(nand_bdl != nullptr);
@@ -184,7 +184,7 @@ TEST_CASE("Flash BDL COPY_PAGE ioctl on host", "[spi_nand_flash][bdl]")
 TEST_CASE("Flash BDL GET_NAND_FLASH_INFO and GET_BAD_BLOCKS_COUNT on host", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t nand_bdl = nullptr;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &nand_bdl) == ESP_OK);
     REQUIRE(nand_bdl != nullptr);
@@ -206,7 +206,7 @@ TEST_CASE("Flash BDL GET_NAND_FLASH_INFO and GET_BAD_BLOCKS_COUNT on host", "[sp
 TEST_CASE("Error path: nand_flash_get_blockdev NULL/invalid args", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
-    spi_nand_flash_config_t config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
     esp_blockdev_handle_t out = nullptr;
 
     REQUIRE(nand_flash_get_blockdev(nullptr, &out) == ESP_ERR_INVALID_ARG);
@@ -217,7 +217,7 @@ TEST_CASE("Error path: nand_flash_get_blockdev NULL/invalid args", "[spi_nand_fl
 TEST_CASE("Release and no use-after-free: create, release, create again, minimal r/w", "[spi_nand_flash][bdl]")
 {
     nand_file_mmap_emul_config_t conf = {"", 20 * 1024 * 1024, false};
-    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0};
+    spi_nand_flash_config_t nand_flash_config = {&conf, 0, SPI_NAND_IO_MODE_SIO, 0, {}};
 
     esp_blockdev_handle_t bdl = nullptr;
     REQUIRE(nand_flash_get_blockdev(&nand_flash_config, &bdl) == ESP_OK);
