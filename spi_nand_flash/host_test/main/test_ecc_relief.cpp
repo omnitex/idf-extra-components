@@ -26,6 +26,8 @@
 #include "nand_private/nand_impl_wrap.h"
 #include "nand_device_types.h"
 
+#include <vector>
+
 #include <catch2/catch_test_macros.hpp>
 
 namespace {
@@ -65,18 +67,26 @@ static void ecc_relief_test_deinit(spi_nand_flash_device_t *dev)
 
 } // namespace
 
-/* Convenience: init device with ECC relief enabled and given thresholds */
-static spi_nand_flash_device_t *init_device_with_relief(
+/* Host tests run one device at a time; emul config must outlive init. */
+static nand_file_mmap_emul_config_t g_relief_emul_conf;
+
+/**
+ * Init with ECC relief plus mmap size and Dhara gc_factor (passed through to
+ * dhara_map_init as gc_ratio; 0 is bumped to 1 inside Dhara).
+ */
+static spi_nand_flash_device_t *init_device_with_relief_ex(
     uint8_t mid_threshold,
     uint8_t high_threshold,
     uint8_t mid_count_limit,
     uint8_t max_consecutive,
-    uint16_t map_capacity)
+    uint16_t map_capacity,
+    uint8_t gc_factor,
+    size_t flash_file_size)
 {
-    static nand_file_mmap_emul_config_t conf = {"", 50 * 1024 * 1024, false};
+    g_relief_emul_conf = {"", flash_file_size, false};
     spi_nand_flash_config_t cfg = {};
-    cfg.emul_conf = &conf;
-    cfg.gc_factor = 0;
+    cfg.emul_conf = &g_relief_emul_conf;
+    cfg.gc_factor = gc_factor;
     cfg.io_mode = SPI_NAND_IO_MODE_SIO;
     cfg.flags = 0;
     cfg.ecc_relief.enabled              = true;
@@ -89,6 +99,19 @@ static spi_nand_flash_device_t *init_device_with_relief(
     spi_nand_flash_device_t *dev = nullptr;
     REQUIRE(ecc_relief_test_init(&cfg, &dev) == ESP_OK);
     return dev;
+}
+
+/* Default: 50 MiB backing, gc_factor 0 (Dhara still uses minimum gc_ratio 1). */
+static spi_nand_flash_device_t *init_device_with_relief(
+    uint8_t mid_threshold,
+    uint8_t high_threshold,
+    uint8_t mid_count_limit,
+    uint8_t max_consecutive,
+    uint16_t map_capacity)
+{
+    return init_device_with_relief_ex(mid_threshold, high_threshold, mid_count_limit,
+                                      max_consecutive, map_capacity, 0,
+                                      50 * 1024 * 1024);
 }
 
 /* --------------------------------------------------------------------------
@@ -477,6 +500,323 @@ TEST_CASE("SC-08: feature disabled behaves as before", "[ecc_relief]")
     nand_wrap_inject_ecc_event(dev, 10, NAND_ECC_7_8_BITS_CORRECTED);
 
     CHECK(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_ERR_NOT_SUPPORTED);
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-A: relief map exactly full (all PENDING) — 33rd HIGH cannot add a slot
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-A: map full of HIGH then extra HIGH does not grow map", "[ecc_relief]")
+{
+    constexpr uint16_t map_cap = 32;
+    auto *dev = init_device_with_relief_ex(2, 4, 3, 4, map_cap, 0, 50 * 1024 * 1024);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    for (uint32_t p = 0; p < map_cap; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap);
+        CHECK(s.map_capacity == map_cap);
+    }
+
+    nand_wrap_inject_ecc_event(dev, 100, NAND_ECC_7_8_BITS_CORRECTED);
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-A1: full map evicts a non-PENDING (MID-only) entry for a new HIGH
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-A1: map full evicts non-PENDING slot for new HIGH", "[ecc_relief]")
+{
+    constexpr uint16_t map_cap = 32;
+    auto *dev = init_device_with_relief_ex(2, 4, 3, 4, map_cap, 0, 50 * 1024 * 1024);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    for (uint32_t p = 0; p < map_cap - 1; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+    const uint32_t mid_track_page = 5000;
+    nand_wrap_inject_ecc_event(dev, mid_track_page, NAND_ECC_4_TO_6_BITS_CORRECTED);
+    nand_wrap_inject_ecc_event(dev, mid_track_page, NAND_ECC_4_TO_6_BITS_CORRECTED);
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap - 1);
+    }
+
+    nand_wrap_inject_ecc_event(dev, 9000, NAND_ECC_7_8_BITS_CORRECTED);
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-B: map full of HIGH — MID on new page is silently skipped (no growth)
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-B: map full of HIGH then MID on new page does not grow map", "[ecc_relief]")
+{
+    constexpr uint16_t map_cap = 16;
+    auto *dev = init_device_with_relief_ex(2, 4, 3, 4, map_cap, 0, 50 * 1024 * 1024);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    for (uint32_t p = 0; p < map_cap; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap);
+    }
+
+    nand_wrap_inject_ecc_event(dev, 9999, NAND_ECC_4_TO_6_BITS_CORRECTED);
+    nand_wrap_inject_ecc_event(dev, 9999, NAND_ECC_4_TO_6_BITS_CORRECTED);
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == map_cap);
+        CHECK(s.pages_pending_relief == map_cap);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-C: hammer same logical page after wide HIGH inject
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-C: hammer same logical page with relief inject", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    const uint32_t hammer_iters = 120;
+    const uint32_t logical_page = 1;
+    uint32_t relieved_before = 0;
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        relieved_before = s.total_pages_relieved;
+    }
+
+    std::vector<uint8_t> buf(page_size);
+    for (uint32_t iter = 0; iter < hammer_iters; iter++) {
+        memset(buf.data(), static_cast<int>(0x10 + (iter & 0x0F)), page_size);
+        REQUIRE(spi_nand_flash_write_page(dev, buf.data(), logical_page) == ESP_OK);
+    }
+
+    std::vector<uint8_t> read_buf(page_size, 0);
+    REQUIRE(spi_nand_flash_read_page(dev, read_buf.data(), logical_page) == ESP_OK);
+    CHECK(read_buf == buf);
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.total_pages_relieved >= relieved_before);
+        CHECK(s.map_entries_used <= s.map_capacity);
+        /* Journal activity can erase blocks and evict relief entries; count may drop below inject_count. */
+        CHECK(s.map_entries_used <= inject_count);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-D: hot set — round-robin small logical page ring under relief inject
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-D: hot set round-robin logical pages with relief inject", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    constexpr uint32_t k_ring = 16;
+    constexpr uint32_t m_iters = 256;
+    std::vector<uint8_t> buf(page_size);
+    for (uint32_t iter = 0; iter < m_iters; iter++) {
+        const uint32_t lp = iter % k_ring;
+        memset(buf.data(), static_cast<int>(0x40 + (iter & 0x3F)), page_size);
+        memcpy(buf.data(), &iter, sizeof(iter));
+        REQUIRE(spi_nand_flash_write_page(dev, buf.data(), lp) == ESP_OK);
+    }
+
+    for (uint32_t lp = 0; lp < k_ring; lp++) {
+        uint32_t last_iter = 0;
+        for (uint32_t iter = 0; iter < m_iters; iter++) {
+            if (iter % k_ring == lp) {
+                last_iter = iter;
+            }
+        }
+        memset(buf.data(), static_cast<int>(0x40 + (last_iter & 0x3F)), page_size);
+        memcpy(buf.data(), &last_iter, sizeof(last_iter));
+        std::vector<uint8_t> read_buf(page_size, 0);
+        REQUIRE(spi_nand_flash_read_page(dev, read_buf.data(), lp) == ESP_OK);
+        CHECK(read_buf == buf);
+    }
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used <= s.map_capacity);
+        CHECK(s.map_entries_used <= inject_count);
+        CHECK(s.total_pages_relieved >= 1);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-E: smaller backing store + gc_factor — writes, sync, GC, readback
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-E: GC under pressure with small flash and relief map", "[ecc_relief]")
+{
+    constexpr size_t flash_sz = 4 * 1024 * 1024;
+    constexpr uint16_t map_cap = 128;
+    auto *dev = init_device_with_relief_ex(2, 4, 3, 4, map_cap, 4, flash_sz);
+
+    uint32_t page_size = 0;
+    uint32_t page_count = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+    REQUIRE(spi_nand_flash_get_page_count(dev, &page_count) == ESP_OK);
+    REQUIRE(page_count > 8);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    const uint32_t inject_count = 64;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    const uint32_t write_span = (page_count - 1 < 300) ? (page_count - 1) : 300;
+    std::vector<uint8_t> wbuf(page_size);
+    for (uint32_t lp = 0; lp <= write_span; lp++) {
+        memset(wbuf.data(), static_cast<int>(0xA0 + (lp & 0x1F)), page_size);
+        memcpy(wbuf.data(), &lp, sizeof(lp));
+        REQUIRE(spi_nand_flash_write_page(dev, wbuf.data(), lp) == ESP_OK);
+    }
+
+    REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
+
+    for (int g = 0; g < 48; g++) {
+        REQUIRE(spi_nand_flash_gc(dev) == ESP_OK);
+        (void)g;
+    }
+
+    for (uint32_t check_lp : {0u, write_span / 2, write_span}) {
+        memset(wbuf.data(), static_cast<int>(0xA0 + (check_lp & 0x1F)), page_size);
+        memcpy(wbuf.data(), &check_lp, sizeof(check_lp));
+        std::vector<uint8_t> rbuf(page_size, 0);
+        REQUIRE(spi_nand_flash_read_page(dev, rbuf.data(), check_lp) == ESP_OK);
+        CHECK(rbuf == wbuf);
+    }
+
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used <= map_cap);
+        CHECK(s.map_capacity == map_cap);
+    }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * CC-F: explicit GC after relief write — logical data unchanged
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("CC-F: GC after relief scenario leaves logical readback stable", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    std::vector<uint8_t> write_buf(page_size);
+    for (uint32_t i = 0; i < page_size; i++) {
+        write_buf[i] = static_cast<uint8_t>((i * 7 + 3) & 0xFF);
+    }
+    REQUIRE(spi_nand_flash_write_page(dev, write_buf.data(), 1) == ESP_OK);
+
+    for (int g = 0; g < 32; g++) {
+        (void)spi_nand_flash_gc(dev);
+    }
+    REQUIRE(spi_nand_flash_sync(dev) == ESP_OK);
+
+    std::vector<uint8_t> read_buf(page_size, 0);
+    REQUIRE(spi_nand_flash_read_page(dev, read_buf.data(), 1) == ESP_OK);
+    CHECK(read_buf == write_buf);
 
     ecc_relief_test_deinit(dev);
 }
