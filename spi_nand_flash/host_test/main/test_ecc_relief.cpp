@@ -106,6 +106,7 @@ TEST_CASE("SC-01: no ECC event → no map entry", "[ecc_relief]")
     CHECK(stats.pages_pending_relief == 0);
     CHECK(stats.total_pages_relieved == 0);
     CHECK(stats.map_capacity == 64);
+    CHECK(stats.consecutive_cap_hits == 0);
 
     ecc_relief_test_deinit(dev);
 }
@@ -130,11 +131,21 @@ TEST_CASE("SC-09: stats.total_pages_relieved reflects actual relief count", "[ec
     REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
 
     /* Inject on a wide range after the erase. */
-    for (uint32_t p = 0; p < 128; p++) {
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
         nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
     }
 
-    /* Perform 3 writes; each write may relieve at most 1 page (cap=1). */
+    {
+        spi_nand_ecc_relief_stats_t s = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &s) == ESP_OK);
+        CHECK(s.map_entries_used == inject_count);
+        CHECK(s.pages_pending_relief == inject_count);
+        CHECK(s.total_pages_relieved == 0);
+        CHECK(s.consecutive_cap_hits == 0);
+    }
+
+    /* Perform 3 writes; each enqueue may relieve at most 1 page (cap=1). */
     std::vector<uint8_t> buf(page_size, 0xCC);
     for (uint32_t i = 1; i <= 3; i++) {
         REQUIRE(spi_nand_flash_write_page(dev, buf.data(), i) == ESP_OK);
@@ -142,8 +153,11 @@ TEST_CASE("SC-09: stats.total_pages_relieved reflects actual relief count", "[ec
 
     spi_nand_ecc_relief_stats_t stats = {};
     REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
-    /* At least one page relieved overall. */
+    /* Each logical write ran one journal enqueue → at most one relief each. */
     CHECK(stats.total_pages_relieved >= 1);
+    CHECK(stats.total_pages_relieved <= 3);
+    /* With max_consecutive_relief=1, every relieved page is followed by a cap hit before prog. */
+    CHECK(stats.consecutive_cap_hits == stats.total_pages_relieved);
 
     ecc_relief_test_deinit(dev);
 }
@@ -173,6 +187,9 @@ TEST_CASE("T10.10: BDL path ECC event updates relief map", "[ecc_relief]")
     /* The callback must have been registered regardless of BDL layer. */
     CHECK(stats.map_entries_used == 1);
     CHECK(stats.pages_pending_relief == 1);
+    CHECK(stats.total_pages_relieved == 0);
+    CHECK(stats.map_capacity == 64);
+    CHECK(stats.consecutive_cap_hits == 0);
 
     ecc_relief_test_deinit(dev);
 }
@@ -194,7 +211,12 @@ TEST_CASE("SC-03: MID reads accumulate and flag page", "[ecc_relief]")
     {
         spi_nand_ecc_relief_stats_t stats = {};
         REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
-        /* After 2 MID hits (limit=3), not yet pending */
+        /* After 2 MID hits (limit=3): one tracked page, not yet at PENDING threshold */
+        CHECK(stats.map_entries_used == 1);
+        CHECK(stats.pages_pending_relief == 0);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.map_capacity == 64);
+        CHECK(stats.consecutive_cap_hits == 0);
     }
 
     /* Third MID hit → should be flagged */
@@ -203,8 +225,12 @@ TEST_CASE("SC-03: MID reads accumulate and flag page", "[ecc_relief]")
     {
         spi_nand_ecc_relief_stats_t stats = {};
         REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
-        /* At or past limit, should be pending */
-        CHECK(stats.map_entries_used >= 1);
+        /* At limit: same map slot, now PENDING */
+        CHECK(stats.map_entries_used == 1);
+        CHECK(stats.pages_pending_relief == 1);
+        CHECK(stats.map_capacity == 64);
+        CHECK(stats.consecutive_cap_hits == 0);
+        CHECK(stats.total_pages_relieved == 0);
     }
 
     ecc_relief_test_deinit(dev);
@@ -236,6 +262,15 @@ TEST_CASE("SC-04: flagged head page → relief filler written, flag cleared", "[
     std::vector<uint8_t> warmup(page_size, 0x00);
     REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
 
+    {
+        spi_nand_ecc_relief_stats_t stats = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+        CHECK(stats.map_entries_used == 0);
+        CHECK(stats.pages_pending_relief == 0);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.consecutive_cap_hits == 0);
+    }
+
     /* Inject HIGH ECC on a wide range covering j->head's current position. */
     const uint32_t inject_count = 128;
     for (uint32_t p = 0; p < inject_count; p++) {
@@ -248,6 +283,10 @@ TEST_CASE("SC-04: flagged head page → relief filler written, flag cleared", "[
         REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
         pending_before = stats.pages_pending_relief;
         REQUIRE(pending_before > 0);
+        CHECK(stats.map_entries_used == inject_count);
+        CHECK(stats.pages_pending_relief == inject_count);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.map_capacity == 256);
     }
 
     /* Write another logical page; Dhara enqueues → relief check fires. */
@@ -260,6 +299,7 @@ TEST_CASE("SC-04: flagged head page → relief filler written, flag cleared", "[
     CHECK(stats.total_pages_relieved >= 1);
     /* Relieved pages had their PENDING flag cleared. */
     CHECK(stats.pages_pending_relief < pending_before);
+    CHECK(stats.map_entries_used == inject_count);
 
     ecc_relief_test_deinit(dev);
 }
@@ -282,9 +322,18 @@ TEST_CASE("SC-05: data written after relief page is readable", "[ecc_relief]")
     std::vector<uint8_t> warmup(page_size, 0x00);
     REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
 
+    const uint32_t inject_count = 128;
     /* Inject HIGH ECC on a wide range after the erase. */
-    for (uint32_t p = 0; p < 128; p++) {
+    for (uint32_t p = 0; p < inject_count; p++) {
         nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    {
+        spi_nand_ecc_relief_stats_t stats = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+        CHECK(stats.map_entries_used == inject_count);
+        CHECK(stats.pages_pending_relief == inject_count);
+        CHECK(stats.total_pages_relieved == 0);
     }
 
     /* Write a known pattern to logical page 1. */
@@ -298,6 +347,14 @@ TEST_CASE("SC-05: data written after relief page is readable", "[ecc_relief]")
     std::vector<uint8_t> read_buf(page_size, 0);
     REQUIRE(spi_nand_flash_read_page(dev, read_buf.data(), 1) == ESP_OK);
     CHECK(read_buf == write_buf);
+
+    {
+        spi_nand_ecc_relief_stats_t stats = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+        CHECK(stats.total_pages_relieved >= 1);
+        CHECK(stats.pages_pending_relief < inject_count);
+        CHECK(stats.map_entries_used == inject_count);
+    }
 
     ecc_relief_test_deinit(dev);
 }
@@ -328,6 +385,15 @@ TEST_CASE("SC-06: consecutive-skip cap enforced", "[ecc_relief]")
         nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
     }
 
+    {
+        spi_nand_ecc_relief_stats_t stats = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+        CHECK(stats.map_entries_used == inject_count);
+        CHECK(stats.pages_pending_relief == inject_count);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.consecutive_cap_hits == 0);
+    }
+
     /* Perform several writes to ensure the cap is exercised. */
     std::vector<uint8_t> buf(page_size, 0xBB);
     for (uint32_t i = 1; i <= 4; i++) {
@@ -337,6 +403,9 @@ TEST_CASE("SC-06: consecutive-skip cap enforced", "[ecc_relief]")
     spi_nand_ecc_relief_stats_t stats = {};
     REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
     CHECK(stats.consecutive_cap_hits >= 1);
+    CHECK(stats.total_pages_relieved >= 1);
+    CHECK(stats.pages_pending_relief < inject_count);
+    CHECK(stats.map_entries_used == inject_count);
 
     ecc_relief_test_deinit(dev);
 }
@@ -365,6 +434,8 @@ TEST_CASE("SC-07: erase evicts relief map entries", "[ecc_relief]")
         REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
         REQUIRE(stats.map_entries_used == 3);
         REQUIRE(stats.pages_pending_relief == 3);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.consecutive_cap_hits == 0);
     }
 
     /* Erase block 5 through the low-level wrap (which calls dhara_nand_erase internally) */
@@ -375,6 +446,9 @@ TEST_CASE("SC-07: erase evicts relief map entries", "[ecc_relief]")
         REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
         CHECK(stats.map_entries_used == 0);
         CHECK(stats.pages_pending_relief == 0);
+        CHECK(stats.map_capacity == 64);
+        CHECK(stats.total_pages_relieved == 0);
+        CHECK(stats.consecutive_cap_hits == 0);
     }
 
     ecc_relief_test_deinit(dev);
@@ -401,6 +475,8 @@ TEST_CASE("SC-08: feature disabled behaves as before", "[ecc_relief]")
 
     /* No crash when injecting events with NULL callback */
     nand_wrap_inject_ecc_event(dev, 10, NAND_ECC_7_8_BITS_CORRECTED);
+
+    CHECK(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_ERR_NOT_SUPPORTED);
 
     ecc_relief_test_deinit(dev);
 }
