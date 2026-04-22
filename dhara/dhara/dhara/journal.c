@@ -898,6 +898,10 @@ int dhara_journal_enqueue(struct dhara_journal *j,
         }
 
         /* Normal write */
+        if (j->relief_check && relief_consecutive >= max_rel) {
+            j->relief_cap_hits++;
+            relief_consecutive = 0;
+        }
         if (!(data && dhara_nand_prog(j->nand, j->head, data, &my_err))) {
             return push_meta(j, meta, err);
         }
@@ -940,6 +944,10 @@ int dhara_journal_copy(struct dhara_journal *j,
             continue;
         }
 
+        if (j->relief_check && relief_consecutive >= max_rel) {
+            j->relief_cap_hits++;
+            relief_consecutive = 0;
+        }
         if (!dhara_nand_copy(j->nand, p, j->head, &my_err)) {
             return push_meta(j, meta, err);
         }

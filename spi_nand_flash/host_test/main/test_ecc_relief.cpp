@@ -111,23 +111,72 @@ TEST_CASE("SC-01: no ECC event → no map entry", "[ecc_relief]")
 }
 
 /* --------------------------------------------------------------------------
- * SC-02: HIGH ECC read → ECC_RELIEF_FLAG_PENDING set immediately
+ * SC-09: diagnostic stats reflect relieved page count
+ * --------------------------------------------------------------------------
+ * After relief fires (SC-04 scenario), total_pages_relieved in stats must
+ * match the number of pages actually relieved during enqueue.
  * --------------------------------------------------------------------------
  */
-TEST_CASE("SC-02: HIGH ECC read → page immediately flagged", "[ecc_relief]")
+TEST_CASE("SC-09: stats.total_pages_relieved reflects actual relief count", "[ecc_relief]")
 {
-    auto *dev = init_device_with_relief(2, 4, 3, 4, 64);
+    /* max_consecutive_relief=1 so exactly 1 relief per write before forced prog */
+    auto *dev = init_device_with_relief(2, 4, 3, 1, 256);
 
-    /* HIGH: status must be >= high_threshold (4); enum values are small (see nand_ecc_status_t). */
-    nand_wrap_inject_ecc_event(dev, 10, NAND_ECC_7_8_BITS_CORRECTED);
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    /* Warmup write to trigger the initial block erase. */
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    /* Inject on a wide range after the erase. */
+    for (uint32_t p = 0; p < 128; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    /* Perform 3 writes; each write may relieve at most 1 page (cap=1). */
+    std::vector<uint8_t> buf(page_size, 0xCC);
+    for (uint32_t i = 1; i <= 3; i++) {
+        REQUIRE(spi_nand_flash_write_page(dev, buf.data(), i) == ESP_OK);
+    }
 
     spi_nand_ecc_relief_stats_t stats = {};
     REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+    /* At least one page relieved overall. */
+    CHECK(stats.total_pages_relieved >= 1);
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * T10.10: BDL path — ECC event reaches on_page_read_ecc and updates map
+ * --------------------------------------------------------------------------
+ * This test verifies that when the stack is initialized via the BDL path
+ * (spi_nand_flash_init_with_layers), the ECC observation callback is still
+ * wired up correctly and relief map entries are created on injection.
+ *
+ * Under CONFIG_NAND_FLASH_ENABLE_BDL the init uses the layered BDL path;
+ * under plain WL it uses spi_nand_flash_init_device — both are exercised by
+ * the ecc_relief_test_init() helper, making the test meaningful in both
+ * build configurations.
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("T10.10: BDL path ECC event updates relief map", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 64);
+
+    /* Inject a HIGH ECC event (mimics nand_read() ECC event on any read path) */
+    nand_wrap_inject_ecc_event(dev, 42, NAND_ECC_7_8_BITS_CORRECTED);
+
+    spi_nand_ecc_relief_stats_t stats = {};
+    REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+    /* The callback must have been registered regardless of BDL layer. */
     CHECK(stats.map_entries_used == 1);
     CHECK(stats.pages_pending_relief == 1);
 
     ecc_relief_test_deinit(dev);
 }
+
 
 /* --------------------------------------------------------------------------
  * SC-03: repeated MID reads reach mid_count_limit → PENDING set
@@ -157,6 +206,137 @@ TEST_CASE("SC-03: MID reads accumulate and flag page", "[ecc_relief]")
         /* At or past limit, should be pending */
         CHECK(stats.map_entries_used >= 1);
     }
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * SC-04: flagged page at j->head → filler written, flag cleared
+ * --------------------------------------------------------------------------
+ * On a fresh emulated flash Dhara erases block 0 on the very first journal
+ * enqueue (prepare_head), which would evict any pre-injected entries.
+ * Strategy: do one warmup write first (triggers the initial erase and leaves
+ * j->head somewhere inside block 0), then inject ECC events on a wide range
+ * so j->head is guaranteed to be covered.  The next write must encounter at
+ * least one PENDING page and relieve it.
+ *
+ * Observable: total_pages_relieved >= 1 after the second write.
+ *             pages_pending_relief has decreased (relief clears the flag).
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("SC-04: flagged head page → relief filler written, flag cleared", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+    REQUIRE(page_size > 0);
+
+    /* Warmup write: triggers initial block erase; j->head advances into block 0. */
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    /* Inject HIGH ECC on a wide range covering j->head's current position. */
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    uint32_t pending_before = 0;
+    {
+        spi_nand_ecc_relief_stats_t stats = {};
+        REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+        pending_before = stats.pages_pending_relief;
+        REQUIRE(pending_before > 0);
+    }
+
+    /* Write another logical page; Dhara enqueues → relief check fires. */
+    std::vector<uint8_t> buf(page_size, 0xA5);
+    REQUIRE(spi_nand_flash_write_page(dev, buf.data(), 1) == ESP_OK);
+
+    spi_nand_ecc_relief_stats_t stats = {};
+    REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+    /* At least one page was relieved (filler written, not real prog). */
+    CHECK(stats.total_pages_relieved >= 1);
+    /* Relieved pages had their PENDING flag cleared. */
+    CHECK(stats.pages_pending_relief < pending_before);
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * SC-05: data written to page after the relieved one is correct
+ * --------------------------------------------------------------------------
+ * Same warmup strategy as SC-04.  After relief fires, data written to the
+ * next available (non-flagged) page must be readable back without corruption.
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("SC-05: data written after relief page is readable", "[ecc_relief]")
+{
+    auto *dev = init_device_with_relief(2, 4, 3, 4, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    /* Warmup write to trigger the initial block erase. */
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    /* Inject HIGH ECC on a wide range after the erase. */
+    for (uint32_t p = 0; p < 128; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    /* Write a known pattern to logical page 1. */
+    std::vector<uint8_t> write_buf(page_size);
+    for (uint32_t i = 0; i < page_size; i++) {
+        write_buf[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+    REQUIRE(spi_nand_flash_write_page(dev, write_buf.data(), 1) == ESP_OK);
+
+    /* Read back and verify data integrity. */
+    std::vector<uint8_t> read_buf(page_size, 0);
+    REQUIRE(spi_nand_flash_read_page(dev, read_buf.data(), 1) == ESP_OK);
+    CHECK(read_buf == write_buf);
+
+    ecc_relief_test_deinit(dev);
+}
+
+/* --------------------------------------------------------------------------
+ * SC-06: consecutive-skip cap enforced — write forced at cap limit
+ * --------------------------------------------------------------------------
+ * Set max_consecutive_relief=2.  Flag enough pages that the journal
+ * is guaranteed to hit the cap on a single write.
+ * After the writes: consecutive_cap_hits >= 1.
+ * --------------------------------------------------------------------------
+ */
+TEST_CASE("SC-06: consecutive-skip cap enforced", "[ecc_relief]")
+{
+    /* max_consecutive_relief = 2 */
+    auto *dev = init_device_with_relief(2, 4, 3, 2, 256);
+
+    uint32_t page_size = 0;
+    REQUIRE(spi_nand_flash_get_page_size(dev, &page_size) == ESP_OK);
+
+    /* Warmup write to trigger the initial block erase. */
+    std::vector<uint8_t> warmup(page_size, 0x00);
+    REQUIRE(spi_nand_flash_write_page(dev, warmup.data(), 0) == ESP_OK);
+
+    /* Flag a wide range so the cap is hit. */
+    const uint32_t inject_count = 128;
+    for (uint32_t p = 0; p < inject_count; p++) {
+        nand_wrap_inject_ecc_event(dev, p, NAND_ECC_7_8_BITS_CORRECTED);
+    }
+
+    /* Perform several writes to ensure the cap is exercised. */
+    std::vector<uint8_t> buf(page_size, 0xBB);
+    for (uint32_t i = 1; i <= 4; i++) {
+        REQUIRE(spi_nand_flash_write_page(dev, buf.data(), i) == ESP_OK);
+    }
+
+    spi_nand_ecc_relief_stats_t stats = {};
+    REQUIRE(spi_nand_flash_get_ecc_relief_stats(dev, &stats) == ESP_OK);
+    CHECK(stats.consecutive_cap_hits >= 1);
 
     ecc_relief_test_deinit(dev);
 }

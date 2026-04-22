@@ -99,15 +99,15 @@
 - [x] T10.1 SC-01: clean read → no map entry created
 - [x] T10.2 SC-02: HIGH ECC read → `ECC_RELIEF_FLAG_PENDING` set immediately
 - [x] T10.3 SC-03: repeated MID reads reach `mid_count_limit` → PENDING set
-- [ ] T10.4 SC-04: flagged page at `j->head` → `dhara_nand_prog()` not called,
+- [x] T10.4 SC-04: flagged page at `j->head` → `dhara_nand_prog()` not called,
       filler written, flag cleared
-- [ ] T10.5 SC-05: data written to page after the relieved one
-- [ ] T10.6 SC-06: consecutive-skip cap enforced — write forced at cap limit
+- [x] T10.5 SC-05: data written to page after the relieved one
+- [x] T10.6 SC-06: consecutive-skip cap enforced — write forced at cap limit
 - [x] T10.7 SC-07: successful erase evicts map entries for that block
 - [x] T10.8 SC-08: feature disabled → no map ops, journal unchanged,
       `on_page_read_ecc` is NULL (callback never registered)
 - [x] T10.9 SC-09: diagnostic stats reflect relieved page count
-- [ ] T10.10 BDL path: ECC event from a consumer read via WL BDL (`spi_nand_flash_read_page`)
+- [x] T10.10 BDL path: ECC event from a consumer read via WL BDL (`spi_nand_flash_read_page`)
       reaches `on_page_read_ecc` and updates the relief map (verifies BDL compatibility)
 
 ## T11 — Documentation

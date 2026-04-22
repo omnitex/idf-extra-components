@@ -127,7 +127,12 @@ struct dhara_journal {
     /* Maximum consecutive pages to relieve before forcing a write.
      * 0 = unlimited (not recommended). Set alongside relief_check.
      */
-    int   max_consecutive_relief;
+    int      max_consecutive_relief;
+    /* Cumulative count of times the consecutive-skip cap was reached and
+     * forced a normal write. Incremented in dhara_journal_enqueue() /
+     * dhara_journal_copy() each time relief_consecutive >= max_consecutive_relief.
+     */
+    uint32_t relief_cap_hits;
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip

@@ -669,7 +669,7 @@ esp_err_t spi_nand_flash_get_ecc_relief_stats(spi_nand_flash_device_t *handle,
     stats->total_pages_relieved  = priv->stat_pages_relieved;
     stats->map_entries_used      = used;
     stats->map_capacity          = cap;
-    stats->consecutive_cap_hits  = priv->stat_consecutive_cap_hits;
+    stats->consecutive_cap_hits  = priv->dhara_map.journal.relief_cap_hits;
 
     return ESP_OK;
 }
