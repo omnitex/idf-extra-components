@@ -42,7 +42,11 @@ esp_err_t nand_wrap_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
     esp_err_t ret = ESP_OK;
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
-    ret = nand_erase_block(handle, block);
+    if (handle->ops && handle->ops->erase_block) {
+        ret = handle->ops->erase_block(handle, block);
+    } else {
+        ret = nand_erase_block(handle, block);
+    }
     xSemaphoreGive(handle->mutex);
     return ret;
 }

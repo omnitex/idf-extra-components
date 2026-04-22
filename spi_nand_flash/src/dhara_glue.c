@@ -411,7 +411,17 @@ static esp_err_t dhara_erase_chip(spi_nand_flash_device_t *handle)
 
 static esp_err_t dhara_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
-    return nand_erase_block(handle, block);
+    esp_err_t ret = nand_erase_block(handle, block);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    spi_nand_flash_dhara_priv_data_t *dhara_priv_data = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+    if (dhara_priv_data && dhara_priv_data->ecc_relief_map) {
+        dhara_page_t first = (dhara_page_t)block << handle->chip.log2_ppb;
+        dhara_page_t count = (dhara_page_t)1 << handle->chip.log2_ppb;
+        relief_map_evict_range(dhara_priv_data, first, count);
+    }
+    return ESP_OK;
 }
 
 
