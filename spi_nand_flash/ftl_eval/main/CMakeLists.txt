@@ -2,8 +2,6 @@ set(srcs
     "api_contract_test.c"
     "main.c"
     "config/app_config.c"
-    "ftl/ftl.c"
-    "ftl/dhara_ftl.c"
     "workload/workload.c"
     "workload/workload_sequential.c"
     "workload/workload_random.c"
@@ -15,8 +13,7 @@ set(srcs
 
 idf_component_register(
     SRCS ${srcs}
-    INCLUDE_DIRS "." "config" "ftl" "workload" "metrics" "runner" "reporter"
-    PRIV_INCLUDE_DIRS "../../priv_include"
+    INCLUDE_DIRS "." "config" "workload" "metrics" "runner" "reporter"
     REQUIRES spi_nand_flash
 )
 
