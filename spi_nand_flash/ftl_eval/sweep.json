@@ -1,0 +1,24 @@
+{
+  "name": "gc_factor_sweep",
+  "output": "report.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    { "name": "fresh", "preset": "FRESH" },
+    { "name": "aged", "preset": "AGED" },
+    { "name": "failing", "preset": "FAILING" }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_gc5", "ftl": "dhara", "gc_factor": 5 },
+    { "name": "dhara_gc10", "ftl": "dhara", "gc_factor": 10 },
+    { "name": "dhara_gc15", "ftl": "dhara", "gc_factor": 15 }
+  ],
+  "workload": {
+    "type": "random",
+    "total_writes": 100000,
+    "write_size_bytes": 2048
+  }
+}
