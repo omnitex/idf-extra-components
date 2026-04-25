@@ -16,8 +16,10 @@ if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" GREATER_EQUAL "6.0")
 endif()
 
 if(${target} STREQUAL "linux")
-    list(APPEND srcs "src/nand_impl_linux.c"
-                     "src/nand_linux_mmap_emul.c"
+    if(NOT CONFIG_NAND_FLASH_FAULT_SIM)
+        list(APPEND srcs "src/nand_impl_linux.c")
+    endif()
+    list(APPEND srcs "src/nand_linux_mmap_emul.c"
                      "src/spi_nand_flash_test_helpers.c")
 else()
     list(APPEND srcs "src/devices/nand_winbond.c"

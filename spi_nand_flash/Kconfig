@@ -32,4 +32,16 @@ menu "SPI NAND Flash configuration"
         help
             This option enables gathering host test statistics and SPI NAND flash wear levelling simulation.
 
+    config NAND_FLASH_FAULT_SIM
+        bool "Enable NAND fault-injection simulator (host tests only)"
+        depends on IDF_TARGET_LINUX
+        default n
+        help
+            When enabled, nand_fault_sim.c replaces nand_impl_linux.c at link time.
+            The fault simulator implements the same nand_impl interface and supports
+            configurable fault injection: factory bad blocks, erase/program wear-out,
+            retention failure, per-operation probabilistic failures, power-loss crash
+            with torn writes, and ECC read-disturb simulation.
+            Linux target only. Zero impact on firmware builds.
+
 endmenu
