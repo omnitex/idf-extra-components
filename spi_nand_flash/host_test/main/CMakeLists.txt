@@ -1,8 +1,12 @@
 set(src "test_app_main.cpp")
 
+list(APPEND src
+    "app_config_test_shim.c"
+    "test_app_config.cpp"
+)
+
 if(CONFIG_NAND_FLASH_FAULT_SIM)
     list(APPEND src
-        "nand_fault_sim.c"
         "dhara_ftl.cpp"
         "test_fault_sim.cpp"
         "test_ftl_robustness.cpp"

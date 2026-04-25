@@ -18,6 +18,8 @@ endif()
 if(${target} STREQUAL "linux")
     if(NOT CONFIG_NAND_FLASH_FAULT_SIM)
         list(APPEND srcs "src/nand_impl_linux.c")
+    else()
+        list(APPEND srcs "src/nand_fault_sim.c")
     endif()
     list(APPEND srcs "src/nand_linux_mmap_emul.c"
                      "src/spi_nand_flash_test_helpers.c")
