@@ -1,5 +1,5 @@
 {
-  "name": "gc_factor_sweep",
+  "name": "gc_overhead_sweep",
   "output": "report.json",
   "nand": {
     "num_blocks": 128,
@@ -12,9 +12,10 @@
     { "name": "failing", "preset": "FAILING" }
   ],
   "ftl_configs": [
-    { "name": "dhara_gc5", "ftl": "dhara", "gc_factor": 5 },
-    { "name": "dhara_gc10", "ftl": "dhara", "gc_factor": 10 },
-    { "name": "dhara_gc15", "ftl": "dhara", "gc_factor": 15 }
+    { "name": "dhara_25pct", "ftl": "dhara", "gc_overhead_percent": 25.0 },
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 },
+    { "name": "dhara_15pct", "ftl": "dhara", "gc_overhead_percent": 15.0 },
+    { "name": "dhara_10pct", "ftl": "dhara", "gc_overhead_percent": 10.0 }
   ],
   "workload": {
     "type": "random",
