@@ -1,0 +1,2 @@
+# Force legacy path so host_test links test_nand_flash.cpp + test_nand_flash_ftl.cpp
+# CONFIG_NAND_FLASH_ENABLE_BDL is not set
