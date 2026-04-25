@@ -73,4 +73,16 @@ menu "SPI NAND Flash configuration"
             Compared against ecc_corrected_bits_status after the pre-read (see nand_ecc_status_t).
             Typical values: 1 = NAND_ECC_1_TO_3_BITS_CORRECTED, 3 = NAND_ECC_4_TO_6_BITS_CORRECTED.
 
+    config NAND_FLASH_FAULT_SIM
+        bool "Enable NAND fault-injection simulator (for linux target ftl_eval app)"
+        depends on IDF_TARGET_LINUX
+        default n
+        help
+            When enabled, nand_fault_sim.c replaces nand_impl_linux.c at link time.
+            The fault simulator implements the same nand_impl interface and supports
+            configurable fault injection: factory bad blocks, erase/program wear-out,
+            retention failure, per-operation probabilistic failures, power-loss crash
+            with torn writes, and ECC read-disturb simulation.
+            Linux target only. Zero impact on firmware builds.
+
 endmenu

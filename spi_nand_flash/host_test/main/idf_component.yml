@@ -1,5 +1,6 @@
 dependencies:
   espressif/catch2: "^3.4.0"
+  espressif/cjson: "*"
   espressif/spi_nand_flash:
     version: '*'
     override_path: '../../'
