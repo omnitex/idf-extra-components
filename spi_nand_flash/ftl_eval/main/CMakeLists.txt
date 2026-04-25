@@ -19,3 +19,5 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "../../priv_include"
     REQUIRES spi_nand_flash
 )
+
+target_link_libraries(${COMPONENT_LIB} PRIVATE m)

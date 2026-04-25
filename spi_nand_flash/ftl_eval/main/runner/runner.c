@@ -125,7 +125,8 @@ static cJSON *build_ftl_config_json(const ftl_config_t *ftl_cfg)
 
     cJSON_AddStringToObject(obj, "name", (ftl_cfg->name != NULL) ? ftl_cfg->name : "");
     cJSON_AddStringToObject(obj, "ftl", (ftl_cfg->ftl != NULL) ? ftl_cfg->ftl : "");
-    cJSON_AddNumberToObject(obj, "gc_factor", (double)ftl_cfg->gc_factor);
+    cJSON_AddNumberToObject(obj, "gc_overhead_percent", ftl_cfg->gc_overhead_percent);
+    cJSON_AddNumberToObject(obj, "gc_ratio", (double)ftl_cfg->gc_ratio);
     return obj;
 }
 
@@ -257,7 +258,7 @@ esp_err_t run_single(const sweep_config_t *cfg,
 
     nand_cfg = (spi_nand_flash_config_t) {
         .emul_conf = &emul_cfg,
-        .gc_factor = (uint8_t)ftl_cfg->gc_factor,
+        .gc_factor = ftl_cfg->gc_ratio,
         .io_mode = SPI_NAND_IO_MODE_SIO,
         .flags = 0,
     };

@@ -47,7 +47,12 @@ typedef struct {
 typedef struct {
     char *name;
     char *ftl;
-    uint32_t gc_factor;
+    double gc_overhead_percent; /*!< Fraction of NAND capacity reserved for GC, in percent (e.g. 25.0 = 25%).
+                                     Larger value = more headroom = lower WAF but less usable capacity.
+                                     Accepted JSON field: "gc_overhead_percent".  Legacy "gc_factor" is
+                                     also accepted and converted automatically. */
+    uint8_t gc_ratio;           /*!< Derived Dhara gc_ratio: round(100/gc_overhead_percent - 1), clamped [1,255].
+                                     This is what is passed to spi_nand_flash_init_device(). */
 } ftl_config_t;
 
 typedef struct {

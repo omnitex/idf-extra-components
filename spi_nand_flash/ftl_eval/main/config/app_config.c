@@ -6,6 +6,7 @@
 
 #include "app_config.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -188,6 +189,30 @@ static bool parse_scenarios(cJSON *root, sweep_config_t *cfg)
     return true;
 }
 
+static bool parse_ftl_gc(cJSON *item, ftl_config_t *ftl_cfg)
+{
+    cJSON *pct_item = cJSON_GetObjectItemCaseSensitive(item, "gc_overhead_percent");
+    cJSON *legacy_item = cJSON_GetObjectItemCaseSensitive(item, "gc_factor");
+
+    if (cJSON_IsNumber(pct_item) && pct_item->valuedouble > 0.0 && pct_item->valuedouble < 100.0) {
+        ftl_cfg->gc_overhead_percent = pct_item->valuedouble;
+    } else if (cJSON_IsNumber(legacy_item) && legacy_item->valuedouble >= 1.0) {
+        double gc_ratio = legacy_item->valuedouble;
+        ftl_cfg->gc_overhead_percent = 100.0 / (gc_ratio + 1.0);
+    } else {
+        return false;
+    }
+
+    double ratio = round(100.0 / ftl_cfg->gc_overhead_percent - 1.0);
+    if (ratio < 1.0) {
+        ratio = 1.0;
+    } else if (ratio > 255.0) {
+        ratio = 255.0;
+    }
+    ftl_cfg->gc_ratio = (uint8_t)ratio;
+    return true;
+}
+
 static bool parse_ftl_configs(cJSON *root, sweep_config_t *cfg)
 {
     cJSON *ftl_configs = cJSON_GetObjectItemCaseSensitive(root, "ftl_configs");
@@ -211,7 +236,7 @@ static bool parse_ftl_configs(cJSON *root, sweep_config_t *cfg)
         if (!cJSON_IsObject(item) ||
             !parse_required_string(item, "name", &cfg->ftl_configs[i].name) ||
             !parse_required_string(item, "ftl", &cfg->ftl_configs[i].ftl) ||
-            !parse_required_u32(item, "gc_factor", &cfg->ftl_configs[i].gc_factor)) {
+            !parse_ftl_gc(item, &cfg->ftl_configs[i])) {
             return false;
         }
     }
