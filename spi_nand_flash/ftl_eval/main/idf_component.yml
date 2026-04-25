@@ -1,0 +1,5 @@
+dependencies:
+  espressif/cjson: "*"
+  espressif/spi_nand_flash:
+    version: '*'
+    override_path: '../../'
