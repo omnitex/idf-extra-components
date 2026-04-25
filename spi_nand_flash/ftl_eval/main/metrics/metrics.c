@@ -10,10 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_blockdev.h"
+#include "esp_nand_blockdev.h"
 #include "nand_fault_sim.h"
-#include "spi_nand_flash.h"
-
-#include "../../../priv_include/nand_impl.h"
 
 static int compare_u32_ascending(const void *lhs, const void *rhs)
 {
@@ -117,33 +116,17 @@ void metrics_record_worn_out(metrics_t *m, uint32_t write_index)
     }
 }
 
-esp_err_t metrics_collect_bad_blocks(metrics_t *m, spi_nand_flash_device_t *nand, bool initial_sample)
+esp_err_t metrics_collect_bad_blocks(metrics_t *m, esp_blockdev_handle_t bdl, bool initial_sample)
 {
     uint32_t bad_blocks = 0;
-    uint32_t num_blocks = 0;
-    uint32_t block = 0;
-    esp_err_t err = ESP_OK;
 
-    if (m == NULL || nand == NULL) {
+    if (m == NULL || bdl == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    err = spi_nand_flash_get_block_num(nand, &num_blocks);
+    esp_err_t err = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_GET_BAD_BLOCKS_COUNT, &bad_blocks);
     if (err != ESP_OK) {
         return err;
-    }
-
-    for (block = 0; block < num_blocks; block++) {
-        bool is_bad = false;
-
-        err = nand_is_bad(nand, block, &is_bad);
-        if (err != ESP_OK) {
-            return err;
-        }
-
-        if (is_bad) {
-            bad_blocks++;
-        }
     }
 
     if (initial_sample) {

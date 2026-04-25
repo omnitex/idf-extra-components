@@ -9,12 +9,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "esp_blockdev.h"
 #include "esp_err.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct spi_nand_flash_device_t spi_nand_flash_device_t;
 
 typedef struct {
     uint32_t reads_attempted;
@@ -45,7 +44,7 @@ void metrics_record_read(metrics_t *m, bool success);
 void metrics_record_write(metrics_t *m, bool success);
 void metrics_record_ftl_error(metrics_t *m);
 void metrics_record_worn_out(metrics_t *m, uint32_t write_index);
-esp_err_t metrics_collect_bad_blocks(metrics_t *m, spi_nand_flash_device_t *nand, bool initial_sample);
+esp_err_t metrics_collect_bad_blocks(metrics_t *m, esp_blockdev_handle_t bdl, bool initial_sample);
 esp_err_t metrics_collect_prog_stats(metrics_t *m, uint32_t num_pages);
 esp_err_t metrics_collect_erase_stats(metrics_t *m, uint32_t num_blocks);
 
