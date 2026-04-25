@@ -11,8 +11,9 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "esp_blockdev.h"
 #include "esp_check.h"
-#include "ftl.h"
+#include "esp_nand_blockdev.h"
 #include "nand_fault_sim.h"
 #include "nand_linux_mmap_emul.h"
 #include "reporter/reporter.h"
@@ -115,21 +116,6 @@ static size_t emulated_flash_size_bytes(const sweep_config_t *cfg)
     return (size_t)cfg->nand.num_blocks * (size_t)cfg->nand.pages_per_block * emulated_page_size;
 }
 
-static cJSON *build_ftl_config_json(const ftl_config_t *ftl_cfg)
-{
-    cJSON *obj = cJSON_CreateObject();
-
-    if (obj == NULL) {
-        return NULL;
-    }
-
-    cJSON_AddStringToObject(obj, "name", (ftl_cfg->name != NULL) ? ftl_cfg->name : "");
-    cJSON_AddStringToObject(obj, "ftl", (ftl_cfg->ftl != NULL) ? ftl_cfg->ftl : "");
-    cJSON_AddNumberToObject(obj, "gc_overhead_percent", ftl_cfg->gc_overhead_percent);
-    cJSON_AddNumberToObject(obj, "gc_ratio", (double)ftl_cfg->gc_ratio);
-    return obj;
-}
-
 static esp_err_t build_workload_config_json(const sweep_config_t *cfg,
                                             uint32_t logical_sector_count,
                                             cJSON **out)
@@ -171,14 +157,13 @@ static esp_err_t build_workload_config_json(const sweep_config_t *cfg,
 static esp_err_t execute_workload_op(const workload_op_t *op,
                                      uint32_t page_size,
                                      uint32_t logical_sector_count,
-                                     const ftl_ops_t *ftl_ops,
-                                     void *ftl_ctx,
+                                     esp_blockdev_handle_t bdl,
                                      metrics_t *metrics)
 {
     uint32_t sectors_per_op;
 
     ESP_RETURN_ON_FALSE(op != NULL, ESP_ERR_INVALID_ARG, TAG, "op must not be NULL");
-    ESP_RETURN_ON_FALSE(ftl_ops != NULL, ESP_ERR_INVALID_ARG, TAG, "ftl_ops must not be NULL");
+    ESP_RETURN_ON_FALSE(bdl != NULL, ESP_ERR_INVALID_ARG, TAG, "bdl must not be NULL");
     ESP_RETURN_ON_FALSE(metrics != NULL, ESP_ERR_INVALID_ARG, TAG, "metrics must not be NULL");
     ESP_RETURN_ON_FALSE(page_size > 0, ESP_ERR_INVALID_ARG, TAG, "page_size must not be 0");
     ESP_RETURN_ON_FALSE(op->data_len % page_size == 0, ESP_ERR_INVALID_ARG, TAG,
@@ -191,13 +176,14 @@ static esp_err_t execute_workload_op(const workload_op_t *op,
     for (uint32_t i = 0; i < sectors_per_op; i++) {
         const uint8_t *write_ptr = op->data + ((size_t)i * page_size);
         uint8_t *read_ptr = op->data + ((size_t)i * page_size);
+        uint64_t byte_addr = (uint64_t)(op->sector + i) * page_size;
         esp_err_t io_ret;
 
         if (op->is_write) {
-            io_ret = ftl_ops->write(ftl_ctx, op->sector + i, write_ptr);
+            io_ret = bdl->ops->write(bdl, write_ptr, byte_addr, page_size);
             metrics_record_write(metrics, io_ret == ESP_OK);
         } else {
-            io_ret = ftl_ops->read(ftl_ctx, op->sector + i, read_ptr);
+            io_ret = bdl->ops->read(bdl, read_ptr, page_size, byte_addr, page_size);
             metrics_record_read(metrics, io_ret == ESP_OK);
         }
 
@@ -216,22 +202,19 @@ esp_err_t run_single(const sweep_config_t *cfg,
 {
     esp_err_t ret = ESP_OK;
     esp_err_t cleanup_ret;
-    spi_nand_flash_device_t *nand = NULL;
-    ftl_ops_t *ftl_ops = NULL;
+    esp_blockdev_handle_t wl_bdl = NULL;
     workload_ops_t *workload_ops = NULL;
-    cJSON *ftl_config_json = NULL;
     cJSON *workload_config_json = NULL;
     nand_fault_sim_config_t fault_cfg;
     uint32_t *allocated_bad_blocks = NULL;
     nand_file_mmap_emul_config_t emul_cfg = { 0 };
     spi_nand_flash_config_t nand_cfg;
-    void *ftl_ctx = NULL;
     void *workload_ctx = NULL;
     bool fault_sim_inited = false;
-    bool nand_inited = false;
-    bool ftl_inited = false;
+    bool bdl_inited = false;
     bool workload_inited = false;
     uint32_t logical_sector_count = 0;
+    uint32_t page_size = 0;
 
     ESP_RETURN_ON_FALSE(cfg != NULL, ESP_ERR_INVALID_ARG, TAG, "cfg must not be NULL");
     ESP_RETURN_ON_FALSE(scenario != NULL, ESP_ERR_INVALID_ARG, TAG, "scenario must not be NULL");
@@ -263,25 +246,19 @@ esp_err_t run_single(const sweep_config_t *cfg,
         .flags = 0,
     };
 
-    ESP_GOTO_ON_ERROR(spi_nand_flash_init_device(&nand_cfg, &nand), fail, TAG,
-                      "spi_nand_flash_init_device failed");
-    nand_inited = true;
+    ESP_GOTO_ON_ERROR(spi_nand_flash_init_with_layers(&nand_cfg, &wl_bdl), fail, TAG,
+                      "spi_nand_flash_init_with_layers failed");
+    bdl_inited = true;
 
-    ESP_GOTO_ON_ERROR(metrics_collect_bad_blocks(&result->metrics, nand, true), fail, TAG,
+    ESP_GOTO_ON_ERROR(metrics_collect_bad_blocks(&result->metrics, wl_bdl, true), fail, TAG,
                       "failed to collect initial bad blocks");
 
-    ftl_ops = ftl_create(ftl_cfg->ftl);
-    ESP_GOTO_ON_FALSE(ftl_ops != NULL, ESP_ERR_NOT_FOUND, fail, TAG, "unknown FTL: %s", ftl_cfg->ftl);
+    page_size = (uint32_t)wl_bdl->geometry.write_size;
+    ESP_GOTO_ON_FALSE(page_size > 0, ESP_ERR_INVALID_STATE, fail, TAG, "BDL page size is 0");
 
-    ftl_config_json = build_ftl_config_json(ftl_cfg);
-    ESP_GOTO_ON_FALSE(ftl_config_json != NULL, ESP_ERR_NO_MEM, fail, TAG,
-                      "failed to create FTL config JSON");
-
-    ESP_GOTO_ON_ERROR(ftl_ops->init(&ftl_ctx, nand, ftl_config_json), fail, TAG, "ftl init failed");
-    ftl_inited = true;
-
-    ESP_GOTO_ON_ERROR(spi_nand_flash_get_capacity(nand, &logical_sector_count), fail, TAG,
-                      "failed to get logical sector count");
+    logical_sector_count = (uint32_t)(wl_bdl->geometry.disk_size / page_size);
+    ESP_GOTO_ON_FALSE(logical_sector_count > 0, ESP_ERR_INVALID_STATE, fail, TAG,
+                      "BDL reports 0 logical sectors");
 
     ESP_GOTO_ON_ERROR(build_workload_config_json(cfg, logical_sector_count, &workload_config_json), fail, TAG,
                       "failed to create workload config JSON");
@@ -299,11 +276,11 @@ esp_err_t run_single(const sweep_config_t *cfg,
         ESP_GOTO_ON_ERROR(workload_ops->next_op(&workload_ctx, &op), fail, TAG,
                           "failed to get workload op");
         ESP_GOTO_ON_ERROR(execute_workload_op(&op, cfg->nand.page_size, logical_sector_count,
-                                              ftl_ops, &ftl_ctx, &result->metrics),
+                                              wl_bdl, &result->metrics),
                           fail, TAG, "failed to execute workload op");
     }
 
-    ESP_GOTO_ON_ERROR(ftl_ops->sync(&ftl_ctx), fail, TAG, "ftl sync failed");
+    ESP_GOTO_ON_ERROR(wl_bdl->ops->sync(wl_bdl), fail, TAG, "bdl sync failed");
 
     result->status = "completed";
 
@@ -315,15 +292,8 @@ fail:
         }
     }
 
-    if (ftl_inited) {
-        cleanup_ret = ftl_ops->deinit(&ftl_ctx);
-        if (ret == ESP_OK && cleanup_ret != ESP_OK) {
-            ret = cleanup_ret;
-        }
-    }
-
-    if (nand_inited) {
-        cleanup_ret = metrics_collect_bad_blocks(&result->metrics, nand, false);
+    if (bdl_inited) {
+        cleanup_ret = metrics_collect_bad_blocks(&result->metrics, wl_bdl, false);
         if (ret == ESP_OK && cleanup_ret != ESP_OK) {
             ret = cleanup_ret;
         }
@@ -339,7 +309,7 @@ fail:
             ret = cleanup_ret;
         }
 
-        cleanup_ret = spi_nand_flash_deinit_device(nand);
+        cleanup_ret = wl_bdl->ops->release(wl_bdl);
         if (ret == ESP_OK && cleanup_ret != ESP_OK) {
             ret = cleanup_ret;
         }
@@ -349,7 +319,6 @@ fail:
         nand_fault_sim_deinit();
     }
 
-    cJSON_Delete(ftl_config_json);
     cJSON_Delete(workload_config_json);
     free(allocated_bad_blocks);
 
