@@ -34,9 +34,11 @@ The build is controlled by `sdkconfig.defaults`, which sets:
 ```
 CONFIG_IDF_TARGET="linux"
 CONFIG_NAND_FLASH_FAULT_SIM=y
+CONFIG_NAND_FLASH_ENABLE_BDL=y
+CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y
 ```
 
-No `set-target` or `menuconfig` step is needed for a normal run.
+BDL (Block Device Layer) is required and enabled by default. No `set-target`, `menuconfig`, or manual Kconfig merge step is needed.
 
 ---
 
@@ -59,10 +61,10 @@ The sweep file drives a full matrix of **scenarios × FTL configs**, all using t
 
 ```json
 {
-  "name": "gc_factor_sweep",
+  "name": "gc_overhead_sweep",
   "output": "report.json",
   "nand": {
-    "num_blocks": 1024,
+    "num_blocks": 128,
     "pages_per_block": 64,
     "page_size": 2048
   },
@@ -77,14 +79,14 @@ The sweep file drives a full matrix of **scenarios × FTL configs**, all using t
     }
   ],
   "ftl_configs": [
-    { "name": "dhara_gc3", "ftl": "dhara", "gc_factor": 3 },
-    { "name": "dhara_gc5", "ftl": "dhara", "gc_factor": 5 },
-    { "name": "dhara_gc8", "ftl": "dhara", "gc_factor": 8 }
+    { "name": "dhara_25pct", "ftl": "dhara", "gc_overhead_percent": 25 },
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20 },
+    { "name": "dhara_10pct", "ftl": "dhara", "gc_overhead_percent": 10 }
   ],
   "workload": {
     "type": "sequential",
-    "total_writes": 1000000,
-    "write_size_bytes": 4096
+    "total_writes": 100000,
+    "write_size_bytes": 2048
   }
 }
 ```
@@ -129,7 +131,7 @@ Each scenario configures `nand_fault_sim` before the run. Use a **named preset**
 | Field | Description |
 |-------|-------------|
 | `ftl` | FTL implementation name. Currently: `"dhara"` |
-| `gc_factor` | Dhara garbage-collection aggressiveness (higher = more GC overhead, better wear leveling) |
+| `gc_overhead_percent` | Maximum GC overhead as a percentage of logical capacity (e.g. `25` = 25 %). Converted internally to a Dhara `gc_factor`. Lower values reduce write amplification but may increase wear variance. |
 
 ### `workload` — access pattern
 
@@ -223,7 +225,7 @@ jq '.results[] | select(.metrics.blocks_worn_out > 0)
 
 | What to add | How |
 |-------------|-----|
-| New FTL (e.g. LittleFS) | Implement `ftl_ops_t` in `main/ftl/`, register name in `main/ftl/ftl.c` |
+| New FTL (e.g. LittleFS as BDL) | Expose it as an `esp_blockdev_handle_t` via `spi_nand_flash_init_with_layers` (or a custom init), add its name to `ftl_configs` |
 | New workload pattern | Implement `workload_ops_t` in `main/workload/`, register name in `main/workload/workload.c` |
 | New report format (CSV, HTML) | Implement `reporter_t` in `main/reporter/`, swap in `main/main.c` |
 | New fault scenario | Add a preset to `nand_fault_sim_config_preset()` or use inline custom JSON fields |
