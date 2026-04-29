@@ -19,6 +19,18 @@
 
 #include "journal.h"
 
+/* Enable sequential-locality shortcut in trace_path().
+ * Caches the last successful read-only path traversal (136 bytes in
+ * dhara_map). Consecutive sector lookups that share a common radix-tree
+ * prefix skip the shared levels entirely, saving up to 31 of 32
+ * dhara_journal_read_meta calls for sequential sector access.
+ * Set to 0 to disable (no RAM overhead, original behaviour).
+ * Override via CONFIG_DHARA_MAP_PATH_CACHE in Kconfig.
+ */
+#ifndef DHARA_MAP_PATH_CACHE
+#define DHARA_MAP_PATH_CACHE  1
+#endif
+
 /* The map is a journal indexing format. It maps virtual sectors to
  * pages of data in flash memory.
  */
@@ -27,11 +39,20 @@ typedef uint32_t dhara_sector_t;
 /* This sector value is reserved */
 #define DHARA_SECTOR_NONE   0xffffffff
 
+/* Depth of the radix tree (one level per bit of dhara_sector_t). */
+#define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
+
 struct dhara_map {
     struct dhara_journal    journal;
 
     uint8_t         gc_ratio;
     dhara_sector_t      count;
+
+#if DHARA_MAP_PATH_CACHE
+    dhara_sector_t  prev_target;                  /* DHARA_SECTOR_NONE = invalid */
+    dhara_page_t    prev_path[DHARA_RADIX_DEPTH]; /* physical page at each depth */
+    dhara_page_t    prev_root;                    /* journal root when path was traced */
+#endif
 };
 
 /* Initialize a map. You need to supply a buffer for page metadata, and
