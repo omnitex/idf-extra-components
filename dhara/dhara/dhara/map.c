@@ -18,8 +18,6 @@
 #include "bytes.h"
 #include "map.h"
 
-#define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
-
 static inline dhara_sector_t d_bit(int depth)
 {
     return ((dhara_sector_t)1) << (DHARA_RADIX_DEPTH - depth - 1);
@@ -77,6 +75,11 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
 
     dhara_journal_init(&m->journal, n, page_buf);
     m->gc_ratio = gc_ratio;
+
+#if DHARA_MAP_PATH_CACHE
+    m->prev_target = DHARA_SECTOR_NONE;
+    m->prev_root   = DHARA_PAGE_NONE;
+#endif
 }
 
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
@@ -131,16 +134,43 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
 
     if (new_meta) {
         meta_set_id(new_meta, target);
+#if DHARA_MAP_PATH_CACHE
+        m->prev_target = DHARA_SECTOR_NONE;
+#endif
     }
 
     if (p == DHARA_PAGE_NONE) {
         goto not_found;
     }
 
+#if DHARA_MAP_PATH_CACHE
+    if (!new_meta &&
+        m->prev_target != DHARA_SECTOR_NONE &&
+        m->prev_root == p) {
+        const dhara_sector_t diff = target ^ m->prev_target;
+        while (depth < DHARA_RADIX_DEPTH && !(diff & d_bit(depth))) {
+            depth++;
+        }
+        if (depth > 0) {
+            p = m->prev_path[depth - 1];
+            if (p == DHARA_PAGE_NONE) {
+                goto not_found;
+            }
+            if (dhara_journal_read_meta(&m->journal, p, meta, err) < 0) {
+                return -1;
+            }
+            goto resume;
+        }
+    }
+#endif
+
     if (dhara_journal_read_meta(&m->journal, p, meta, err) < 0) {
         return -1;
     }
 
+#if DHARA_MAP_PATH_CACHE
+resume:
+#endif
     while (depth < DHARA_RADIX_DEPTH) {
         const dhara_sector_t id = meta_get_id(meta);
 
@@ -152,6 +182,11 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
             if (new_meta) {
                 meta_set_alt(new_meta, depth, p);
             }
+#if DHARA_MAP_PATH_CACHE
+            else {
+                m->prev_path[depth] = p;
+            }
+#endif
 
             p = meta_get_alt(meta, depth);
             if (p == DHARA_PAGE_NONE) {
@@ -164,9 +199,15 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
                 return -1;
             }
         } else {
-            if (new_meta)
+            if (new_meta) {
                 meta_set_alt(new_meta, depth,
                              meta_get_alt(meta, depth));
+            }
+#if DHARA_MAP_PATH_CACHE
+            else {
+                m->prev_path[depth] = p;
+            }
+#endif
         }
 
         depth++;
@@ -175,6 +216,13 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
     if (loc) {
         *loc = p;
     }
+
+#if DHARA_MAP_PATH_CACHE
+    if (!new_meta) {
+        m->prev_target = target;
+        m->prev_root   = dhara_journal_root(&m->journal);
+    }
+#endif
 
     return 0;
 
