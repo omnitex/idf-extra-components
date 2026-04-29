@@ -216,8 +216,28 @@ void dhara_journal_init(struct dhara_journal *j,
     j->page_buf = page_buf;
     j->log2_ppc = choose_ppc(n->log2_page_size, n->log2_ppb);
 
+#if DHARA_META_CACHE_SLOTS > 0
+    j->cache_bufs  = 0;
+    j->cache_keys  = 0;
+    j->cache_slots = 0;
+    j->cache_hand  = 0;
+#endif
+
     reset_journal(j);
 }
+
+#if DHARA_META_CACHE_SLOTS > 0
+void dhara_journal_set_meta_cache(struct dhara_journal *j,
+                                   uint8_t **cache_bufs,
+                                   dhara_page_t *cache_keys,
+                                   uint8_t cache_slots)
+{
+    j->cache_bufs  = cache_bufs;
+    j->cache_keys  = cache_keys;
+    j->cache_slots = cache_slots;
+    j->cache_hand  = 0;
+}
+#endif
 
 /* Find the first checkpoint-containing block. If a block contains any
  * checkpoints at all, then it must contain one in the first checkpoint
@@ -534,6 +554,39 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
                                offset, DHARA_META_SIZE,
                                buf, err);
 
+#if DHARA_META_CACHE_SLOTS > 0
+    if (j->cache_slots > 0) {
+        const dhara_page_t cp_page = p | ppc_mask;
+        int i;
+
+        for (i = 0; i < j->cache_slots; i++) {
+            if (j->cache_keys[i] == cp_page) {
+                memcpy(buf, j->cache_bufs[i] + offset, DHARA_META_SIZE);
+                return 0;
+            }
+        }
+
+        /* Cache miss: evict round-robin, load full checkpoint page.
+         * Reading a full page costs the same as 132 bytes on SPI NAND
+         * (READ PAGE ADDRESS dominates), so loading the full page
+         * amortises the cost across all metadata slots in the group. */
+        {
+            const int slot = j->cache_hand;
+            j->cache_hand = (uint8_t)((j->cache_hand + 1) % j->cache_slots);
+
+            if (dhara_nand_read(j->nand, cp_page, 0,
+                                (size_t)1 << j->nand->log2_page_size,
+                                j->cache_bufs[slot], err) < 0) {
+                j->cache_keys[slot] = DHARA_PAGE_NONE;
+                return -1;
+            }
+            j->cache_keys[slot] = cp_page;
+            memcpy(buf, j->cache_bufs[slot] + offset, DHARA_META_SIZE);
+            return 0;
+        }
+    }
+#endif
+
     /* General case: fetch from metadata page for checkpoint group */
     return dhara_nand_read(j->nand, p | ppc_mask,
                            offset, DHARA_META_SIZE,
@@ -607,6 +660,16 @@ void dhara_journal_clear(struct dhara_journal *j)
     j->flags |= DHARA_JOURNAL_F_DIRTY;
 
     hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+
+#if DHARA_META_CACHE_SLOTS > 0
+    if (j->cache_slots > 0) {
+        int i;
+        for (i = 0; i < j->cache_slots; i++) {
+            j->cache_keys[i] = DHARA_PAGE_NONE;
+        }
+        j->cache_hand = 0;
+    }
+#endif
 }
 
 static int skip_block(struct dhara_journal *j, dhara_error_t *err)
@@ -831,6 +894,18 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
     if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0) {
         return recover_from(j, my_err, err);
     }
+
+#if DHARA_META_CACHE_SLOTS > 0
+    if (j->cache_slots > 0) {
+        const dhara_page_t written_cp = j->head + 1;
+        int i;
+        for (i = 0; i < j->cache_slots; i++) {
+            if (j->cache_keys[i] == written_cp) {
+                j->cache_keys[i] = DHARA_PAGE_NONE;
+            }
+        }
+    }
+#endif
 
     j->flags &= ~DHARA_JOURNAL_F_DIRTY;
 

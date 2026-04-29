@@ -20,6 +20,15 @@
 #include <stdint.h>
 #include "nand.h"
 
+/* Number of full-page metadata cache slots.
+ * Each slot holds one checkpoint page (page_size bytes) in DMA-aligned DRAM.
+ * Set to 0 to disable the cache entirely (original behaviour, zero RAM overhead).
+ * Override via Kconfig: CONFIG_DHARA_META_CACHE_SLOTS -> compile flag in CMakeLists.txt.
+ */
+#ifndef DHARA_META_CACHE_SLOTS
+#define DHARA_META_CACHE_SLOTS  4
+#endif
+
 /* Number of bytes used by the journal checkpoint header. */
 #define DHARA_HEADER_SIZE       16
 
@@ -116,6 +125,13 @@ struct dhara_journal {
     dhara_page_t            recover_next;
     dhara_page_t            recover_root;
     dhara_page_t            recover_meta;
+
+#if DHARA_META_CACHE_SLOTS > 0
+    uint8_t       **cache_bufs;  /* array of cache_slots pointers to page-sized DMA buffers */
+    dhara_page_t   *cache_keys;  /* checkpoint page stored in each slot (DHARA_PAGE_NONE = empty) */
+    uint8_t         cache_slots; /* active slot count (<= DHARA_META_CACHE_SLOTS) */
+    uint8_t         cache_hand;  /* round-robin eviction index */
+#endif
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip
@@ -128,6 +144,20 @@ struct dhara_journal {
 void dhara_journal_init(struct dhara_journal *j,
                         const struct dhara_nand *n,
                         uint8_t *page_buf);
+
+#if DHARA_META_CACHE_SLOTS > 0
+/* Attach an external multi-slot metadata cache to the journal.
+ * Must be called after dhara_journal_init() and before dhara_journal_resume().
+ * cache_bufs: array of cache_slots pointers, each pointing to a DMA-aligned
+ *             buffer of (1 << nand->log2_page_size) bytes in internal DRAM.
+ * cache_keys: array of cache_slots dhara_page_t values, pre-filled with
+ *             DHARA_PAGE_NONE by the caller.
+ */
+void dhara_journal_set_meta_cache(struct dhara_journal *j,
+                                   uint8_t **cache_bufs,
+                                   dhara_page_t *cache_keys,
+                                   uint8_t cache_slots);
+#endif
 
 /* Start up the journal -- search the NAND for the journal head, or
  * initialize a blank journal if one isn't found. Returns 0 on success
