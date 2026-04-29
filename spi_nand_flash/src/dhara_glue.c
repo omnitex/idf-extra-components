@@ -8,9 +8,11 @@
  */
 
 #include <string.h>
+#include <stdio.h>
 #include <sys/lock.h>
 #include "dhara/nand.h"
 #include "dhara/map.h"
+#include "dhara/journal.h"
 #include "dhara/error.h"
 #include "esp_check.h"
 
@@ -26,6 +28,8 @@
 #include "esp_nand_blockdev.h"
 #endif
 
+static const char *TAG = "dhara_glue";
+
 typedef struct {
     struct dhara_nand dhara_nand;
     struct dhara_map dhara_map;
@@ -33,6 +37,10 @@ typedef struct {
     esp_blockdev_handle_t bdl_handle;
 #endif
     spi_nand_flash_device_t *parent_handle;
+#if DHARA_META_CACHE_SLOTS > 0
+    uint8_t     *meta_cache_bufs[DHARA_META_CACHE_SLOTS];
+    dhara_page_t meta_cache_keys[DHARA_META_CACHE_SLOTS];
+#endif
 } spi_nand_flash_dhara_priv_data_t;
 
 static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
@@ -54,6 +62,39 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
     dhara_priv_data->dhara_nand.num_blocks = handle->chip.num_blocks;
 
     dhara_map_init(&dhara_priv_data->dhara_map, &dhara_priv_data->dhara_nand, handle->work_buffer, handle->config.gc_factor);
+
+#if DHARA_META_CACHE_SLOTS > 0
+    {
+        bool cache_ok = true;
+        int i;
+#ifndef CONFIG_IDF_TARGET_LINUX
+        size_t dma_alignment = spi_nand_get_dma_alignment();
+#endif
+        for (i = 0; i < DHARA_META_CACHE_SLOTS; i++) {
+            dhara_priv_data->meta_cache_keys[i] = DHARA_PAGE_NONE;
+#ifndef CONFIG_IDF_TARGET_LINUX
+            dhara_priv_data->meta_cache_bufs[i] = heap_caps_aligned_alloc(
+                dma_alignment, handle->chip.page_size,
+                MALLOC_CAP_DMA | MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+#else
+            dhara_priv_data->meta_cache_bufs[i] = heap_caps_malloc(
+                handle->chip.page_size, MALLOC_CAP_DEFAULT);
+#endif
+            if (!dhara_priv_data->meta_cache_bufs[i]) {
+                cache_ok = false;
+                break;
+            }
+        }
+        if (cache_ok) {
+            dhara_journal_set_meta_cache(
+                &dhara_priv_data->dhara_map.journal,
+                dhara_priv_data->meta_cache_bufs,
+                dhara_priv_data->meta_cache_keys,
+                DHARA_META_CACHE_SLOTS);
+        }
+    }
+#endif
+
     dhara_error_t ignored;
     dhara_map_resume(&dhara_priv_data->dhara_map, &ignored);
 
@@ -66,6 +107,14 @@ static esp_err_t dhara_deinit(spi_nand_flash_device_t *handle)
     // clear dhara map
     dhara_map_init(&dhara_priv_data->dhara_map, &dhara_priv_data->dhara_nand, handle->work_buffer, handle->config.gc_factor);
     dhara_map_clear(&dhara_priv_data->dhara_map);
+#if DHARA_META_CACHE_SLOTS > 0
+    {
+        int i;
+        for (i = 0; i < DHARA_META_CACHE_SLOTS; i++) {
+            free(dhara_priv_data->meta_cache_bufs[i]);
+        }
+    }
+#endif
     return ESP_OK;
 }
 
@@ -371,4 +420,116 @@ int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
     }
     return 0;
 #endif
+}
+/*------------------------------------------------------------------------------------------------------*/
+
+esp_err_t spi_nand_flash_get_cache_stats(spi_nand_flash_device_t *handle,
+                                          spi_nand_cache_stats_t *stats)
+{
+    if (handle == NULL || stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    stats->l1_read_total = handle->l1_read_total;
+    stats->l1_read_hits  = handle->l1_read_hits;
+
+#if DHARA_META_CACHE_SLOTS > 0
+    if (handle->ops_priv_data != NULL) {
+        const spi_nand_flash_dhara_priv_data_t *p =
+            (const spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+        stats->l2_meta_hits   = p->dhara_map.journal.stat_hits;
+        stats->l2_meta_misses = p->dhara_map.journal.stat_misses;
+    } else {
+        stats->l2_meta_hits   = 0;
+        stats->l2_meta_misses = 0;
+    }
+#else
+    stats->l2_meta_hits   = 0;
+    stats->l2_meta_misses = 0;
+#endif
+
+#if DHARA_MAP_PATH_CACHE
+    if (handle->ops_priv_data != NULL) {
+        const spi_nand_flash_dhara_priv_data_t *p =
+            (const spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+        stats->l3_path_calls          = p->dhara_map.stat_calls;
+        stats->l3_path_hits           = p->dhara_map.stat_hits;
+        stats->l3_path_levels_skipped = p->dhara_map.stat_levels_skipped;
+    } else {
+        stats->l3_path_calls          = 0;
+        stats->l3_path_hits           = 0;
+        stats->l3_path_levels_skipped = 0;
+    }
+#else
+    stats->l3_path_calls          = 0;
+    stats->l3_path_hits           = 0;
+    stats->l3_path_levels_skipped = 0;
+#endif
+
+    return ESP_OK;
+}
+
+esp_err_t spi_nand_flash_reset_cache_stats(spi_nand_flash_device_t *handle)
+{
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    handle->l1_read_total = 0;
+    handle->l1_read_hits  = 0;
+
+#if DHARA_META_CACHE_SLOTS > 0
+    if (handle->ops_priv_data != NULL) {
+        spi_nand_flash_dhara_priv_data_t *p =
+            (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+        p->dhara_map.journal.stat_hits   = 0;
+        p->dhara_map.journal.stat_misses = 0;
+    }
+#endif
+
+#if DHARA_MAP_PATH_CACHE
+    if (handle->ops_priv_data != NULL) {
+        spi_nand_flash_dhara_priv_data_t *p =
+            (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+        p->dhara_map.stat_calls          = 0;
+        p->dhara_map.stat_hits           = 0;
+        p->dhara_map.stat_levels_skipped = 0;
+    }
+#endif
+
+    return ESP_OK;
+}
+
+esp_err_t spi_nand_flash_print_cache_stats(spi_nand_flash_device_t *handle,
+                                            const char *label)
+{
+    spi_nand_cache_stats_t s;
+    esp_err_t ret = spi_nand_flash_get_cache_stats(handle, &s);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    if (label) {
+        ESP_LOGI(TAG, "--- Cache stats [%s] ---\n", label);
+    } else {
+        ESP_LOGI(TAG, "--- Cache stats ---\n");
+    }
+
+    uint32_t l1_miss = s.l1_read_total - s.l1_read_hits;
+    ESP_LOGI(TAG, "  L1 page-reg : %"PRIu32" calls, %"PRIu32" hits (%"PRIu32" miss)  hit-rate %3u%%\n",
+           s.l1_read_total, s.l1_read_hits, l1_miss,
+           s.l1_read_total ? (s.l1_read_hits * 100u) / s.l1_read_total : 0u);
+
+    uint32_t l2_total = s.l2_meta_hits + s.l2_meta_misses;
+    ESP_LOGI(TAG, "  L2 meta-cp  : %"PRIu32" calls, %"PRIu32" hits (%"PRIu32" miss)  hit-rate %3u%%\n",
+           l2_total, s.l2_meta_hits, s.l2_meta_misses,
+           l2_total ? (s.l2_meta_hits * 100u) / l2_total : 0u);
+
+    ESP_LOGI(TAG, "  L3 path     : %"PRIu32" calls, %"PRIu32" hits  hit-rate %3u%%  levels-skipped %"PRIu32"\n",
+           s.l3_path_calls, s.l3_path_hits,
+           s.l3_path_calls ? (s.l3_path_hits * 100u) / s.l3_path_calls : 0u,
+           s.l3_path_levels_skipped);
+
+    ESP_LOGI(TAG, "---\n");
+    return ESP_OK;
 }

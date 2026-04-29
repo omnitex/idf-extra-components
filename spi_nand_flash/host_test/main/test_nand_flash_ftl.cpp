@@ -2,6 +2,8 @@
  * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
+ * SPDX-FileContributor: 2026 Martin Havlik <omnitex.git@gmail.com>
+ *
  */
 
 /*
@@ -54,6 +56,7 @@ static spi_nand_flash_device_t *make_ftl_dev(size_t flash_size = FTL_TEST_FLASH_
 
 static void destroy_ftl_dev(spi_nand_flash_device_t *dev)
 {
+    spi_nand_flash_print_cache_stats(dev, nullptr);
     REQUIRE(spi_nand_flash_deinit_device(dev) == ESP_OK);
 }
 

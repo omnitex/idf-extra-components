@@ -213,6 +213,52 @@ esp_err_t spi_nand_flash_gc(spi_nand_flash_device_t *handle);
  */
 esp_err_t spi_nand_flash_deinit_device(spi_nand_flash_device_t *handle);
 
+/**
+ * @brief Accumulated cache statistics for one spi_nand_flash_device_t instance.
+ *
+ * All counters start at zero after spi_nand_flash_init_device() and can be
+ * reset back to zero at any point via spi_nand_flash_reset_cache_stats().
+ */
+typedef struct {
+    uint32_t l1_read_total;        /**< L1: total calls to the NAND page-load path */
+    uint32_t l1_read_hits;         /**< L1: calls saved because the page was already in the register */
+    uint32_t l2_meta_hits;         /**< L2: dhara_journal_read_meta calls served from the metadata cache */
+    uint32_t l2_meta_misses;       /**< L2: dhara_journal_read_meta calls that caused a full page load */
+    uint32_t l3_path_calls;        /**< L3: read-only trace_path calls */
+    uint32_t l3_path_hits;         /**< L3: trace_path calls that skipped ≥1 radix level */
+    uint32_t l3_path_levels_skipped; /**< L3: cumulative radix tree levels skipped across all hits */
+} spi_nand_cache_stats_t;
+
+/**
+ * @brief Read the current cache statistics.
+ *
+ * @param handle  Device handle.
+ * @param[out] stats  Filled with the current counters on success.
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle or stats is NULL.
+ */
+esp_err_t spi_nand_flash_get_cache_stats(spi_nand_flash_device_t *handle,
+                                          spi_nand_cache_stats_t *stats);
+
+/**
+ * @brief Reset all cache counters to zero.
+ *
+ * @param handle  Device handle.
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle is NULL.
+ */
+esp_err_t spi_nand_flash_reset_cache_stats(spi_nand_flash_device_t *handle);
+
+/**
+ * @brief Print a human-readable cache statistics summary to stdout.
+ *
+ * Intended for use at the end of a test or diagnostic session.
+ *
+ * @param handle  Device handle.
+ * @param label   Optional label printed before the summary (may be NULL).
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle is NULL.
+ */
+esp_err_t spi_nand_flash_print_cache_stats(spi_nand_flash_device_t *handle,
+                                            const char *label);
+
 //---------------------------------------------------------------------------------------------------------------------------------------------
 // NEW LAYERED ARCHITECTURE API
 //---------------------------------------------------------------------------------------------------------------------------------------------
