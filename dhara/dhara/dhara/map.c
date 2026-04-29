@@ -182,11 +182,6 @@ resume:
             if (new_meta) {
                 meta_set_alt(new_meta, depth, p);
             }
-#if DHARA_MAP_PATH_CACHE
-            else {
-                m->prev_path[depth] = p;
-            }
-#endif
 
             p = meta_get_alt(meta, depth);
             if (p == DHARA_PAGE_NONE) {
@@ -203,12 +198,13 @@ resume:
                 meta_set_alt(new_meta, depth,
                              meta_get_alt(meta, depth));
             }
-#if DHARA_MAP_PATH_CACHE
-            else {
-                m->prev_path[depth] = p;
-            }
-#endif
         }
+
+#if DHARA_MAP_PATH_CACHE
+        if (!new_meta) {
+            m->prev_path[depth] = p;
+        }
+#endif
 
         depth++;
     }
