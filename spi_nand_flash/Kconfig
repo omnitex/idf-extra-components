@@ -37,6 +37,17 @@ menu "SPI NAND Flash configuration"
             the chip's internal register.
             Set to false to disable (no caching, original behaviour).
 
+    config NAND_DHARA_FTL_MAP_PATH_CACHE
+        bool "Enable Dhara FTL map path cache"
+        default n
+        help
+            When enabled, Dhara FTL map caches the last successful read-only
+            FTL map traversal. Consumes 136 bytes of memory. Consecutive
+            sector lookups that share a common radix-tree prefix skip the
+            already-known levels entirely, reducing Dhara FTL journal read meta
+            calls by up to 31 of 32 for sequential sector access patterns.
+            Set to false to disable (no RAM overhead, original behaviour).
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX
