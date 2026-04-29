@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #include <string.h>
@@ -88,6 +88,9 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
     }
 
     memcpy(&(*handle)->config, config, sizeof(spi_nand_flash_config_t));
+
+    (*handle)->last_loaded_page    = UINT32_MAX;
+    (*handle)->nand_page_cache_valid = false;
 
     (*handle)->chip.ecc_data.ecc_status_reg_len_in_bits = 2;
     (*handle)->chip.ecc_data.ecc_data_refresh_threshold = 4;
@@ -186,16 +189,35 @@ static esp_err_t wait_for_ready(spi_nand_flash_device_t *dev, uint32_t expected_
 
 static esp_err_t read_page_and_wait(spi_nand_flash_device_t *dev, uint32_t page, uint8_t *status_out)
 {
+    if (dev->nand_page_cache_valid && dev->last_loaded_page == page) {
+        if (status_out) {
+            *status_out = dev->last_loaded_status;
+        }
+        return ESP_OK;
+    }
+
     ESP_RETURN_ON_ERROR(spi_nand_read_page(dev, page), TAG, "");
 
-    return wait_for_ready(dev, dev->chip.read_page_delay_us, status_out);
+    uint8_t status = 0;
+    esp_err_t ret = wait_for_ready(dev, dev->chip.read_page_delay_us, &status);
+    if (ret == ESP_OK) {
+        dev->last_loaded_page    = page;
+        dev->last_loaded_status  = status;
+        dev->nand_page_cache_valid = true;
+    }
+    if (status_out) {
+        *status_out = status;
+    }
+    return ret;
 }
 
 static esp_err_t program_execute_and_wait(spi_nand_flash_device_t *dev, uint32_t page, uint8_t *status_out)
 {
     ESP_RETURN_ON_ERROR(spi_nand_program_execute(dev, page), TAG, "");
 
-    return wait_for_ready(dev, dev->chip.program_page_delay_us, status_out);
+    esp_err_t ret = wait_for_ready(dev, dev->chip.program_page_delay_us, status_out);
+    dev->nand_page_cache_valid = false;
+    return ret;
 }
 
 static uint16_t get_column_address(spi_nand_flash_device_t *handle, uint32_t block, uint32_t offset)
@@ -297,6 +319,7 @@ esp_err_t nand_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
     ESP_GOTO_ON_ERROR(wait_for_ready(handle,
                                      handle->chip.erase_block_delay_us, &status),
                       fail, TAG, "");
+    handle->nand_page_cache_valid = false;
 
     if ((status & STAT_ERASE_FAILED) != 0) {
         ret = ESP_ERR_NOT_FINISHED;
