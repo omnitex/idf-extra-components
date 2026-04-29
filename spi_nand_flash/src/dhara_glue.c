@@ -3,13 +3,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #include <string.h>
 #include <sys/lock.h>
 #include "dhara/nand.h"
 #include "dhara/map.h"
+#include "dhara/journal.h"
 #include "dhara/error.h"
 #include "esp_check.h"
 #include "esp_err.h"
@@ -31,6 +32,10 @@ typedef struct {
     esp_blockdev_handle_t bdl_handle;
 #endif
     spi_nand_flash_device_t *parent_handle;
+#if DHARA_META_CACHE_SLOTS > 0
+    uint8_t     *meta_cache_bufs[DHARA_META_CACHE_SLOTS];
+    dhara_page_t meta_cache_keys[DHARA_META_CACHE_SLOTS];
+#endif
 } spi_nand_flash_dhara_priv_data_t;
 
 static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
@@ -52,6 +57,39 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
     dhara_priv_data->dhara_nand.num_blocks = handle->chip.num_blocks;
 
     dhara_map_init(&dhara_priv_data->dhara_map, &dhara_priv_data->dhara_nand, handle->work_buffer, handle->config.gc_factor);
+
+#if DHARA_META_CACHE_SLOTS > 0
+    {
+        bool cache_ok = true;
+        int i;
+#ifndef CONFIG_IDF_TARGET_LINUX
+        size_t dma_alignment = spi_nand_get_dma_alignment();
+#endif
+        for (i = 0; i < DHARA_META_CACHE_SLOTS; i++) {
+            dhara_priv_data->meta_cache_keys[i] = DHARA_PAGE_NONE;
+#ifndef CONFIG_IDF_TARGET_LINUX
+            dhara_priv_data->meta_cache_bufs[i] = heap_caps_aligned_alloc(
+                dma_alignment, handle->chip.page_size,
+                MALLOC_CAP_DMA | MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+#else
+            dhara_priv_data->meta_cache_bufs[i] = heap_caps_malloc(
+                handle->chip.page_size, MALLOC_CAP_DEFAULT);
+#endif
+            if (!dhara_priv_data->meta_cache_bufs[i]) {
+                cache_ok = false;
+                break;
+            }
+        }
+        if (cache_ok) {
+            dhara_journal_set_meta_cache(
+                &dhara_priv_data->dhara_map.journal,
+                dhara_priv_data->meta_cache_bufs,
+                dhara_priv_data->meta_cache_keys,
+                DHARA_META_CACHE_SLOTS);
+        }
+    }
+#endif
+
     dhara_error_t ignored;
     dhara_map_resume(&dhara_priv_data->dhara_map, &ignored);
 
@@ -64,6 +102,14 @@ static esp_err_t dhara_deinit(spi_nand_flash_device_t *handle)
     // clear dhara map
     dhara_map_init(&dhara_priv_data->dhara_map, &dhara_priv_data->dhara_nand, handle->work_buffer, handle->config.gc_factor);
     dhara_map_clear(&dhara_priv_data->dhara_map);
+#if DHARA_META_CACHE_SLOTS > 0
+    {
+        int i;
+        for (i = 0; i < DHARA_META_CACHE_SLOTS; i++) {
+            free(dhara_priv_data->meta_cache_bufs[i]);
+        }
+    }
+#endif
     return ESP_OK;
 }
 

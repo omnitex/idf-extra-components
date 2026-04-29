@@ -25,6 +25,18 @@ menu "SPI NAND Flash configuration"
             Note: This option requires ESP-IDF >= 6.0 (esp_blockdev component).
             Enabling this on ESP-IDF < 6.0 will result in a build error.
 
+    config DHARA_META_CACHE_SLOTS
+        int "Metadata checkpoint-page cache slots (0 = disabled)"
+        range 0 8
+        default 4
+        help
+            Number of full NAND pages cached in internal DRAM to accelerate
+            repeated metadata reads from the same checkpoint group. Each slot
+            holds one page (typically 2048 bytes) in DMA-aligned internal DRAM.
+            Total cost: SLOTS x page_size bytes.
+            Set 0 to disable (no RAM overhead, original behaviour).
+            Recommended value 0 for targets with less than 256 KB free SRAM.
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX
