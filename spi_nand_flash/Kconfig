@@ -37,6 +37,18 @@ menu "SPI NAND Flash configuration"
             Set 0 to disable (no RAM overhead, original behaviour).
             Recommended value 0 for targets with less than 256 KB free SRAM.
 
+    config DHARA_MAP_PATH_CACHE
+        int "Enable trace_path sequential locality cache (0 = disabled)"
+        range 0 1
+        default 1
+        help
+            When enabled, dhara_map caches the last successful read-only
+            trace_path traversal (136 bytes in struct dhara_map). Consecutive
+            sector lookups that share a common radix-tree prefix skip the
+            already-known levels entirely, reducing dhara_journal_read_meta
+            calls by up to 31 of 32 for sequential sector access patterns.
+            Set 0 to disable (no RAM overhead, original behaviour).
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX
