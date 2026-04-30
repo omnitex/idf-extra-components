@@ -52,6 +52,9 @@ struct dhara_map {
     dhara_sector_t  prev_target;                  /* DHARA_SECTOR_NONE = invalid */
     dhara_page_t    prev_path[DHARA_RADIX_DEPTH]; /* physical page at each depth */
     dhara_page_t    prev_root;                    /* journal root when path was traced */
+    uint32_t        stat_hits;                    /* trace_path calls that skipped ≥1 level */
+    uint32_t        stat_calls;                   /* total read-only trace_path calls */
+    uint32_t        stat_levels_skipped;          /* cumulative radix levels skipped via cache */
 #endif
 };
 

@@ -221,6 +221,8 @@ void dhara_journal_init(struct dhara_journal *j,
     j->cache_keys  = 0;
     j->cache_slots = 0;
     j->cache_hand  = 0;
+    j->stat_hits   = 0;
+    j->stat_misses = 0;
 #endif
 
     reset_journal(j);
@@ -561,6 +563,7 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
 
         for (i = 0; i < j->cache_slots; i++) {
             if (j->cache_keys[i] == cp_page) {
+                j->stat_hits++;
                 memcpy(buf, j->cache_bufs[i] + offset, DHARA_META_SIZE);
                 return 0;
             }
@@ -573,6 +576,7 @@ int dhara_journal_read_meta(struct dhara_journal *j, dhara_page_t p,
         {
             const int slot = j->cache_hand;
             j->cache_hand = (uint8_t)((j->cache_hand + 1) % j->cache_slots);
+            j->stat_misses++;
 
             if (dhara_nand_read(j->nand, cp_page, 0,
                                 (size_t)1 << j->nand->log2_page_size,

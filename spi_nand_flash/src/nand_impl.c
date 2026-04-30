@@ -89,8 +89,10 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
 
     memcpy(&(*handle)->config, config, sizeof(spi_nand_flash_config_t));
 
-    (*handle)->last_loaded_page    = UINT32_MAX;
+    (*handle)->last_loaded_page      = UINT32_MAX;
     (*handle)->nand_page_cache_valid = false;
+    (*handle)->l1_read_total         = 0;
+    (*handle)->l1_read_hits          = 0;
 
     (*handle)->chip.ecc_data.ecc_status_reg_len_in_bits = 2;
     (*handle)->chip.ecc_data.ecc_data_refresh_threshold = 4;
@@ -189,7 +191,9 @@ static esp_err_t wait_for_ready(spi_nand_flash_device_t *dev, uint32_t expected_
 
 static esp_err_t read_page_and_wait(spi_nand_flash_device_t *dev, uint32_t page, uint8_t *status_out)
 {
+    dev->l1_read_total++;
     if (dev->nand_page_cache_valid && dev->last_loaded_page == page) {
+        dev->l1_read_hits++;
         if (status_out) {
             *status_out = dev->last_loaded_status;
         }

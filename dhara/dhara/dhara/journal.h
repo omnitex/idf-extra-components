@@ -127,10 +127,12 @@ struct dhara_journal {
     dhara_page_t            recover_meta;
 
 #if DHARA_META_CACHE_SLOTS > 0
-    uint8_t       **cache_bufs;  /* array of cache_slots pointers to page-sized DMA buffers */
-    dhara_page_t   *cache_keys;  /* checkpoint page stored in each slot (DHARA_PAGE_NONE = empty) */
-    uint8_t         cache_slots; /* active slot count (<= DHARA_META_CACHE_SLOTS) */
-    uint8_t         cache_hand;  /* round-robin eviction index */
+    uint8_t       **cache_bufs;   /* array of cache_slots pointers to page-sized DMA buffers */
+    dhara_page_t   *cache_keys;   /* checkpoint page stored in each slot (DHARA_PAGE_NONE = empty) */
+    uint8_t         cache_slots;  /* active slot count (<= DHARA_META_CACHE_SLOTS) */
+    uint8_t         cache_hand;   /* round-robin eviction index */
+    uint32_t        stat_hits;    /* read_meta calls served from cache */
+    uint32_t        stat_misses;  /* read_meta calls that caused a page load */
 #endif
 };
 

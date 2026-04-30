@@ -77,8 +77,11 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
     m->gc_ratio = gc_ratio;
 
 #if DHARA_MAP_PATH_CACHE
-    m->prev_target = DHARA_SECTOR_NONE;
-    m->prev_root   = DHARA_PAGE_NONE;
+    m->prev_target       = DHARA_SECTOR_NONE;
+    m->prev_root         = DHARA_PAGE_NONE;
+    m->stat_hits         = 0;
+    m->stat_calls        = 0;
+    m->stat_levels_skipped = 0;
 #endif
 }
 
@@ -144,6 +147,9 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
     }
 
 #if DHARA_MAP_PATH_CACHE
+    if (!new_meta) {
+        m->stat_calls++;
+    }
     if (!new_meta &&
         m->prev_target != DHARA_SECTOR_NONE &&
         m->prev_root == p) {
@@ -152,6 +158,8 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
             depth++;
         }
         if (depth > 0) {
+            m->stat_hits++;
+            m->stat_levels_skipped += (uint32_t)depth;
             p = m->prev_path[depth - 1];
             if (p == DHARA_PAGE_NONE) {
                 goto not_found;
