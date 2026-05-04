@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2015-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,9 +7,12 @@
 #include <string.h>
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "spi_nand_flash.h"
 #include "nand.h"
 #include "nand_impl.h"
+
+static const char *TAG = "nand_wrap";
 
 esp_err_t nand_wrap_is_bad(spi_nand_flash_device_t *handle, uint32_t block, bool *is_bad_status)
 {
@@ -53,6 +56,10 @@ esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t page, const u
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
     ret = nand_prog(handle, page, data);
     xSemaphoreGive(handle->mutex);
+    if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+        ESP_LOGD(TAG, "page %" PRIu32 " skipped (page relief)", page);
+        return ESP_OK;
+    }
     return ret;
 }
 
@@ -80,6 +87,10 @@ esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t
     xSemaphoreTake(handle->mutex, portMAX_DELAY);
     ret = nand_copy(handle, src, dst);
     xSemaphoreGive(handle->mutex);
+    if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+        ESP_LOGD(TAG, "copy to page %" PRIu32 " skipped (page relief)", dst);
+        return ESP_OK;
+    }
     return ret;
 }
 

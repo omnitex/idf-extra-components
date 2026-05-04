@@ -75,6 +75,11 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  * checked. If the operation fails, return -1 and set err to
  * E_BAD_BLOCK.
  *
+ * If the implementation declines to program this page (for example
+ * correctable ECC stress on a pre-read) but the eraseblock is not bad,
+ * return -1 and set err to E_PAGE_RELIEF. The journal will consume a
+ * filler metadata slot and advance without marking the block bad.
+ *
  * Pages will be programmed sequentially within a block, and will not be
  * reprogrammed.
  */
@@ -97,6 +102,9 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 /* Read a page from one location and reprogram it in another location.
  * This might be done using the chip's internal buffers, but it must use
  * ECC.
+ *
+ * If the destination page must not be programmed (wear relief), return -1
+ * and set err to E_PAGE_RELIEF, same semantics as dhara_nand_prog().
  */
 int dhara_nand_copy(const struct dhara_nand *n,
                     dhara_page_t src, dhara_page_t dst,

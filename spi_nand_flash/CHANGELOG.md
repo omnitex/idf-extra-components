@@ -3,6 +3,11 @@
 Versioning policy: see [VERSIONING.md](VERSIONING.md). From **v1.0.0** onward this component follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [1.0.3]
+### New Features
+- Forked Dhara: `DHARA_E_PAGE_RELIEF` — journal `enqueue` / `copy` consume a filler metadata slot and advance when `dhara_nand_prog` / `dhara_nand_copy` reports this error (no bad-block marking).
+- Optional `CONFIG_NAND_FLASH_PROG_PAGE_RELIEF`: `nand_prog` / `nand_copy` may return `ESP_ERR_FLASH_BASE + DHARA_E_PAGE_RELIEF` when the pre-read ECC level is at or above `CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC`.
+- `dhara_glue` maps that `esp_err_t` to `DHARA_E_PAGE_RELIEF` for the journal.
+
 ### Dependencies
 - **Dhara** is now consumed as the in-repo `espressif/dhara` component at **1.0.0** (vendored upstream snapshot; the git submodule under `dhara/` is removed). The manifest dependency range is **`1.*`** (was `0.1.*`), matching the new component version with the same `override_path: "../dhara"` layout.
 

@@ -32,4 +32,22 @@ menu "SPI NAND Flash configuration"
         help
             This option enables gathering host test statistics and SPI NAND flash wear levelling simulation.
 
+    config NAND_FLASH_PROG_PAGE_RELIEF
+        bool "Pre-program read: request Dhara page relief on high correctable ECC"
+        default n
+        help
+            After the mandatory pre-program page read, if the NAND reports correctable ECC at or above
+            NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC, nand_prog returns ESP_ERR_FLASH_BASE + DHARA_E_PAGE_RELIEF.
+            The Dhara journal consumes a filler metadata slot and uses the next physical page without
+            marking the block bad. Uncorrectable ECC still fails the operation with ESP_FAIL.
+
+    config NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC
+        int "Minimum nand_ecc_status_t value to trigger page relief (inclusive)"
+        depends on NAND_FLASH_PROG_PAGE_RELIEF
+        range 1 7
+        default 3
+        help
+            Compared against ecc_corrected_bits_status after the pre-read (see nand_ecc_status_t).
+            Typical values: 1 = NAND_ECC_1_TO_3_BITS_CORRECTED, 3 = NAND_ECC_4_TO_6_BITS_CORRECTED.
+
 endmenu
