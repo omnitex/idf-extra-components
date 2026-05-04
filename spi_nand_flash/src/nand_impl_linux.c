@@ -212,7 +212,7 @@ esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle)
     return ret;
 }
 
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, bool force_no_relief)
 {
     ESP_LOGV(TAG, "prog, page=%"PRIu32",", page);
     esp_err_t ret = ESP_OK;
@@ -251,7 +251,7 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     return ret;
 }
 
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, bool force_no_relief)
 {
     ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32"", src, dst);
     esp_err_t ret = ESP_OK;

@@ -109,6 +109,55 @@ static inline int align_eq(dhara_page_t a, dhara_page_t b,
     return !((a ^ b) >> n);
 }
 
+/************************************************************************
+ * Checkpoint group relief policy helpers
+ */
+
+static inline dhara_page_t journal_page_idx(const struct dhara_journal *j,
+        dhara_page_t p)
+{
+    return p & ((1u << j->log2_ppc) - 1);
+}
+
+static inline dhara_page_t journal_last_user_idx(const struct dhara_journal *j)
+{
+    return (1u << j->log2_ppc) - 2;
+}
+
+static inline int journal_relief_allowed(const struct dhara_journal *j,
+        dhara_page_t p)
+{
+    return journal_page_idx(j, p) < journal_last_user_idx(j);
+}
+
+static inline void journal_advance_head_in_group(struct dhara_journal *j)
+{
+    j->head++;
+}
+
+static int journal_prog_user(struct dhara_journal *j, dhara_page_t p,
+                             const uint8_t *data, dhara_error_t *err)
+{
+    const unsigned int flags = journal_relief_allowed(j, p)
+                               ? 0 : DHARA_NAND_F_FORCE_PROG;
+    return dhara_nand_prog(j->nand, p, data, flags, err);
+}
+
+static int journal_copy_user(struct dhara_journal *j,
+                             dhara_page_t src, dhara_page_t dst,
+                             dhara_error_t *err)
+{
+    const unsigned int flags = journal_relief_allowed(j, dst)
+                               ? 0 : DHARA_NAND_F_FORCE_PROG;
+    return dhara_nand_copy(j->nand, src, dst, flags, err);
+}
+
+static int journal_prog_cp(struct dhara_journal *j, dhara_page_t p,
+                           const uint8_t *data, dhara_error_t *err)
+{
+    return dhara_nand_prog(j->nand, p, data, DHARA_NAND_F_FORCE_PROG, err);
+}
+
 /* What is the successor of this block? */
 static dhara_block_t next_block(const struct dhara_nand *n, dhara_block_t blk)
 {
@@ -694,37 +743,61 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
 {
     int i;
 
-    /* We've just begun recovery on a new erasable block, but we
-     * have buffered metadata from the failed block.
-     */
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
         dhara_error_t my_err;
 
-        /* Try to dump metadata on this page */
-        if (!(prepare_head(j, &my_err) ||
-                dhara_nand_prog(j->nand, j->head,
-                                j->page_buf, &my_err))) {
-            j->recover_meta = j->head;
-            j->head = next_upage(j, j->head);
-            if (!j->head) {
-                roll_stats(j);
+        if (prepare_head(j, &my_err)) {
+            if (my_err != DHARA_E_BAD_BLOCK) {
+                dhara_set_error(err, my_err);
+                return -1;
             }
-            hdr_clear_user(j->page_buf, j->nand->log2_page_size);
-            return 0;
+            j->bb_current++;
+            dhara_nand_mark_bad(j->nand, j->head >> j->nand->log2_ppb);
+            if (skip_block(j, err) < 0)
+                return -1;
+            continue;
         }
 
-        /* Report fatal errors */
-        if (my_err != DHARA_E_BAD_BLOCK) {
-            dhara_set_error(err, my_err);
-            return -1;
+        if (journal_prog_user(j, j->head, j->page_buf, &my_err) < 0) {
+            if (my_err == DHARA_E_PAGE_RELIEF) {
+                if (journal_relief_allowed(j, j->head)) {
+                    journal_advance_head_in_group(j);
+                    hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+                    continue;
+                }
+                /* Last user index: force the program */
+                if (dhara_nand_prog(j->nand, j->head, j->page_buf,
+                                    DHARA_NAND_F_FORCE_PROG, &my_err) < 0) {
+                    if (my_err == DHARA_E_BAD_BLOCK) {
+                        j->bb_current++;
+                        dhara_nand_mark_bad(j->nand,
+                                            j->head >> j->nand->log2_ppb);
+                        if (skip_block(j, err) < 0)
+                            return -1;
+                        continue;
+                    }
+                    dhara_set_error(err, my_err);
+                    return -1;
+                }
+            } else if (my_err == DHARA_E_BAD_BLOCK) {
+                j->bb_current++;
+                dhara_nand_mark_bad(j->nand, j->head >> j->nand->log2_ppb);
+                if (skip_block(j, err) < 0)
+                    return -1;
+                continue;
+            } else {
+                dhara_set_error(err, my_err);
+                return -1;
+            }
         }
 
-        j->bb_current++;
-        dhara_nand_mark_bad(j->nand, j->head >> j->nand->log2_ppb);
-
-        if (skip_block(j, err) < 0) {
-            return -1;
+        j->recover_meta = j->head;
+        j->head = next_upage(j, j->head);
+        if (!j->head) {
+            roll_stats(j);
         }
+        hdr_clear_user(j->page_buf, j->nand->log2_page_size);
+        return 0;
     }
 
     dhara_set_error(err, DHARA_E_TOO_BAD);
@@ -828,7 +901,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
     hdr_set_bb_current(j->page_buf, j->bb_current);
     hdr_set_bb_last(j->page_buf, j->bb_last);
 
-    if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0) {
+    if (journal_prog_cp(j, j->head + 1, j->page_buf, &my_err) < 0) {
         return recover_from(j, my_err, err);
     }
 
@@ -856,19 +929,32 @@ int dhara_journal_enqueue(struct dhara_journal *j,
                           const uint8_t *data, const uint8_t *meta,
                           dhara_error_t *err)
 {
-    dhara_error_t my_err;
     int i;
 
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                (data && dhara_nand_prog(j->nand, j->head, data,
-                                         &my_err)))) {
-            return push_meta(j, meta, err);
+        dhara_error_t my_err;
+
+        if (prepare_head(j, &my_err)) {
+            if (recover_from(j, my_err, err) < 0)
+                return -1;
+            continue;
         }
 
-        if (recover_from(j, my_err, err) < 0) {
-            return -1;
+        if (data) {
+            if (journal_prog_user(j, j->head, data, &my_err) < 0) {
+                if (my_err == DHARA_E_PAGE_RELIEF) {
+                    if (push_meta(j, NULL, err) < 0)
+                        return -1;
+                    journal_advance_head_in_group(j);
+                    continue;
+                }
+                if (recover_from(j, my_err, err) < 0)
+                    return -1;
+                continue;
+            }
         }
+
+        return push_meta(j, meta, err);
     }
 
     dhara_set_error(err, DHARA_E_TOO_BAD);
@@ -879,18 +965,30 @@ int dhara_journal_copy(struct dhara_journal *j,
                        dhara_page_t p, const uint8_t *meta,
                        dhara_error_t *err)
 {
-    dhara_error_t my_err;
     int i;
 
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
-        if (!(prepare_head(j, &my_err) ||
-                dhara_nand_copy(j->nand, p, j->head, &my_err))) {
-            return push_meta(j, meta, err);
+        dhara_error_t my_err;
+
+        if (prepare_head(j, &my_err)) {
+            if (recover_from(j, my_err, err) < 0)
+                return -1;
+            continue;
         }
 
-        if (recover_from(j, my_err, err) < 0) {
-            return -1;
+        if (journal_copy_user(j, p, j->head, &my_err) < 0) {
+            if (my_err == DHARA_E_PAGE_RELIEF) {
+                if (push_meta(j, NULL, err) < 0)
+                    return -1;
+                journal_advance_head_in_group(j);
+                continue;
+            }
+            if (recover_from(j, my_err, err) < 0)
+                return -1;
+            continue;
         }
+
+        return push_meta(j, meta, err);
     }
 
     dhara_set_error(err, DHARA_E_TOO_BAD);

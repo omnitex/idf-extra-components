@@ -12,6 +12,7 @@
 #include "dhara/map.h"
 #include "dhara/error.h"
 #include "esp_check.h"
+
 #include "esp_err.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
@@ -207,10 +208,11 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
     return 0;
 }
 
-int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data, dhara_error_t *err)
+int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data, unsigned int flags, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     esp_err_t ret = ESP_OK;
+    const bool force = !!(flags & DHARA_NAND_F_FORCE_PROG);
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
     assert(dhara_priv_data->bdl_handle != NULL);
     esp_blockdev_handle_t bdl_handle = dhara_priv_data->bdl_handle;
@@ -218,10 +220,12 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
                                  bdl_handle->geometry.write_size);
 #else
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_prog(dev_handle, p, data);
+    ret = nand_prog(dev_handle, p, data, force);
 #endif
     if (ret) {
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+                    dhara_set_error(err, DHARA_E_PAGE_RELIEF);
+                } else if (ret == ESP_ERR_NOT_FINISHED) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;
@@ -312,11 +316,12 @@ int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
     return 0;
 }
 
-int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst, dhara_error_t *err)
+int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst, unsigned int flags, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     spi_nand_flash_device_t *dev_handle = NULL;
     esp_err_t ret = ESP_OK;
+    const bool force = !!(flags & DHARA_NAND_F_FORCE_PROG);
 
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
     assert(dhara_priv_data->bdl_handle != NULL);
@@ -329,13 +334,14 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
     ret = dhara_priv_data->bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_COPY_PAGE, &copy_arg);
 #else
     dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_copy(dev_handle, src, dst);
+    ret = nand_copy(dev_handle, src, dst, force);
 #endif
     if (ret) {
-        if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
+        if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+                    dhara_set_error(err, DHARA_E_PAGE_RELIEF);
+                } else if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
             dhara_set_error(err, DHARA_E_ECC);
-        }
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        } else if (ret == ESP_ERR_NOT_FINISHED) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;

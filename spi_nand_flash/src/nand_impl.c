@@ -3,12 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #include <string.h>
 #include "esp_check.h"
 #include "esp_err.h"
+#include "spi_nand_flash.h"
 #include "spi_nand_oper.h"
 #include "nand.h"
 #include "nand_flash_devices.h"
@@ -17,6 +18,8 @@
 #define ROM_WAIT_THRESHOLD_US 1000
 
 static const char *TAG = "nand_hal";
+
+static bool is_ecc_error(spi_nand_flash_device_t *dev, uint8_t status);
 
 static esp_err_t detect_chip(spi_nand_flash_device_t *dev)
 {
@@ -341,7 +344,7 @@ esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle)
     return ret;
 }
 
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data)
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data, bool force_no_relief)
 {
     ESP_LOGV(TAG, "prog, page=%"PRIu32",", page);
     esp_err_t ret = ESP_OK;
@@ -353,7 +356,24 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     uint32_t block = page >> handle->chip.log2_ppb;
     uint16_t column_addr = get_column_address(handle, block, 0);
 
+#if CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
+    {
+        uint8_t status_pre = 0;
+        ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, &status_pre), fail, TAG, "");
+        if (is_ecc_error(handle, status_pre)) {
+            return ESP_FAIL;
+        }
+        if (!force_no_relief) {
+            nand_ecc_status_t ecc_st = handle->chip.ecc_data.ecc_corrected_bits_status;
+            if (ecc_st != NAND_ECC_OK &&
+                (int)ecc_st >= CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC) {
+                return ESP_ERR_SPI_NAND_PAGE_RELIEF;
+            }
+        }
+    }
+#else
     ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, NULL), fail, TAG, "");
+#endif
     ESP_GOTO_ON_ERROR(spi_nand_write_enable(handle), fail, TAG, "");
     ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, data, column_addr, handle->chip.page_size),
                       fail, TAG, "");
@@ -460,7 +480,7 @@ fail:
     return ret;
 }
 
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst, bool force_no_relief)
 {
     ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32"", src, dst);
     esp_err_t ret = ESP_OK;
@@ -475,6 +495,23 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
         ESP_LOGD(TAG, "copy, ecc error");
         return ESP_FAIL;
     }
+
+#if CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
+    {
+        uint8_t dst_pre = 0;
+        ESP_GOTO_ON_ERROR(read_page_and_wait(handle, dst, &dst_pre), fail, TAG, "");
+        if (is_ecc_error(handle, dst_pre)) {
+            return ESP_FAIL;
+        }
+        if (!force_no_relief) {
+            nand_ecc_status_t ecc_dst = handle->chip.ecc_data.ecc_corrected_bits_status;
+            if (ecc_dst != NAND_ECC_OK &&
+                (int)ecc_dst >= CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC) {
+                return ESP_ERR_SPI_NAND_PAGE_RELIEF;
+            }
+        }
+    }
+#endif
 
     ESP_GOTO_ON_ERROR(spi_nand_write_enable(handle), fail, TAG, "");
     uint32_t src_block = src >> handle->chip.log2_ppb;
