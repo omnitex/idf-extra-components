@@ -13,6 +13,7 @@
 #include "dhara/map.h"
 #include "dhara/error.h"
 #include "esp_check.h"
+
 #include "esp_err.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
@@ -224,7 +225,9 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
     ret = nand_prog(dev_handle, p, data, oob_lpn);
 #endif
     if (ret) {
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+                    dhara_set_error(err, DHARA_E_PAGE_RELIEF);
+                } else if (ret == ESP_ERR_NOT_FINISHED) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;
@@ -331,10 +334,11 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
     ret = nand_copy(dev_handle, src, dst, oob_lpn);
 #endif
     if (ret) {
-        if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
+        if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+                    dhara_set_error(err, DHARA_E_PAGE_RELIEF);
+                } else if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
             dhara_set_error(err, DHARA_E_ECC);
-        }
-        if (ret == ESP_ERR_NOT_FINISHED) {
+        } else if (ret == ESP_ERR_NOT_FINISHED) {
             dhara_set_error(err, DHARA_E_BAD_BLOCK);
         }
         return -1;

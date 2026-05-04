@@ -3,7 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2026 Martin Havlik <omnitex.git@gmail.com>
  */
 
 #pragma once
@@ -235,6 +236,17 @@ esp_err_t spi_nand_flash_deinit_device(spi_nand_flash_device_t *handle);
 esp_err_t spi_nand_flash_init_with_layers(spi_nand_flash_config_t *config,
         esp_blockdev_handle_t *wl_bdl);
 #endif // CONFIG_NAND_FLASH_ENABLE_BDL
+
+/**
+ * @brief Low-level program/copy refused page: Dhara uses filler metadata and next physical page.
+ *
+ * Defined when `dhara/error.h` is visible to the compiler (component depends on Dhara).
+ * Value is `ESP_ERR_FLASH_BASE + DHARA_E_PAGE_RELIEF`.
+ */
+#if defined(__has_include) && __has_include("dhara/error.h")
+#include "dhara/error.h"
+#define ESP_ERR_SPI_NAND_PAGE_RELIEF ((esp_err_t)(ESP_ERR_FLASH_BASE + (int)DHARA_E_PAGE_RELIEF))
+#endif
 
 #ifdef __cplusplus
 }

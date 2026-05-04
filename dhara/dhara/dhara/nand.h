@@ -91,6 +91,11 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
  * checked. If the operation fails, return -1 and set err to
  * E_BAD_BLOCK.
  *
+ * If the implementation declines to program this page (for example
+ * correctable ECC stress on a pre-read) but the eraseblock is not bad,
+ * return -1 and set err to E_PAGE_RELIEF. The journal will consume a
+ * filler metadata slot and advance without marking the block bad.
+ *
  * Pages will be programmed sequentially within a block, and will not be
  * reprogrammed.
  *
@@ -121,6 +126,9 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
  * oob_lpn is the LPN of the user data being copied (same as the source page's
  * LPN). The driver should write it to OOB on the destination page so that
  * orphan-page replay on remount can identify it.
+ *
+ * If the destination page must not be programmed (wear relief), return -1
+ * and set err to E_PAGE_RELIEF, same semantics as dhara_nand_prog().
  */
 int dhara_nand_copy(const struct dhara_nand *n,
 		    dhara_page_t src, dhara_page_t dst,

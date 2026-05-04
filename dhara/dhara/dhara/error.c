@@ -12,6 +12,8 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Modified by Martin Havlik <omnitex.git@gmail.com>, 2026
+ *
  */
 
 #include <stddef.h>
@@ -28,7 +30,8 @@ const char *dhara_strerror(dhara_error_t err)
         [DHARA_E_JOURNAL_FULL] = "Journal is full",
         [DHARA_E_NOT_FOUND] = "No such sector",
         [DHARA_E_MAP_FULL] = "Sector map is full",
-        [DHARA_E_CORRUPT_MAP] = "Sector map is corrupted"
+	[DHARA_E_CORRUPT_MAP] = "Sector map is corrupted",
+	[DHARA_E_PAGE_RELIEF] = "Physical page skipped for wear relief"
     };
     const char *msg = NULL;
 
