@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2023-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Unlicense OR CC0-1.0
  */
@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "esp_system.h"
+#include "sdkconfig.h"
 #include "soc/spi_pins.h"
 #include "spi_nand_flash.h"
 #include "spi_nand_flash_test_helpers.h"
@@ -51,11 +52,12 @@ static void example_init_nand_flash(spi_nand_flash_device_t **out_handle, spi_de
         .mosi_io_num = PIN_MOSI,
         .miso_io_num = PIN_MISO,
         .sclk_io_num = PIN_CLK,
-        .quadhd_io_num = PIN_HD,
-        .quadwp_io_num = PIN_WP,
+        .quadhd_io_num = -1,
+        .quadwp_io_num = -1,
         .max_transfer_sz = 4096 * 2,
     };
 
+    ESP_LOGI(TAG, "PIN_MOSI: %d, PIN_MISO: %d, PIN_CLK: %d, PIN_CS: %d, PIN_WP: %d, PIN_HD: %d", PIN_MOSI, PIN_MISO, PIN_CLK, PIN_CS, PIN_WP, PIN_HD);
     // Initialize the SPI bus
     ESP_LOGI(TAG, "DMA CHANNEL: %d", SPI_DMA_CHAN);
     ESP_ERROR_CHECK(spi_bus_initialize(HOST_ID, &bus_config, SPI_DMA_CHAN));
@@ -99,10 +101,11 @@ static esp_err_t read_write_pages_tp(spi_nand_flash_device_t *flash, uint32_t st
     esp_err_t ret = ESP_OK;
     uint8_t *temp_buf = NULL;
     uint8_t *pattern_buf = NULL;
-    uint32_t page_size, num_pages;
+    uint32_t page_size, block_size, num_pages;
 
     ESP_ERROR_CHECK(spi_nand_flash_get_page_count(flash, &num_pages));
     ESP_ERROR_CHECK(spi_nand_flash_get_page_size(flash, &page_size));
+    ESP_ERROR_CHECK(spi_nand_flash_get_block_size(flash, &block_size));
 
     ESP_RETURN_ON_FALSE((start_page + page_count) < num_pages, ESP_ERR_INVALID_ARG, TAG, "invalid argument");
 
@@ -113,6 +116,7 @@ static esp_err_t read_write_pages_tp(spi_nand_flash_device_t *flash, uint32_t st
 
     spi_nand_flash_fill_buffer(pattern_buf, page_size / sizeof(uint32_t));
 
+    uint32_t pages_per_block = block_size / page_size;
     int64_t read_time = 0;
     int64_t write_time = 0;
 
@@ -162,6 +166,10 @@ void app_main(void)
     ESP_ERROR_CHECK(nand_get_bad_block_stats(flash, &bad_block_count));
     ESP_LOGI(TAG, "\nTotal number of Blocks: %"PRIu32"\nBad Blocks: %"PRIu32"\nValid Blocks: %"PRIu32"\n",
              num_blocks, bad_block_count, num_blocks - bad_block_count);
+
+    uint32_t num_sectors;
+    ESP_ERROR_CHECK(spi_nand_flash_get_capacity(flash, &num_sectors));
+    ESP_LOGI(TAG, "Dhara capacity: %"PRIu32" sectors", num_sectors);
 
     // Calculate read and write throughput via Dhara
     uint32_t start_page = 1;

@@ -232,7 +232,7 @@ esp_err_t nand_is_bad(spi_nand_flash_device_t *handle, uint32_t block, bool *is_
                       fail, TAG, "");
 
     memcpy(&markers, handle->read_buffer, sizeof(markers));
-    ESP_LOGD(TAG, "is_bad, block=%"PRIu32", page=%"PRIu32",indicator = %02x,%02x", block, first_block_page, markers[0], markers[1]);
+    ESP_LOGV(TAG, "is_bad, block=%"PRIu32", page=%"PRIu32",indicator = %02x,%02x", block, first_block_page, markers[0], markers[1]);
     *is_bad_status = (markers[0] != 0xFF || markers[1] != 0xFF);
     return ret;
 
@@ -272,6 +272,7 @@ esp_err_t nand_mark_bad(spi_nand_flash_device_t *handle, uint32_t block)
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, first_block_page, NULL), fail, TAG, "");
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, first_block_page, NULL), fail, TAG, "");
     ret = s_verify_write(handle, (uint8_t *)&markers, column_addr, 4);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "%s: mark_bad write verification failed for block=%"PRIu32" and page=%"PRIu32"", __func__, block, first_block_page);
@@ -369,6 +370,8 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     }
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
+    // Reload page from array into cache register before reading back to verify
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, NULL), fail, TAG, "");
     ret = s_verify_write(handle, data, column_addr, handle->chip.page_size);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "%s: prog page=%"PRIu32" write verification failed", __func__, page);
@@ -401,7 +404,7 @@ esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_
                                     column_addr, 4), fail, TAG, "");
 
     memcpy(&markers, handle->read_buffer, sizeof(markers));
-    ESP_LOGD(TAG, "is free, page=%"PRIu32", used_marker=%02x,%02x,", page, markers[2], markers[3]);
+    ESP_LOGV(TAG, "is free, page=%"PRIu32", used_marker=%02x,%02x,", page, markers[2], markers[3]);
     *is_free_status = (markers[2] == 0xFF && markers[3] == 0xFF);
     return ret;
 fail:
