@@ -20,6 +20,7 @@
 #include "perf_benchmarks.h"
 
 #define EXAMPLE_FLASH_FREQ_KHZ      40000
+#define BENCH_DEFAULT_MAX_PAGES     1024
 
 static const char *TAG = "perf_app";
 
@@ -102,12 +103,16 @@ void app_main(void)
     ESP_LOGI(TAG, "Flash: %" PRIu32 " pages x %" PRIu32 " bytes = %" PRIu32 " KB total",
              num_pages, page_size, num_pages * page_size / 1024);
 
+    uint32_t bench_pages = (num_pages < BENCH_DEFAULT_MAX_PAGES) ? num_pages : BENCH_DEFAULT_MAX_PAGES;
+    ESP_LOGI(TAG, "Benchmarking %" PRIu32 " of %" PRIu32 " logical pages (%"PRIu32" KB)",
+             bench_pages, num_pages, bench_pages * page_size / 1024);
+
     ESP_LOGI(TAG, "Erasing chip...");
     ESP_ERROR_CHECK(spi_nand_erase_chip(flash));
 
     bench_cfg_t cfg = {
         .flash       = flash,
-        .num_pages   = num_pages,
+        .num_pages   = bench_pages,
         .num_passes  = 3,
         .page_size   = page_size,
         .verify_data = false,
