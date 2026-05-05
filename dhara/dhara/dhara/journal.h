@@ -20,6 +20,15 @@
 #include <stdint.h>
 #include "nand.h"
 
+/* Pull in sdkconfig.h when building under ESP-IDF so that
+ * CONFIG_DHARA_RADIX_DEPTH is visible to the #ifdef below.
+ * Outside ESP-IDF (e.g. upstream test suite) this file does not exist
+ * and the fallback default of 32 is used instead.
+ */
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#endif
+
 /* Number of bytes used by the journal checkpoint header.
  * Extended from 16 to 20 to store radix_depth in buf[16] plus 3 reserved bytes,
  * allowing format-mismatch detection on resume().
