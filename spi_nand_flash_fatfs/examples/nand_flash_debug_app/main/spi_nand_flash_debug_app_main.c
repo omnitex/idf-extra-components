@@ -173,14 +173,14 @@ void app_main(void)
 
     // Calculate read and write throughput via Dhara
     uint32_t start_page = 1;
-    uint16_t page_count = 1000;
+    uint16_t page_count = 100;
     bool get_raw_tp = false;
     ESP_LOGI(TAG, "Read-Write Throughput via Dhara:");
     ESP_ERROR_CHECK(read_write_pages_tp(flash, start_page, page_count, get_raw_tp));
 
     // Calculate read and write throughput at lower level (bypassing Dhara)
     start_page = 1001;
-    page_count = 1000;
+    page_count = 100;
     get_raw_tp = true;
     ESP_LOGI(TAG, "Read-Write Throughput at lower level (bypassing Dhara):");
     ESP_ERROR_CHECK(read_write_pages_tp(flash, start_page, page_count, get_raw_tp));

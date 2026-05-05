@@ -196,6 +196,11 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
                                 (p * bdl_handle->geometry.read_size) + offset, length);
 #else
     dev_handle = dhara_priv_data->parent_handle;
+    uint32_t total_pages = n->num_blocks * (1u << n->log2_ppb);
+    if (p >= total_pages) {
+        ESP_LOGE("dhara_glue", "dhara_nand_read: page %"PRIu32" >= total_pages %"PRIu32" (num_blocks=%"PRIu32" log2_ppb=%u)",
+                 (uint32_t)p, total_pages, (uint32_t)n->num_blocks, n->log2_ppb);
+    }
     ret = nand_read(dev_handle, p, offset, length, data);
 #endif
     if (ret != ESP_OK) {
@@ -218,6 +223,11 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
                                  bdl_handle->geometry.write_size);
 #else
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
+    uint32_t total_pages = n->num_blocks * (1u << n->log2_ppb);
+    if (p >= total_pages) {
+        ESP_LOGE("dhara_glue", "dhara_nand_prog: page %"PRIu32" >= total_pages %"PRIu32" (num_blocks=%"PRIu32" log2_ppb=%u)",
+                 (uint32_t)p, total_pages, (uint32_t)n->num_blocks, n->log2_ppb);
+    }
     ret = nand_prog(dev_handle, p, data);
 #endif
     if (ret) {
