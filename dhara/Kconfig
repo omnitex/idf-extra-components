@@ -1,0 +1,25 @@
+menu "Dhara NAND FTL"
+
+config DHARA_RADIX_DEPTH
+    int "Radix tree depth (address bits)"
+    default 32
+    range 8 32
+    help
+      Number of bits used to address logical sectors in the Dhara radix
+      tree map. Each metadata record stores this many 4-byte alt-pointers
+      plus a 4-byte sector ID, so DHARA_META_SIZE = 4 + DHARA_RADIX_DEPTH * 4.
+
+      Set this to ceil(log2(max_sectors)) for your device to reduce
+      metadata overhead. For a device with N blocks of P pages each,
+      max_sectors ≈ N*P/2, and the required depth is ceil(log2(max_sectors)).
+
+      Use the DHARA_RADIX_DEPTH_FOR(num_blocks, log2_ppb) macro in map.h
+      to compute the correct value.
+
+      Default (32) is backward-compatible with all existing on-flash images
+      that were written without a radix_depth header field.
+
+      WARNING: Changing this value makes existing on-flash data unreadable.
+      You must erase and reformat the NAND after changing this setting.
+
+endmenu

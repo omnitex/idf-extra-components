@@ -16,6 +16,7 @@
  *
  */
 
+#include <assert.h>
 #include <string.h>
 #include "bytes.h"
 #include "map.h"
@@ -28,7 +29,10 @@
 #define REPLAY_TRACE(fmt, ...) do { } while (0)
 #endif
 
-#define DHARA_RADIX_DEPTH	(sizeof(dhara_sector_t) << 3)
+_Static_assert(DHARA_RADIX_DEPTH >= 8 && DHARA_RADIX_DEPTH <= 32,
+    "DHARA_RADIX_DEPTH must be in [8, 32]");
+_Static_assert(DHARA_META_SIZE == 4 + DHARA_RADIX_DEPTH * 4,
+    "DHARA_META_SIZE derivation mismatch");
 
 static inline dhara_sector_t d_bit(int depth)
 {
@@ -95,6 +99,17 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
     m->stat_calls        = 0;
     m->stat_levels_skipped = 0;
 #endif
+
+#if DHARA_RADIX_DEPTH < 32
+    {
+        const uint32_t max_sectors =
+            ((uint32_t)n->num_blocks << n->log2_ppb) >> 1;
+        assert((1u << DHARA_RADIX_DEPTH) >= max_sectors &&
+               "DHARA_RADIX_DEPTH too small for this device geometry. "
+               "Increase CONFIG_DHARA_RADIX_DEPTH in sdkconfig.");
+    }
+#endif
+
 }
 
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)

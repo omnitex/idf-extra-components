@@ -31,8 +31,20 @@
 #define DHARA_META_CACHE_SLOTS  4
 #endif
 
-/* Number of bytes used by the journal checkpoint header. */
-#define DHARA_HEADER_SIZE       16
+/* Pull in sdkconfig.h when building under ESP-IDF so that
+ * CONFIG_DHARA_RADIX_DEPTH is visible to the #ifdef below.
+ * Outside ESP-IDF (e.g. upstream test suite) this file does not exist
+ * and the fallback default of 32 is used instead.
+ */
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#endif
+
+/* Number of bytes used by the journal checkpoint header.
+ * Extended from 16 to 20 to store radix_depth in buf[16] plus 3 reserved bytes,
+ * allowing format-mismatch detection on resume().
+ */
+#define DHARA_HEADER_SIZE       20
 
 /* Global metadata available for a higher layer. This metadata is
  * persistent once the journal reaches a checkpoint, and is restored on
@@ -40,10 +52,22 @@
  */
 #define DHARA_COOKIE_SIZE       4
 
+/* Radix tree depth = number of address bits = number of alt-pointers per
+ * metadata record.  Configurable at build time via CONFIG_DHARA_RADIX_DEPTH
+ * (see Kconfig).  Must be in range [8, 32].  Changing this value is an
+ * on-flash format break — existing data becomes unreadable.
+ */
+#ifdef CONFIG_DHARA_RADIX_DEPTH
+#define DHARA_RADIX_DEPTH       CONFIG_DHARA_RADIX_DEPTH
+#else
+#define DHARA_RADIX_DEPTH       32
+#endif
+
 /* This is the size of the metadata slice which accompanies each written
  * page. This is independent of the underlying page/OOB size.
+ * Derived from DHARA_RADIX_DEPTH: 4-byte sector ID + depth × 4-byte alt-pointers.
  */
-#define DHARA_META_SIZE         132
+#define DHARA_META_SIZE         (4 + (DHARA_RADIX_DEPTH) * 4)
 
 /* When a block fails, or garbage is encountered, we try again on the
  * next block/checkpoint. We can do this up to the given number of

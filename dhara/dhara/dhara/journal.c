@@ -80,6 +80,19 @@ static inline void hdr_set_bb_last(uint8_t *buf, dhara_page_t count)
     dhara_w32(buf + 12, count);
 }
 
+static inline uint8_t hdr_get_radix_depth(const uint8_t *buf)
+{
+    return buf[16];
+}
+
+static inline void hdr_set_radix_depth(uint8_t *buf, uint8_t depth)
+{
+    buf[16] = depth;
+    buf[17] = 0;
+    buf[18] = 0;
+    buf[19] = 0;
+}
+
 /* Clear user metadata */
 static inline void hdr_clear_user(uint8_t *buf, uint8_t log2_page_size)
 {
@@ -527,6 +540,22 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
     j->tail = hdr_get_tail(j->page_buf);
     j->bb_current = hdr_get_bb_current(j->page_buf);
     j->bb_last = hdr_get_bb_last(j->page_buf);
+
+    /* Verify the compiled DHARA_RADIX_DEPTH matches the one stored in the
+     * checkpoint header.  buf[16] == 0xFF means legacy image (written before
+     * this field existed); treat as depth=32 (the former hardcoded default).
+     * Any other mismatch means the flash was formatted with a different depth
+     * and must be erased before use.
+     */
+    {
+        const uint8_t stored_depth = hdr_get_radix_depth(j->page_buf);
+        if (stored_depth != 0xFF && stored_depth != (uint8_t)DHARA_RADIX_DEPTH) {
+            reset_journal(j);
+            dhara_set_error(err, DHARA_E_BAD_BLOCK);
+            return -1;
+        }
+    }
+
     hdr_clear_user(j->page_buf, j->nand->log2_page_size);
 
     /* Perform another linear scan to find the next free user page */
@@ -949,6 +978,7 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
     hdr_set_tail(j->page_buf, j->tail);
     hdr_set_bb_current(j->page_buf, j->bb_current);
     hdr_set_bb_last(j->page_buf, j->bb_last);
+    hdr_set_radix_depth(j->page_buf, (uint8_t)DHARA_RADIX_DEPTH);
 
     if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, DHARA_OOB_LPN_NONE, &my_err) < 0) {
 		if (my_err == DHARA_E_PAGE_RELIEF) {

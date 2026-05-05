@@ -33,6 +33,24 @@
 #define DHARA_MAP_PATH_CACHE  1
 #endif
 
+/**
+ * Compute the minimum DHARA_RADIX_DEPTH for a given device geometry.
+ *
+ * Returns the number of bits needed to address all logical sectors on a device
+ * with num_blocks erase-blocks and 2^log2_ppb pages per block.
+ *
+ * max_sectors ≈ (num_blocks * 2^log2_ppb) / 2   (half reserved for GC)
+ * required depth = ceil(log2(max_sectors))
+ *
+ * Example: 1024 blocks, 64 pages/block (log2_ppb=6):
+ *   max_sectors = 1024 * 64 / 2 = 32768 → depth = 15
+ *
+ * Use this value as CONFIG_DHARA_RADIX_DEPTH in your sdkconfig or Kconfig.default.
+ * NOTE: __builtin_clz is GCC/Clang only — universally available on ESP-IDF.
+ */
+#define DHARA_RADIX_DEPTH_FOR(num_blocks, log2_ppb) \
+    (32 - __builtin_clz(((num_blocks) << (log2_ppb)) / 2 - 1))
+
 /* The map is a journal indexing format. It maps virtual sectors to
  * pages of data in flash memory.
  */
@@ -42,9 +60,6 @@ typedef uint32_t dhara_sector_t;
 #ifndef DHARA_OOB_LPN_NONE
 #define DHARA_OOB_LPN_NONE	0xffffffff
 #endif
-
-/* Depth of the radix tree (one level per bit of dhara_sector_t). */
-#define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
 
 struct dhara_map {
     struct dhara_journal    journal;
