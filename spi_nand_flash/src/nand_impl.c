@@ -465,7 +465,6 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
     ret = s_verify_write(handle, handle->temp_buffer, column_addr + handle->chip.page_size, 4);
 #else
-    uint8_t markers[4] = { 0xFF, 0xFF, 0x00, 0x00 };
     ret = s_verify_write(handle, (uint8_t *)&markers, column_addr + handle->chip.page_size, 4);
 #endif
     if (ret != ESP_OK) {
