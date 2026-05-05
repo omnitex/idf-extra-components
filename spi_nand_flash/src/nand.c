@@ -28,7 +28,7 @@ esp_err_t spi_nand_flash_init_device(spi_nand_flash_config_t *config, spi_nand_f
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (!config->gc_factor) {
-        config->gc_factor = 45;
+        config->gc_factor = (100 / CONFIG_NAND_GC_RESERVE_PERCENT) - 1;
     }
 
     esp_err_t ret = nand_init_device(config, handle);
@@ -252,7 +252,7 @@ esp_err_t spi_nand_flash_init_with_layers(spi_nand_flash_config_t *config,
 
     // Set default GC factor if not specified
     if (!config->gc_factor) {
-        config->gc_factor = 45;
+        config->gc_factor = (100 / CONFIG_NAND_GC_RESERVE_PERCENT) - 1;
     }
 
     // Initialize device and create Flash BDL
