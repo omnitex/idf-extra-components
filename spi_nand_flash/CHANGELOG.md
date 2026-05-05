@@ -2,12 +2,19 @@
 
 Versioning policy: see [VERSIONING.md](VERSIONING.md). From **v1.0.0** onward this component follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0]
+### Added
+
+- **Experimental OOB layout (`CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT`, default `n`):** Linux mmap path (`nand_impl_linux.c`) matches target marker/OOB behavior when the option is enabled; default layout keeps the same on-flash bytes and emulator stride as the legacy fixed layout. CI/sdkconfig presets: `sdkconfig.ci.oob_layout` / `sdkconfig.ci.bdl_oob_layout` in `test_app/`, `sdkconfig.ci.oob_layout` in `host_test/`.
+- **`nand_emul_get_stats`:** Implemented for `CONFIG_NAND_ENABLE_STATS=y` on the Linux target (known-bug).
+
 ## [1.0.3]
 ### Dependencies
 - **Dhara** is now consumed as the in-repo `espressif/dhara` component at **1.0.0** (vendored upstream snapshot; the git submodule under `dhara/` is removed). The manifest dependency range is **`1.*`** (was `0.1.*`), matching the new component version with the same `override_path: "../dhara"` layout.
 
 ### Documentation
 - README: clarify that Dhara is provided by the vendored `espressif/dhara` component and that no separate submodule checkout is required.
+
 
 ## [1.0.2]
 ### Fixes
