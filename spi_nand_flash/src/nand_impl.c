@@ -440,7 +440,7 @@ static bool is_ecc_error(spi_nand_flash_device_t *dev, uint8_t status)
 
 esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offset, size_t length, uint8_t *data)
 {
-    ESP_LOGD(TAG, "read, page=%"PRIu32", offset=%d, length=%d", page, offset, length);
+    ESP_LOGV(TAG, "read, page=%"PRIu32", offset=%d, length=%d", page, offset, length);
     uint32_t total_pages = handle->chip.num_blocks * (1 << handle->chip.log2_ppb);
     if (page >= total_pages) {
         ESP_LOGE(TAG, "nand_read: page=%"PRIu32" out of bounds (num_blocks=%"PRIu32", log2_ppb=%"PRIu32", total_pages=%"PRIu32")",
