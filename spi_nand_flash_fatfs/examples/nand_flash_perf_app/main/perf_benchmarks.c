@@ -31,58 +31,64 @@ static const char *s_lat_bucket_labels[PERF_LATENCY_BUCKETS] = {
  * Internal helpers
  * ------------------------------------------------------------------------- */
 
-static int int64_cmp(const void *a, const void *b)
+/* Feed one page latency sample into Welford online mean/variance accumulators */
+static void welford_update(perf_direction_result_t *out, int64_t lat_us)
 {
-    int64_t x = *(const int64_t *)a;
-    int64_t y = *(const int64_t *)b;
-    if (x < y) {
-        return -1;
-    }
-    if (x > y) {
-        return 1;
-    }
-    return 0;
+    out->_wf_n++;
+    double delta = (double)lat_us - out->_wf_mean;
+    out->_wf_mean += delta / (double)out->_wf_n;
+    double delta2 = (double)lat_us - out->_wf_mean;
+    out->_wf_m2 += delta * delta2;
 }
 
-static void compute_stats(const int64_t *lats, uint32_t count,
-                           perf_direction_result_t *out)
+/* Accumulate one pass worth of latencies: update Welford, min/max, histogram */
+static void accumulate_pass(perf_direction_result_t *out,
+                             const int64_t *lats, uint32_t count)
 {
-    if (count == 0) {
-        return;
-    }
-
-    int64_t *sorted = heap_caps_malloc(count * sizeof(int64_t), MALLOC_CAP_DEFAULT);
-    if (!sorted) {
-        ESP_LOGE(TAG, "compute_stats: nomem for sorted array");
-        return;
-    }
-    memcpy(sorted, lats, count * sizeof(int64_t));
-    qsort(sorted, count, sizeof(int64_t), int64_cmp);
-
-    out->lat_min_us  = sorted[0];
-    out->lat_max_us  = sorted[count - 1];
-    out->lat_p95_us  = sorted[(count * 95) / 100];
-
-    /* Mean */
-    double sum = 0.0;
     for (uint32_t i = 0; i < count; i++) {
-        sum += (double)lats[i];
-    }
-    double mean = sum / count;
-    out->lat_mean_us = (int64_t)mean;
+        int64_t lat = lats[i];
 
-    /* Histogram */
-    memset(out->lat_hist, 0, sizeof(out->lat_hist));
-    for (uint32_t i = 0; i < count; i++) {
+        welford_update(out, lat);
+
+        if (lat < out->lat_min_us) {
+            out->lat_min_us = lat;
+        }
+        if (lat > out->lat_max_us) {
+            out->lat_max_us = lat;
+        }
+
         for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
-            if (lats[i] < s_lat_bucket_us[b]) {
+            if (lat < s_lat_bucket_us[b]) {
                 out->lat_hist[b]++;
                 break;
             }
         }
     }
+}
 
-    free(sorted);
+/* Finalise latency stats from Welford accumulators + histogram p95 interpolation */
+static void finalise_lat_stats(perf_direction_result_t *out)
+{
+    if (out->_wf_n == 0) {
+        return;
+    }
+
+    out->lat_mean_us   = (int64_t)out->_wf_mean;
+    out->lat_stddev_us = (int64_t)sqrt(out->_wf_m2 / (double)out->_wf_n);
+
+    /* p95 via histogram: find bucket containing the 95th-percentile sample */
+    uint64_t target = (out->_wf_n * 95) / 100;
+    uint64_t cumulative = 0;
+    out->lat_p95_us = out->lat_max_us;
+    for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
+        cumulative += out->lat_hist[b];
+        if (cumulative > target) {
+            out->lat_p95_us = s_lat_bucket_us[b] == INT64_MAX
+                              ? out->lat_max_us
+                              : s_lat_bucket_us[b];
+            break;
+        }
+    }
 }
 
 /* Compute throughput aggregate stats from pass_kbps[] array */
@@ -113,6 +119,19 @@ static void compute_tp_stats(perf_direction_result_t *out)
     out->stddev_kbps = (float)sqrt(var / out->num_passes);
 }
 
+/* Initialise a perf_direction_result_t before accumulating passes into it */
+static void direction_result_init(perf_direction_result_t *out,
+                                   uint32_t page_count, uint32_t page_size,
+                                   uint32_t num_passes)
+{
+    memset(out, 0, sizeof(*out));
+    out->page_count  = page_count;
+    out->page_size   = page_size;
+    out->num_passes  = num_passes;
+    out->lat_min_us  = INT64_MAX;
+    out->lat_max_us  = INT64_MIN;
+}
+
 /* -------------------------------------------------------------------------
  * Public API
  * ------------------------------------------------------------------------- */
@@ -140,24 +159,17 @@ esp_err_t perf_warmup(const bench_cfg_t *cfg)
 
 esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
 {
-    uint32_t total_lats = cfg->num_pages * cfg->num_passes;
-    int64_t *write_lats = heap_caps_malloc(total_lats * sizeof(int64_t), MALLOC_CAP_DEFAULT);
-    int64_t *read_lats  = heap_caps_malloc(total_lats * sizeof(int64_t), MALLOC_CAP_DEFAULT);
-    uint8_t *buf        = heap_caps_malloc(cfg->page_size, MALLOC_CAP_DMA);
+    int64_t *lats = heap_caps_malloc(cfg->num_pages * sizeof(int64_t), MALLOC_CAP_DEFAULT);
+    uint8_t *buf  = heap_caps_malloc(cfg->page_size, MALLOC_CAP_DMA);
 
-    if (!write_lats || !read_lats || !buf) {
-        free(write_lats);
-        free(read_lats);
+    if (!lats || !buf) {
+        free(lats);
         free(buf);
         return ESP_ERR_NO_MEM;
     }
 
-    result->write.page_count  = cfg->num_pages;
-    result->write.page_size   = cfg->page_size;
-    result->write.num_passes  = cfg->num_passes;
-    result->read.page_count   = cfg->num_pages;
-    result->read.page_size    = cfg->page_size;
-    result->read.num_passes   = cfg->num_passes;
+    direction_result_init(&result->write, cfg->num_pages, cfg->page_size, cfg->num_passes);
+    direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
     /* WRITE PHASE */
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
@@ -167,12 +179,15 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
                                               pass * cfg->num_pages + p);
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, p));
-            write_lats[pass * cfg->num_pages + p] = esp_timer_get_time() - t0;
+            lats[p] = esp_timer_get_time() - t0;
         }
         ESP_ERROR_CHECK(spi_nand_flash_sync(cfg->flash));
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
         result->write.pass_kbps[pass] =
             (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->write, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
 
     /* READ PHASE */
@@ -181,7 +196,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_read_page(cfg->flash, buf, p));
-            read_lats[pass * cfg->num_pages + p] = esp_timer_get_time() - t0;
+            lats[p] = esp_timer_get_time() - t0;
 
             if (cfg->verify_data) {
                 int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / 4,
@@ -194,30 +209,29 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
         result->read.pass_kbps[pass] =
             (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->read, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
     }
 
-    compute_stats(write_lats, total_lats, &result->write);
     compute_tp_stats(&result->write);
-    compute_stats(read_lats, total_lats, &result->read);
+    finalise_lat_stats(&result->write);
     compute_tp_stats(&result->read);
+    finalise_lat_stats(&result->read);
 
-    free(write_lats);
-    free(read_lats);
+    free(lats);
     free(buf);
     return ESP_OK;
 }
 
 esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
 {
-    uint32_t total_lats = cfg->num_pages * cfg->num_passes;
-    int64_t  *write_lats = heap_caps_malloc(total_lats * sizeof(int64_t), MALLOC_CAP_DEFAULT);
-    int64_t  *read_lats  = heap_caps_malloc(total_lats * sizeof(int64_t), MALLOC_CAP_DEFAULT);
+    int64_t  *lats       = heap_caps_malloc(cfg->num_pages * sizeof(int64_t), MALLOC_CAP_DEFAULT);
     uint8_t  *buf        = heap_caps_malloc(cfg->page_size, MALLOC_CAP_DMA);
     uint32_t *page_order = heap_caps_malloc(cfg->num_pages * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
 
-    if (!write_lats || !read_lats || !buf || !page_order) {
-        free(write_lats);
-        free(read_lats);
+    if (!lats || !buf || !page_order) {
+        free(lats);
         free(buf);
         free(page_order);
         return ESP_ERR_NO_MEM;
@@ -236,12 +250,8 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
         page_order[j] = tmp;
     }
 
-    result->write.page_count  = cfg->num_pages;
-    result->write.page_size   = cfg->page_size;
-    result->write.num_passes  = cfg->num_passes;
-    result->read.page_count   = cfg->num_pages;
-    result->read.page_size    = cfg->page_size;
-    result->read.num_passes   = cfg->num_passes;
+    direction_result_init(&result->write, cfg->num_pages, cfg->page_size, cfg->num_passes);
+    direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
     /* WRITE PHASE */
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
@@ -252,12 +262,15 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
                                               pass * cfg->num_pages + page_idx);
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, page_idx));
-            write_lats[pass * cfg->num_pages + p] = esp_timer_get_time() - t0;
+            lats[p] = esp_timer_get_time() - t0;
         }
         ESP_ERROR_CHECK(spi_nand_flash_sync(cfg->flash));
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
         result->write.pass_kbps[pass] =
             (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->write, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
 
     /* READ PHASE */
@@ -267,7 +280,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
             uint32_t page_idx = page_order[p];
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_read_page(cfg->flash, buf, page_idx));
-            read_lats[pass * cfg->num_pages + p] = esp_timer_get_time() - t0;
+            lats[p] = esp_timer_get_time() - t0;
 
             if (cfg->verify_data) {
                 int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / 4,
@@ -280,15 +293,17 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
         result->read.pass_kbps[pass] =
             (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->read, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
     }
 
-    compute_stats(write_lats, total_lats, &result->write);
     compute_tp_stats(&result->write);
-    compute_stats(read_lats, total_lats, &result->read);
+    finalise_lat_stats(&result->write);
     compute_tp_stats(&result->read);
+    finalise_lat_stats(&result->read);
 
-    free(write_lats);
-    free(read_lats);
+    free(lats);
     free(buf);
     free(page_order);
     return ESP_OK;
@@ -306,8 +321,8 @@ void perf_print_result(const bench_result_t *result)
     }
     ESP_LOGI(TAG, "  Mean: %.0f kB/s  Min: %.0f  Max: %.0f  StdDev: %.1f kB/s",
              w->mean_kbps, w->min_kbps, w->max_kbps, w->stddev_kbps);
-    ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
-             w->lat_min_us, w->lat_mean_us, w->lat_p95_us, w->lat_max_us);
+    ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  stddev=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
+             w->lat_min_us, w->lat_mean_us, w->lat_stddev_us, w->lat_p95_us, w->lat_max_us);
     for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
         ESP_LOGI(TAG, "    %s: %" PRIu32, s_lat_bucket_labels[b], w->lat_hist[b]);
     }
@@ -319,8 +334,8 @@ void perf_print_result(const bench_result_t *result)
     }
     ESP_LOGI(TAG, "  Mean: %.0f kB/s  Min: %.0f  Max: %.0f  StdDev: %.1f kB/s",
              r->mean_kbps, r->min_kbps, r->max_kbps, r->stddev_kbps);
-    ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
-             r->lat_min_us, r->lat_mean_us, r->lat_p95_us, r->lat_max_us);
+    ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  stddev=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
+             r->lat_min_us, r->lat_mean_us, r->lat_stddev_us, r->lat_p95_us, r->lat_max_us);
     for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
         ESP_LOGI(TAG, "    %s: %" PRIu32, s_lat_bucket_labels[b], r->lat_hist[b]);
     }

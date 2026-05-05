@@ -15,37 +15,43 @@
 extern "C" {
 #endif
 
-/** Number of latency histogram buckets (see LATENCY_BUCKET_US_* defines in .c) */
+/** Number of latency histogram buckets (see s_lat_bucket_us in .c) */
 #define PERF_LATENCY_BUCKETS 9
+
+/** Maximum number of passes (size of per-pass throughput array) */
+#define PERF_MAX_PASSES 10
 
 /**
  * @brief Result of a single benchmark direction (read or write).
- *
- * Populated by run_sequential_write_bench() / run_sequential_read_bench() /
- * run_random_write_bench() / run_random_read_bench().
  */
 typedef struct {
-    uint32_t page_count;         ///< Number of pages exercised
+    uint32_t page_count;         ///< Number of pages exercised per pass
     uint32_t page_size;          ///< Page size in bytes
 
-    /* Per-pass throughput in kB/s (up to PERF_MAX_PASSES entries, rest = 0) */
-    float    pass_kbps[4];
+    /* Per-pass throughput in kB/s */
+    float    pass_kbps[PERF_MAX_PASSES];
     uint32_t num_passes;
 
-    /* Aggregate stats across all passes */
+    /* Throughput aggregate across passes */
     float    mean_kbps;
     float    min_kbps;
     float    max_kbps;
     float    stddev_kbps;
 
-    /* Per-page latency stats (microseconds), across all passes */
+    /* Per-page latency (us) — accumulated across all passes via Welford + histogram */
     int64_t  lat_min_us;
     int64_t  lat_max_us;
-    int64_t  lat_mean_us;
-    int64_t  lat_p95_us;         ///< 95th-percentile latency
+    int64_t  lat_mean_us;        ///< Welford mean across all passes × pages
+    int64_t  lat_stddev_us;      ///< Welford stddev across all passes × pages
+    int64_t  lat_p95_us;         ///< Interpolated from histogram
 
-    /* Latency histogram — counts per bucket */
+    /* Histogram accumulated across all passes */
     uint32_t lat_hist[PERF_LATENCY_BUCKETS];
+
+    /* Welford online accumulators (internal, used during benchmark) */
+    double   _wf_mean;
+    double   _wf_m2;
+    uint64_t _wf_n;
 } perf_direction_result_t;
 
 /**

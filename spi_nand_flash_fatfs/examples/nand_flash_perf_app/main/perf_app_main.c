@@ -20,7 +20,9 @@
 #include "perf_benchmarks.h"
 
 #define EXAMPLE_FLASH_FREQ_KHZ      40000
-#define BENCH_DEFAULT_MAX_PAGES     1024
+
+#define BENCH_DEFAULT_NUM_PAGES     2048
+#define BENCH_DEFAULT_NUM_PASSES    5
 
 static const char *TAG = "perf_app";
 
@@ -103,7 +105,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Flash: %" PRIu32 " pages x %" PRIu32 " bytes = %" PRIu32 " KB total",
              num_pages, page_size, num_pages * page_size / 1024);
 
-    uint32_t bench_pages = (num_pages < BENCH_DEFAULT_MAX_PAGES) ? num_pages : BENCH_DEFAULT_MAX_PAGES;
+    uint32_t bench_pages = (num_pages < BENCH_DEFAULT_NUM_PAGES) ? num_pages : BENCH_DEFAULT_NUM_PAGES;
     ESP_LOGI(TAG, "Benchmarking %" PRIu32 " of %" PRIu32 " logical pages (%"PRIu32" KB)",
              bench_pages, num_pages, bench_pages * page_size / 1024);
 
@@ -113,10 +115,15 @@ void app_main(void)
     bench_cfg_t cfg = {
         .flash       = flash,
         .num_pages   = bench_pages,
-        .num_passes  = 3,
+        .num_passes  = BENCH_DEFAULT_NUM_PASSES,
         .page_size   = page_size,
         .verify_data = false,
     };
+
+    if (cfg.num_passes > PERF_MAX_PASSES) {
+        cfg.num_passes = PERF_MAX_PASSES;
+        ESP_LOGW(TAG, "num_passes (%d) exceeds PERF_MAX_PASSES (%d), setting to %d", cfg.num_passes, PERF_MAX_PASSES, PERF_MAX_PASSES);
+    }
 
     ESP_LOGI(TAG, "Warmup pass (not timed)...");
     ESP_ERROR_CHECK(perf_warmup(&cfg));
