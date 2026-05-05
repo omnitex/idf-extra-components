@@ -51,8 +51,8 @@ static void example_init_nand_flash(spi_nand_flash_device_t **out_handle, spi_de
         .mosi_io_num = PIN_MOSI,
         .miso_io_num = PIN_MISO,
         .sclk_io_num = PIN_CLK,
-        .quadhd_io_num = PIN_HD,
-        .quadwp_io_num = PIN_WP,
+        .quadhd_io_num = -1,
+        .quadwp_io_num = -1,
         .max_transfer_sz = 4096 * 2,
     };
 
@@ -165,14 +165,14 @@ void app_main(void)
 
     // Calculate read and write throughput via Dhara
     uint32_t start_page = 1;
-    uint16_t page_count = 1000;
+    uint16_t page_count = 100;
     bool get_raw_tp = false;
     ESP_LOGI(TAG, "Read-Write Throughput via Dhara:");
     ESP_ERROR_CHECK(read_write_pages_tp(flash, start_page, page_count, get_raw_tp));
 
     // Calculate read and write throughput at lower level (bypassing Dhara)
     start_page = 1001;
-    page_count = 1000;
+    page_count = 100;
     get_raw_tp = true;
     ESP_LOGI(TAG, "Read-Write Throughput at lower level (bypassing Dhara):");
     ESP_ERROR_CHECK(read_write_pages_tp(flash, start_page, page_count, get_raw_tp));
