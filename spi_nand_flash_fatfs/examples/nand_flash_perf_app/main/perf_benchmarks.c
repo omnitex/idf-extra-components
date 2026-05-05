@@ -21,7 +21,11 @@
 static const char *TAG = "perf_app";
 
 /* Bucket upper edges in microseconds; last bucket is open-ended (INT64_MAX) */
-static const int64_t s_lat_bucket_us[PERF_LATENCY_BUCKETS] = {500, 1000, 2000, 5000, 10000, INT64_MAX};
+static const int64_t s_lat_bucket_us[PERF_LATENCY_BUCKETS] = {500, 1000, 1500, 2000, 2500, 3000, 5000, 10000, INT64_MAX};
+
+static const char *s_lat_bucket_labels[PERF_LATENCY_BUCKETS] = {
+    "<500us", "500-1ms", "1-1.5ms", "1.5-2ms", "2-2.5ms", "2.5-3ms", "3-5ms", "5-10ms", ">=10ms"
+};
 
 /* -------------------------------------------------------------------------
  * Internal helpers
@@ -304,10 +308,9 @@ void perf_print_result(const bench_result_t *result)
              w->mean_kbps, w->min_kbps, w->max_kbps, w->stddev_kbps);
     ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
              w->lat_min_us, w->lat_mean_us, w->lat_p95_us, w->lat_max_us);
-    ESP_LOGI(TAG, "  Histogram: <500us:%" PRIu32 "  500-1ms:%" PRIu32
-             "  1-2ms:%" PRIu32 "  2-5ms:%" PRIu32 "  5-10ms:%" PRIu32 "  >=10ms:%" PRIu32,
-             w->lat_hist[0], w->lat_hist[1], w->lat_hist[2],
-             w->lat_hist[3], w->lat_hist[4], w->lat_hist[5]);
+    for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
+        ESP_LOGI(TAG, "    %s: %" PRIu32, s_lat_bucket_labels[b], w->lat_hist[b]);
+    }
 
     ESP_LOGI(TAG, "[PERF] %s READ (%" PRIu32 " pages x %" PRIu32 " passes):",
              result->name, r->page_count, r->num_passes);
@@ -318,10 +321,9 @@ void perf_print_result(const bench_result_t *result)
              r->mean_kbps, r->min_kbps, r->max_kbps, r->stddev_kbps);
     ESP_LOGI(TAG, "  Latency (us): min=%" PRId64 "  mean=%" PRId64 "  p95=%" PRId64 "  max=%" PRId64,
              r->lat_min_us, r->lat_mean_us, r->lat_p95_us, r->lat_max_us);
-    ESP_LOGI(TAG, "  Histogram: <500us:%" PRIu32 "  500-1ms:%" PRIu32
-             "  1-2ms:%" PRIu32 "  2-5ms:%" PRIu32 "  5-10ms:%" PRIu32 "  >=10ms:%" PRIu32,
-             r->lat_hist[0], r->lat_hist[1], r->lat_hist[2],
-             r->lat_hist[3], r->lat_hist[4], r->lat_hist[5]);
+    for (int b = 0; b < PERF_LATENCY_BUCKETS; b++) {
+        ESP_LOGI(TAG, "    %s: %" PRIu32, s_lat_bucket_labels[b], r->lat_hist[b]);
+    }
 }
 
 void perf_print_summary_table(const bench_result_t *results, uint32_t count)

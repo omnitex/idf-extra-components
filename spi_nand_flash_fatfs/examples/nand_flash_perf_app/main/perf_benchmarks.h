@@ -16,7 +16,7 @@ extern "C" {
 #endif
 
 /** Number of latency histogram buckets (see LATENCY_BUCKET_US_* defines in .c) */
-#define PERF_LATENCY_BUCKETS 6
+#define PERF_LATENCY_BUCKETS 9
 
 /**
  * @brief Result of a single benchmark direction (read or write).
