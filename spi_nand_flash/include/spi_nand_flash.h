@@ -50,8 +50,11 @@ struct spi_nand_flash_config_t {
 #else
     nand_file_mmap_emul_config_t *emul_conf;
 #endif
-    uint8_t gc_factor;                       ///< The gc factor controls the number of blocks to spare block ratio.
-    ///< Lower values will reduce the available space but increase performance
+    uint8_t gc_factor; ///< Dhara gc_ratio: controls GC headroom as 100/(gc_factor+1) percent of capacity.
+    ///< Set to 0 to use the Kconfig default (CONFIG_NAND_GC_RESERVE_PERCENT).
+    ///< Higher values leave less headroom (more usable space, larger GC latency spikes).
+    ///< Lower values reserve more headroom (less usable space, smoother GC latency).
+    ///< Example: gc_factor=9 reserves 10%, gc_factor=4 reserves 20%, gc_factor=1 reserves 50%.
     spi_nand_flash_io_mode_t io_mode;        ///< set io mode for SPI NAND communication
     uint8_t flags;                           ///< set flag with SPI_DEVICE_HALFDUPLEX for half duplex communication, 0 for full-duplex.
     ///< This flag value must match the flag value in the spi_device_interface_config_t structure.
