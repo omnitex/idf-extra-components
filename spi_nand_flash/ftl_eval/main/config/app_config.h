@@ -25,6 +25,7 @@ typedef struct {
 
     uint32_t factory_bad_block_count;
     uint32_t max_erase_cycles;
+    uint32_t pre_warm_erase_cycles;
     uint32_t max_prog_cycles;
     uint32_t grave_page_threshold;
 
@@ -32,6 +33,7 @@ typedef struct {
     double prog_fail_prob;
     double erase_fail_prob;
     double copy_fail_prob;
+    double copy_ecc_fail_prob;
     uint32_t op_fail_seed;
 
     uint32_t crash_after_ops_min;
@@ -42,6 +44,13 @@ typedef struct {
     uint32_t ecc_mid_threshold;
     uint32_t ecc_high_threshold;
     uint32_t ecc_fail_threshold;
+
+    uint32_t ecc_prog_mid_erase_threshold;
+    uint32_t ecc_prog_high_erase_threshold;
+    uint32_t ecc_prog_fail_erase_threshold;
+    double   ecc_prog_noise_prob;
+    uint32_t ecc_data_refresh_threshold;
+    bool     recovery_check;
 } scenario_config_t;
 
 typedef struct {
@@ -60,6 +69,7 @@ typedef struct {
     uint32_t total_writes;
     uint32_t write_size_bytes;
     uint32_t seed;
+    double zipf_skew;
 } workload_config_t;
 
 typedef struct {

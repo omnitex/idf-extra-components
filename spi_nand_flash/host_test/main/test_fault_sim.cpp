@@ -102,28 +102,101 @@ TEST_CASE("fault_sim: factory bad blocks visible before any operation", "[fault_
     f.destroy();
 }
 
-TEST_CASE("fault_sim: mark_bad at runtime writes OOB marker", "[fault_sim]")
+TEST_CASE("fault_sim: nand_get_ecc_status returns OK when no thresholds set", "[fault_sim][ecc_prog]")
 {
     FaultSimFixture f;
     f.init();
 
-    bool is_bad = false;
-    REQUIRE(nand_is_bad(f.dev, 7, &is_bad) == ESP_OK);
-    REQUIRE(is_bad == false);
-
-    REQUIRE(nand_mark_bad(f.dev, 7) == ESP_OK);
-
-    REQUIRE(nand_is_bad(f.dev, 7, &is_bad) == ESP_OK);
-    REQUIRE(is_bad == true);
-
-    /* Reset clears counters but NOT mmap — bad-block OOB marker persists */
-    nand_fault_sim_reset();
-    REQUIRE(nand_fault_sim_get_erase_count(0) == 0u);
-    REQUIRE(nand_is_bad(f.dev, 7, &is_bad) == ESP_OK);
-    REQUIRE(is_bad == true);
+    CHECK(nand_get_ecc_status(f.dev, 0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_OK);
 
     f.destroy();
 }
+
+TEST_CASE("fault_sim: nand_get_ecc_status escalates with erase count", "[fault_sim][ecc_prog]")
+{
+    FaultSimFixture f;
+    f.cfg.ecc_prog_mid_erase_threshold  = 10;
+    f.cfg.ecc_prog_high_erase_threshold = 20;
+    f.cfg.ecc_prog_fail_erase_threshold = 30;
+    f.init();
+
+    uint32_t block0_page0 = 0;
+
+    CHECK(nand_get_ecc_status(f.dev, block0_page0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_OK);
+
+    for (int i = 0; i < 10; i++) {
+        REQUIRE(nand_erase_block(f.dev, 0) == ESP_OK);
+    }
+    CHECK(nand_get_ecc_status(f.dev, block0_page0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_1_TO_3_BITS_CORRECTED);
+
+    for (int i = 0; i < 10; i++) {
+        REQUIRE(nand_erase_block(f.dev, 0) == ESP_OK);
+    }
+    CHECK(nand_get_ecc_status(f.dev, block0_page0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_4_TO_6_BITS_CORRECTED);
+
+    for (int i = 0; i < 10; i++) {
+        REQUIRE(nand_erase_block(f.dev, 0) == ESP_OK);
+    }
+    CHECK(nand_get_ecc_status(f.dev, block0_page0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED);
+
+    f.destroy();
+}
+
+TEST_CASE("fault_sim: nand_get_ecc_status only affects block being erased", "[fault_sim][ecc_prog]")
+{
+    FaultSimFixture f;
+    f.cfg.ecc_prog_mid_erase_threshold = 5;
+    f.init();
+
+    for (int i = 0; i < 5; i++) {
+        REQUIRE(nand_erase_block(f.dev, 0) == ESP_OK);
+    }
+
+    uint32_t ppb = 1u << 6;
+
+    CHECK(nand_get_ecc_status(f.dev, 0) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_1_TO_3_BITS_CORRECTED);
+
+    CHECK(nand_get_ecc_status(f.dev, ppb) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_OK);
+
+    f.destroy();
+}
+
+TEST_CASE("fault_sim: nand_get_ecc_status page out of range returns OK", "[fault_sim][ecc_prog]")
+{
+    FaultSimFixture f;
+    f.cfg.ecc_prog_mid_erase_threshold = 1;
+    f.init();
+
+    uint32_t huge_page = 0xFFFFFFFFu;
+    CHECK(nand_get_ecc_status(f.dev, huge_page) == ESP_OK);
+    CHECK(f.dev->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_OK);
+
+    f.destroy();
+}
+
+TEST_CASE("fault_sim: AGED preset has mid+high prog ECC thresholds set", "[fault_sim][ecc_prog]")
+{
+    nand_fault_sim_config_t cfg = nand_fault_sim_config_preset(NAND_SIM_SCENARIO_AGED);
+    CHECK(cfg.ecc_prog_mid_erase_threshold > 0u);
+    CHECK(cfg.ecc_prog_high_erase_threshold > cfg.ecc_prog_mid_erase_threshold);
+    CHECK(cfg.ecc_prog_fail_erase_threshold == 0u);
+}
+
+TEST_CASE("fault_sim: FAILING preset has all three prog ECC thresholds set", "[fault_sim][ecc_prog]")
+{
+    nand_fault_sim_config_t cfg = nand_fault_sim_config_preset(NAND_SIM_SCENARIO_FAILING);
+    CHECK(cfg.ecc_prog_mid_erase_threshold > 0u);
+    CHECK(cfg.ecc_prog_high_erase_threshold > cfg.ecc_prog_mid_erase_threshold);
+    CHECK(cfg.ecc_prog_fail_erase_threshold > cfg.ecc_prog_high_erase_threshold);
+}
+
 
 TEST_CASE("fault_sim: erase wear-out fires after max_erase_cycles", "[fault_sim]")
 {

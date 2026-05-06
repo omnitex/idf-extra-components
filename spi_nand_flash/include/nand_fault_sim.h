@@ -75,6 +75,11 @@ typedef struct {
 
     /* --- Erase wear-out ----------------------------------------------- */
     uint32_t max_erase_cycles;   /*!< Block wears out after this many erases (0 = unlimited) */
+    uint32_t pre_warm_erase_cycles; /*!< Pre-populate all erase_count[] to this value at init (0 = off).
+                                         Use to simulate a flash that has already consumed part of its
+                                         erase budget before the test starts.  Combined with
+                                         ecc_prog_*_erase_threshold this causes page relief to fire
+                                         from the very first write. */
 
     /* --- Program wear-out --------------------------------------------- */
     uint32_t max_prog_cycles;    /*!< Page wears out after this many programs (0 = unlimited) */
@@ -87,6 +92,11 @@ typedef struct {
     float    prog_fail_prob;    /*!< Probability [0.0, 1.0] that nand_prog() returns an error */
     float    erase_fail_prob;   /*!< Probability [0.0, 1.0] that nand_erase_block() returns an error */
     float    copy_fail_prob;    /*!< Probability [0.0, 1.0] that nand_copy() returns an error */
+    float    copy_ecc_fail_prob; /*!< Probability [0.0, 1.0] that nand_copy() returns ESP_FAIL with
+                                      ecc_corrected_bits_status set to NAND_ECC_NOT_CORRECTED.
+                                      Unlike copy_fail_prob (which leaves ecc status unchanged), this
+                                      variant makes the DHARA_E_ECC branch in dhara_glue.c reachable
+                                      independently of write-wear thresholds. */
     unsigned int op_fail_seed;  /*!< Seed for the per-op failure PRNG */
 
     /* --- Power-loss crash --------------------------------------------- */
@@ -95,14 +105,58 @@ typedef struct {
     float    crash_probability;   /*!< Per-op crash probability (0.0 = disabled; mutually exclusive with range mode) */
     unsigned int crash_seed;      /*!< Seed for crash-point selection and torn-write offset */
 
+    /* --- ECC threshold alignment -------------------------------------- */
+    /* ecc_data_refresh_threshold is the ECC severity level (as a
+     * nand_ecc_status_t integer value) at or above which the block-health
+     * layer considers a page to need data refresh / scrubbing.  It must
+     * be consistent with CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC and
+     * with the ecc_prog_*_erase_threshold values chosen below — otherwise
+     * relief will either never fire or fire too aggressively.
+     *
+     * Default (0): the simulator uses 4 (NAND_ECC_4_TO_6_BITS_CORRECTED),
+     * which matches the real-driver default and
+     * CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC = 2 (same level).
+     * Set explicitly in sweep configs where a different threshold is needed. */
+    uint8_t  ecc_data_refresh_threshold; /*!< ECC data-refresh threshold for chip.ecc_data (0 = use default 4) */
+
     /* --- ECC read-disturb simulation ---------------------------------- */
+    /* Models BER increase caused by repeated reads of the same page
+     * (read-disturb effect).  Thresholds are per-page READ counts.
+     * Fires through the on_page_read_ecc callback inside nand_read().
+     * Consumer: scrubbing / data-refresh logic.                        */
     uint32_t ecc_mid_threshold;  /*!< Reads before NAND_ECC_1_TO_3_BITS_CORRECTED (0 = disabled) */
     uint32_t ecc_high_threshold; /*!< Reads before NAND_ECC_4_TO_6_BITS_CORRECTED (0 = disabled) */
     uint32_t ecc_fail_threshold; /*!< Reads before NAND_ECC_NOT_CORRECTED (0 = disabled) */
 
+    /* --- ECC write-wear simulation ------------------------------------ */
+    /* Models BER increase caused by repeated erase/program cycling of a
+     * block (write wear).  Thresholds are per-BLOCK ERASE counts.
+     * Fires through nand_get_ecc_status(), which sets
+     * handle->chip.ecc_data.ecc_corrected_bits_status before every
+     * nand_prog() and nand_copy() when CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
+     * is enabled.
+     * Consumer: page-write relief gate in nand_impl.c.
+     *
+     * Threshold alignment: choose values consistent with
+     * CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC so that relief fires at
+     * the intended ECC severity level.                                   */
+    uint32_t ecc_prog_mid_erase_threshold;  /*!< Block erases before NAND_ECC_1_TO_3_BITS_CORRECTED (0 = disabled) */
+    uint32_t ecc_prog_high_erase_threshold; /*!< Block erases before NAND_ECC_4_TO_6_BITS_CORRECTED (0 = disabled) */
+    uint32_t ecc_prog_fail_erase_threshold; /*!< Block erases before NAND_ECC_NOT_CORRECTED (0 = disabled) */
+    float    ecc_prog_noise_prob;           /*!< Per-page probability [0,1] of bumping ECC one level higher
+                                                 (models page-to-page BER variation within a worn block;
+                                                 0.0 = deterministic, disabled) */
+
     /* --- ECC callback ------------------------------------------------- */
-    nand_fault_sim_ecc_cb_t on_page_read_ecc; /*!< Invoked on ECC events; NULL = silently skip */
+    nand_fault_sim_ecc_cb_t on_page_read_ecc; /*!< Invoked on ECC events from read-disturb model; NULL = silently skip */
     void                   *ecc_cb_ctx;       /*!< Passed verbatim to on_page_read_ecc */
+
+    /* --- Page-relief callback ----------------------------------------- */
+    nand_fault_sim_ecc_cb_t on_page_relief;      /*!< Invoked from nand_get_ecc_status() when ecc_corrected_bits_status
+                                                       is elevated (NAND_ECC_1_TO_3_BITS_CORRECTED or higher).
+                                                       Same signature as on_page_read_ecc; page is the destination
+                                                       page being checked before prog/copy.  NULL = silently skip. */
+    void                   *page_relief_cb_ctx;  /*!< Passed verbatim to on_page_relief */
 } nand_fault_sim_config_t;
 
 /* -----------------------------------------------------------------------
@@ -145,6 +199,14 @@ void nand_fault_sim_deinit(void);
  * if they were cleared by a previous erase (OOB markers in the file may differ).
  */
 void nand_fault_sim_reset(void);
+
+/**
+ * @brief Return whether the simulated device is in a crashed state.
+ *
+ * Returns true after a power-loss crash has fired (either via crash_after_ops
+ * range or crash_probability). Resets to false after nand_fault_sim_reset().
+ */
+bool nand_fault_sim_is_crashed(void);
 
 /* -----------------------------------------------------------------------
  * Statistics API

@@ -56,6 +56,14 @@ static void parse_optional_double(cJSON *obj, const char *name, double *out)
     }
 }
 
+static void parse_optional_bool(cJSON *obj, const char *name, bool *out)
+{
+    cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, name);
+    if (cJSON_IsBool(item)) {
+        *out = cJSON_IsTrue(item);
+    }
+}
+
 static bool parse_required_string(cJSON *obj, const char *name, char **out)
 {
     cJSON *item = cJSON_GetObjectItemCaseSensitive(obj, name);
@@ -143,12 +151,14 @@ static bool parse_scenario(cJSON *obj, scenario_config_t *scenario)
 
     parse_optional_u32(obj, "factory_bad_block_count", &scenario->factory_bad_block_count);
     parse_optional_u32(obj, "max_erase_cycles", &scenario->max_erase_cycles);
+    parse_optional_u32(obj, "pre_warm_erase_cycles", &scenario->pre_warm_erase_cycles);
     parse_optional_u32(obj, "max_prog_cycles", &scenario->max_prog_cycles);
     parse_optional_u32(obj, "grave_page_threshold", &scenario->grave_page_threshold);
     parse_optional_double(obj, "read_fail_prob", &scenario->read_fail_prob);
     parse_optional_double(obj, "prog_fail_prob", &scenario->prog_fail_prob);
     parse_optional_double(obj, "erase_fail_prob", &scenario->erase_fail_prob);
     parse_optional_double(obj, "copy_fail_prob", &scenario->copy_fail_prob);
+    parse_optional_double(obj, "copy_ecc_fail_prob", &scenario->copy_ecc_fail_prob);
     parse_optional_u32(obj, "op_fail_seed", &scenario->op_fail_seed);
     parse_optional_u32(obj, "crash_after_ops_min", &scenario->crash_after_ops_min);
     parse_optional_u32(obj, "crash_after_ops_max", &scenario->crash_after_ops_max);
@@ -157,6 +167,12 @@ static bool parse_scenario(cJSON *obj, scenario_config_t *scenario)
     parse_optional_u32(obj, "ecc_mid_threshold", &scenario->ecc_mid_threshold);
     parse_optional_u32(obj, "ecc_high_threshold", &scenario->ecc_high_threshold);
     parse_optional_u32(obj, "ecc_fail_threshold", &scenario->ecc_fail_threshold);
+    parse_optional_u32(obj, "ecc_prog_mid_erase_threshold", &scenario->ecc_prog_mid_erase_threshold);
+    parse_optional_u32(obj, "ecc_prog_high_erase_threshold", &scenario->ecc_prog_high_erase_threshold);
+    parse_optional_u32(obj, "ecc_prog_fail_erase_threshold", &scenario->ecc_prog_fail_erase_threshold);
+    parse_optional_double(obj, "ecc_prog_noise_prob", &scenario->ecc_prog_noise_prob);
+    parse_optional_u32(obj, "ecc_data_refresh_threshold", &scenario->ecc_data_refresh_threshold);
+    parse_optional_bool(obj, "recovery_check", &scenario->recovery_check);
 
     return true;
 }
@@ -257,6 +273,7 @@ static bool parse_workload(cJSON *root, workload_config_t *workload)
          parse_required_u32(workload_obj, "total_writes", &workload->total_writes) &&
          parse_required_u32(workload_obj, "write_size_bytes", &workload->write_size_bytes);
     parse_optional_u32(workload_obj, "seed", &workload->seed);
+    parse_optional_double(workload_obj, "zipf_skew", &workload->zipf_skew);
     return ok;
 }
 

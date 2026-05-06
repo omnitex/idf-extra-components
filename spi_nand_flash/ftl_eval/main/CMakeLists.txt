@@ -6,6 +6,8 @@ set(srcs
     "workload/workload_sequential.c"
     "workload/workload_random.c"
     "workload/workload_mixed.c"
+    "workload/workload_read_loop.c"
+    "workload/workload_zipf.c"
     "metrics/metrics.c"
     "runner/runner.c"
     "reporter/reporter_json.c"

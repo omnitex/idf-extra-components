@@ -17,6 +17,8 @@
 
 static const char *TAG = "nand_fault_sim";
 
+esp_err_t nand_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page);
+
 /* OOB markers — identical to nand_impl_linux.c */
 static const uint8_t s_oob_used_page_markers[4] = { 0xFF, 0xFF, 0x00, 0x00 };
 static const uint8_t s_oob_mark_bad_markers[4]  = { 0x00, 0x00, 0xFF, 0xFF };
@@ -155,6 +157,12 @@ esp_err_t nand_fault_sim_init(uint32_t num_blocks, uint32_t pages_per_block,
         return ESP_ERR_NO_MEM;
     }
 
+    if (cfg->pre_warm_erase_cycles > 0) {
+        for (uint32_t i = 0; i < num_blocks; i++) {
+            s_sim.erase_count[i] = cfg->pre_warm_erase_cycles;
+        }
+    }
+
     s_sim.op_fail_state = cfg->op_fail_seed;
     s_sim.crash_state   = cfg->crash_seed;
     s_sim.crashed       = false;
@@ -206,6 +214,11 @@ void nand_fault_sim_reset(void)
     }
 }
 
+bool nand_fault_sim_is_crashed(void)
+{
+    return s_sim.initialized && s_sim.crashed;
+}
+
 uint32_t nand_fault_sim_get_erase_count(uint32_t block)
 {
     if (!s_sim.initialized || block >= s_sim.num_blocks) {
@@ -249,35 +262,90 @@ nand_fault_sim_config_t nand_fault_sim_config_preset(nand_sim_scenario_t scenari
 
     switch (scenario) {
     case NAND_SIM_SCENARIO_FRESH:
+        /*
+         * Device class  : any SLC/MLC NAND, factory-fresh
+         * Lifetime stage: 0% of erase budget consumed
+         * Failure rates : no faults — establishes a clean baseline for
+         *                 FTL correctness tests that don't need fault injection
+         */
         break;
 
     case NAND_SIM_SCENARIO_LIGHTLY_USED:
+        /*
+         * Device class  : consumer SLC NAND, ~10 000 P/E cycle rating
+         * Lifetime stage: ~5% of erase budget consumed (low erase counts)
+         * Failure rates : 2 factory bad blocks (~0.5% of a 512-block device),
+         *                 no probabilistic faults — exercises bad-block
+         *                 management without triggering wear-out paths
+         */
         cfg.factory_bad_blocks      = s_preset_lightly_used_bad;
         cfg.factory_bad_block_count = 2;
         cfg.max_erase_cycles        = 10000;
         break;
 
     case NAND_SIM_SCENARIO_AGED:
-        cfg.factory_bad_blocks      = s_preset_aged_bad;
-        cfg.factory_bad_block_count = 10;
-        cfg.max_erase_cycles        = 1000;
-        cfg.max_prog_cycles         = 5000;
-        cfg.grave_page_threshold    = 3000;
+        /*
+         * Device class  : consumer SLC NAND, ~1 000 P/E cycle rating
+         *                 (or MLC at ~50% of its 3 000 P/E budget)
+         * Lifetime stage: ~50% of erase budget consumed
+         * Failure rates : 10 factory bad blocks (~2% of a 512-block device);
+         *                 erase-count-based ECC elevation fires at 600 erases
+         *                 (mid) / 900 erases (high), plus 5% per-page noise;
+         *                 prog wear-out after 5 000 programs (well above the
+         *                 1 000-erase limit — reached only via extreme skew)
+         * ECC thresholds: chosen so page relief triggers visibly in the second
+         *                 half of a standard ftl_eval sweep
+         */
+        cfg.factory_bad_blocks            = s_preset_aged_bad;
+        cfg.factory_bad_block_count       = 10;
+        cfg.max_erase_cycles              = 1000;
+        cfg.max_prog_cycles               = 5000;
+        cfg.grave_page_threshold          = 3000;
+        cfg.ecc_prog_mid_erase_threshold  = 600;
+        cfg.ecc_prog_high_erase_threshold = 900;
+        cfg.ecc_prog_noise_prob           = 0.05f;
         break;
 
     case NAND_SIM_SCENARIO_FAILING:
-        cfg.factory_bad_blocks      = s_preset_failing_bad;
-        cfg.factory_bad_block_count = 20;
-        cfg.max_erase_cycles        = 200;
-        cfg.max_prog_cycles         = 400;
-        cfg.grave_page_threshold    = 200;
-        cfg.prog_fail_prob          = 0.02f;
-        cfg.erase_fail_prob         = 0.01f;
-        cfg.read_fail_prob          = 0.005f;
-        cfg.op_fail_seed            = 42;
+        /*
+         * Device class  : end-of-life MLC NAND, 200 P/E cycle budget nearly
+         *                 exhausted (models worst-case retention-degraded flash,
+         *                 not a typical in-spec device)
+         * Lifetime stage: >90% of erase budget consumed
+         * Failure rates : 20 factory bad blocks (~4% of a 512-block device);
+         *                 prog_fail_prob 2% models retention-failed pages, NOT
+         *                 normal in-spec prog failures (real NAND specifies <0.01%
+         *                 prog failure even at EOL — 2% is intentionally extreme
+         *                 to stress FTL error-handling paths);
+         *                 erase_fail_prob 1%, read_fail_prob 0.5% are similarly
+         *                 stress-test values, not device-spec values;
+         *                 ECC elevation fires early (100 / 150 erases) with 15%
+         *                 per-page noise to maximise page-relief coverage
+         */
+        cfg.factory_bad_blocks            = s_preset_failing_bad;
+        cfg.factory_bad_block_count       = 20;
+        cfg.max_erase_cycles              = 200;
+        cfg.max_prog_cycles               = 400;
+        cfg.grave_page_threshold          = 200;
+        cfg.prog_fail_prob                = 0.02f;
+        cfg.erase_fail_prob               = 0.01f;
+        cfg.read_fail_prob                = 0.005f;
+        cfg.op_fail_seed                  = 42;
+        cfg.ecc_prog_mid_erase_threshold  = 100;
+        cfg.ecc_prog_high_erase_threshold = 150;
+        cfg.ecc_prog_fail_erase_threshold = 190;
+        cfg.ecc_prog_noise_prob           = 0.15f;
         break;
 
     case NAND_SIM_SCENARIO_POWER_LOSS:
+        /*
+         * Device class  : any NAND; models a surprise power-cut scenario
+         * Lifetime stage: irrelevant — no wear faults injected
+         * Failure rates : crash fires after a random op count in [50, 500],
+         *                 producing torn writes at the crash boundary;
+         *                 no probabilistic faults so the only anomaly is
+         *                 the crash itself — isolates FTL recovery logic
+         */
         cfg.crash_after_ops_min     = 50;
         cfg.crash_after_ops_max     = 500;
         cfg.crash_seed              = 1;
@@ -373,6 +441,10 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config,
         ESP_GOTO_ON_ERROR(
             nand_fault_sim_init((*handle)->chip.num_blocks, ppb, &fresh),
             fail, TAG, "nand_fault_sim_init failed");
+    }
+
+    if (s_sim.cfg.ecc_data_refresh_threshold != 0) {
+        (*handle)->chip.ecc_data.ecc_data_refresh_threshold = s_sim.cfg.ecc_data_refresh_threshold;
     }
 
     (*handle)->work_buffer = heap_caps_malloc((*handle)->chip.page_size, MALLOC_CAP_DEFAULT);
@@ -622,6 +694,55 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
         return ESP_FAIL;
     }
 
+    if (s_sim.initialized && sim_roll_op_fail(s_sim.cfg.copy_ecc_fail_prob)) {
+        handle->chip.ecc_data.ecc_corrected_bits_status = NAND_ECC_NOT_CORRECTED;
+        return ESP_FAIL;
+    }
+
+    /* Simulate ECC status on the source page (read-disturb model).
+     * Mirrors what read_page_and_wait() sets on the real hardware path so
+     * that the ECC-error branch in dhara_glue.c is reachable. */
+    if (s_sim.initialized && src < s_sim.num_pages) {
+        s_sim.read_count[src]++;
+        uint32_t rc = s_sim.read_count[src];
+        uint32_t pc = s_sim.prog_count[src];
+
+        nand_ecc_status_t src_ecc = NAND_ECC_OK;
+        if (s_sim.cfg.grave_page_threshold > 0 && pc > s_sim.cfg.grave_page_threshold) {
+            src_ecc = NAND_ECC_NOT_CORRECTED;
+        } else if (s_sim.cfg.ecc_fail_threshold > 0 && rc >= s_sim.cfg.ecc_fail_threshold) {
+            src_ecc = NAND_ECC_NOT_CORRECTED;
+        } else if (s_sim.cfg.ecc_high_threshold > 0 && rc >= s_sim.cfg.ecc_high_threshold) {
+            src_ecc = NAND_ECC_4_TO_6_BITS_CORRECTED;
+        } else if (s_sim.cfg.ecc_mid_threshold > 0 && rc >= s_sim.cfg.ecc_mid_threshold) {
+            src_ecc = NAND_ECC_1_TO_3_BITS_CORRECTED;
+        }
+        handle->chip.ecc_data.ecc_corrected_bits_status = src_ecc;
+
+        if (src_ecc == NAND_ECC_NOT_CORRECTED) {
+            /* Uncorrectable error on source — copy cannot proceed */
+            return ESP_FAIL;
+        }
+    }
+
+    /* Simulate ECC status on the destination page (write-wear model).
+     * Mirrors the pre-prog read that nand_impl.c performs under
+     * CONFIG_NAND_FLASH_PROG_PAGE_RELIEF. */
+    if (s_sim.initialized) {
+        esp_err_t ecc_ret = nand_get_ecc_status(handle, dst);
+        if (ecc_ret != ESP_OK) {
+            return ecc_ret;
+        }
+        if (handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
+            return ESP_FAIL;
+        }
+        nand_ecc_status_t dst_ecc = handle->chip.ecc_data.ecc_corrected_bits_status;
+        if (dst_ecc != NAND_ECC_OK &&
+                (int)dst_ecc >= (int)handle->chip.ecc_data.ecc_data_refresh_threshold) {
+            return ESP_ERR_SPI_NAND_PAGE_RELIEF;
+        }
+    }
+
     uint32_t dst_offset = dst * handle->chip.emulated_page_size;
     uint32_t src_offset = src * handle->chip.emulated_page_size;
     ESP_RETURN_ON_ERROR(
@@ -670,7 +791,38 @@ esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t
 
 esp_err_t nand_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page)
 {
-    (void)handle;
-    (void)page;
+    handle->chip.ecc_data.ecc_corrected_bits_status = NAND_ECC_OK;
+
+    if (!s_sim.initialized || page >= s_sim.num_pages) {
+        return ESP_OK;
+    }
+
+    uint32_t block = page / s_sim.pages_per_block;
+    uint32_t ec    = (block < s_sim.num_blocks) ? s_sim.erase_count[block] : 0;
+
+    nand_ecc_status_t status = NAND_ECC_OK;
+
+    if (s_sim.cfg.ecc_prog_fail_erase_threshold > 0 &&
+            ec >= s_sim.cfg.ecc_prog_fail_erase_threshold) {
+        status = NAND_ECC_NOT_CORRECTED;
+    } else if (s_sim.cfg.ecc_prog_high_erase_threshold > 0 &&
+               ec >= s_sim.cfg.ecc_prog_high_erase_threshold) {
+        status = NAND_ECC_4_TO_6_BITS_CORRECTED;
+    } else if (s_sim.cfg.ecc_prog_mid_erase_threshold > 0 &&
+               ec >= s_sim.cfg.ecc_prog_mid_erase_threshold) {
+        status = NAND_ECC_1_TO_3_BITS_CORRECTED;
+    }
+
+    if (status != NAND_ECC_NOT_CORRECTED &&
+            sim_roll_op_fail(s_sim.cfg.ecc_prog_noise_prob)) {
+        status = (nand_ecc_status_t)((int)status + 1);
+    }
+
+    handle->chip.ecc_data.ecc_corrected_bits_status = status;
+
+    if (status != NAND_ECC_OK && s_sim.cfg.on_page_relief != NULL) {
+        s_sim.cfg.on_page_relief(page, status, s_sim.cfg.page_relief_cb_ctx);
+    }
+
     return ESP_OK;
 }

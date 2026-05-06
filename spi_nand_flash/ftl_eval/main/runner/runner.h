@@ -20,6 +20,9 @@ typedef struct {
     const char *scenario_name;
     const char *ftl_config_name;
     const char *status;
+    const char *recovery_status;
+    uint32_t    data_loss_pages;
+    uint32_t    sectors_written;
     metrics_t metrics;
 } run_result_t;
 

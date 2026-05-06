@@ -7,6 +7,7 @@
 #include "runner.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +22,130 @@
 #include "workload.h"
 
 static const char *TAG = "runner";
+
+static void on_page_read_ecc_cb(uint32_t page, nand_ecc_status_t status, void *ctx)
+{
+    (void)page;
+    metrics_record_ecc_event((metrics_t *)ctx, status);
+}
+
+static void on_page_relief_cb(uint32_t page, nand_ecc_status_t status, void *ctx)
+{
+    (void)page;
+    (void)status;
+    metrics_record_page_relief((metrics_t *)ctx);
+}
+
+static void sanitize_name(char *dst, size_t dst_size, const char *src)
+{
+    size_t i;
+    for (i = 0; i < dst_size - 1 && src[i] != '\0'; i++) {
+        char c = src[i];
+        dst[i] = ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                  (c >= '0' && c <= '9') || c == '-') ? c : '_';
+    }
+    dst[i] = '\0';
+}
+
+static void make_recovery_image_path(char *out, size_t out_size,
+                                     const char *scenario_name, const char *ftl_name)
+{
+    char s[64];
+    char f[64];
+    sanitize_name(s, sizeof(s), scenario_name ? scenario_name : "unnamed");
+    sanitize_name(f, sizeof(f), ftl_name ? ftl_name : "unnamed");
+    snprintf(out, out_size, "/tmp/ftl_eval_%s_%s.img", s, f);
+}
+
+static void fill_verify_pattern(uint8_t *buf, size_t len, uint32_t sector)
+{
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (uint8_t)((sector + sector + i) & 0xFFu);
+    }
+}
+
+static esp_err_t run_recovery_check(const sweep_config_t *cfg,
+                                    const nand_fault_sim_config_t *fault_cfg_orig,
+                                    nand_file_mmap_emul_config_t *emul_cfg,
+                                    const ftl_config_t *ftl_cfg,
+                                    uint32_t sectors_written,
+                                    run_result_t *result)
+{
+    esp_blockdev_handle_t wl_bdl = NULL;
+    uint8_t *expected = NULL;
+    uint8_t *actual = NULL;
+    esp_err_t ret = ESP_OK;
+    uint32_t data_loss = 0;
+
+    nand_fault_sim_config_t recovery_cfg = *fault_cfg_orig;
+    recovery_cfg.crash_after_ops_min = 0;
+    recovery_cfg.crash_after_ops_max = 0;
+    recovery_cfg.crash_probability   = 0.0f;
+    recovery_cfg.on_page_read_ecc    = NULL;
+    recovery_cfg.on_page_relief      = NULL;
+
+    nand_fault_sim_reset();
+
+    ESP_GOTO_ON_ERROR(nand_fault_sim_init(cfg->nand.num_blocks, cfg->nand.pages_per_block,
+                                          &recovery_cfg),
+                      fail, TAG, "recovery: nand_fault_sim_init failed");
+
+    spi_nand_flash_config_t nand_cfg = {
+        .emul_conf = emul_cfg,
+        .gc_factor = ftl_cfg->gc_ratio,
+        .io_mode   = SPI_NAND_IO_MODE_SIO,
+        .flags     = 0,
+    };
+
+    ESP_GOTO_ON_ERROR(spi_nand_flash_init_with_layers(&nand_cfg, &wl_bdl),
+                      fail_sim, TAG, "recovery: remount failed");
+
+    result->recovery_status = "data_verified";
+
+    uint32_t page_size = (uint32_t)wl_bdl->geometry.write_size;
+    if (page_size == 0 || sectors_written == 0) {
+        goto cleanup;
+    }
+
+    expected = malloc(page_size);
+    actual   = malloc(page_size);
+    if (!expected || !actual) {
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    uint32_t sample_count = sectors_written / 10;
+    if (sample_count == 0) {
+        sample_count = sectors_written;
+    }
+    uint32_t stride = sectors_written / sample_count;
+    if (stride == 0) {
+        stride = 1;
+    }
+
+    for (uint32_t s = 0; s < sectors_written; s += stride) {
+        fill_verify_pattern(expected, page_size, s);
+        uint64_t byte_addr = (uint64_t)s * page_size;
+        esp_err_t io_ret = wl_bdl->ops->read(wl_bdl, actual, page_size, byte_addr, page_size);
+        if (io_ret != ESP_OK || memcmp(expected, actual, page_size) != 0) {
+            data_loss++;
+        }
+    }
+
+    result->data_loss_pages = data_loss;
+    if (data_loss > 0) {
+        result->recovery_status = "data_corrupted";
+    }
+
+cleanup:
+    free(expected);
+    free(actual);
+    wl_bdl->ops->release(wl_bdl);
+fail_sim:
+    nand_fault_sim_deinit();
+fail:
+    return ret;
+}
 
 static esp_err_t scenario_preset_from_name(const char *preset, nand_sim_scenario_t *scenario)
 {
@@ -68,20 +193,27 @@ static esp_err_t build_fault_config(const scenario_config_t *scenario,
 
     fault_cfg->factory_bad_block_count = scenario->factory_bad_block_count;
     fault_cfg->max_erase_cycles = scenario->max_erase_cycles;
+    fault_cfg->pre_warm_erase_cycles = scenario->pre_warm_erase_cycles;
     fault_cfg->max_prog_cycles = scenario->max_prog_cycles;
     fault_cfg->grave_page_threshold = scenario->grave_page_threshold;
     fault_cfg->read_fail_prob = (float)scenario->read_fail_prob;
     fault_cfg->prog_fail_prob = (float)scenario->prog_fail_prob;
     fault_cfg->erase_fail_prob = (float)scenario->erase_fail_prob;
     fault_cfg->copy_fail_prob = (float)scenario->copy_fail_prob;
+    fault_cfg->copy_ecc_fail_prob = (float)scenario->copy_ecc_fail_prob;
     fault_cfg->op_fail_seed = scenario->op_fail_seed;
     fault_cfg->crash_after_ops_min = scenario->crash_after_ops_min;
     fault_cfg->crash_after_ops_max = scenario->crash_after_ops_max;
     fault_cfg->crash_probability = (float)scenario->crash_probability;
     fault_cfg->crash_seed = scenario->crash_seed;
-    fault_cfg->ecc_mid_threshold = scenario->ecc_mid_threshold;
-    fault_cfg->ecc_high_threshold = scenario->ecc_high_threshold;
-    fault_cfg->ecc_fail_threshold = scenario->ecc_fail_threshold;
+    fault_cfg->ecc_mid_threshold              = scenario->ecc_mid_threshold;
+    fault_cfg->ecc_high_threshold             = scenario->ecc_high_threshold;
+    fault_cfg->ecc_fail_threshold             = scenario->ecc_fail_threshold;
+    fault_cfg->ecc_prog_mid_erase_threshold   = scenario->ecc_prog_mid_erase_threshold;
+    fault_cfg->ecc_prog_high_erase_threshold  = scenario->ecc_prog_high_erase_threshold;
+    fault_cfg->ecc_prog_fail_erase_threshold  = scenario->ecc_prog_fail_erase_threshold;
+    fault_cfg->ecc_prog_noise_prob            = (float)scenario->ecc_prog_noise_prob;
+    fault_cfg->ecc_data_refresh_threshold     = (uint8_t)scenario->ecc_data_refresh_threshold;
 
     if (scenario->factory_bad_block_count > 0) {
         *allocated_bad_blocks = calloc(scenario->factory_bad_block_count, sizeof(uint32_t));
@@ -149,6 +281,7 @@ static esp_err_t build_workload_config_json(const sweep_config_t *cfg,
     cJSON_AddNumberToObject(obj, "data_len", (double)cfg->workload.write_size_bytes);
     cJSON_AddNumberToObject(obj, "seed", (double)cfg->workload.seed);
     cJSON_AddNumberToObject(obj, "num_sectors", (double)safe_sector_count);
+    cJSON_AddNumberToObject(obj, "zipf_skew", cfg->workload.zipf_skew);
 
     *out = obj;
     return ESP_OK;
@@ -215,6 +348,7 @@ esp_err_t run_single(const sweep_config_t *cfg,
     bool workload_inited = false;
     uint32_t logical_sector_count = 0;
     uint32_t page_size = 0;
+    char recovery_image_path[256] = { 0 };
 
     ESP_RETURN_ON_FALSE(cfg != NULL, ESP_ERR_INVALID_ARG, TAG, "cfg must not be NULL");
     ESP_RETURN_ON_FALSE(scenario != NULL, ESP_ERR_INVALID_ARG, TAG, "scenario must not be NULL");
@@ -231,6 +365,11 @@ esp_err_t run_single(const sweep_config_t *cfg,
     ESP_GOTO_ON_ERROR(build_fault_config(scenario, &fault_cfg, &allocated_bad_blocks), fail, TAG,
                       "failed to build fault config");
 
+    fault_cfg.on_page_read_ecc = on_page_read_ecc_cb;
+    fault_cfg.ecc_cb_ctx = &result->metrics;
+    fault_cfg.on_page_relief = on_page_relief_cb;
+    fault_cfg.page_relief_cb_ctx = &result->metrics;
+
     ESP_GOTO_ON_ERROR(nand_fault_sim_init(cfg->nand.num_blocks, cfg->nand.pages_per_block, &fault_cfg), fail,
                       TAG, "nand_fault_sim_init failed");
     fault_sim_inited = true;
@@ -238,6 +377,14 @@ esp_err_t run_single(const sweep_config_t *cfg,
     emul_cfg.flash_file_size = emulated_flash_size_bytes(cfg);
     emul_cfg.keep_dump = false;
     emul_cfg.flash_file_name[0] = '\0';
+
+    if (scenario->recovery_check) {
+        make_recovery_image_path(recovery_image_path, sizeof(recovery_image_path),
+                                 scenario->name, ftl_cfg->name);
+        snprintf(emul_cfg.flash_file_name, sizeof(emul_cfg.flash_file_name),
+                 "%s", recovery_image_path);
+        emul_cfg.keep_dump = true;
+    }
 
     nand_cfg = (spi_nand_flash_config_t) {
         .emul_conf = &emul_cfg,
@@ -278,6 +425,42 @@ esp_err_t run_single(const sweep_config_t *cfg,
         ESP_GOTO_ON_ERROR(execute_workload_op(&op, cfg->nand.page_size, logical_sector_count,
                                               wl_bdl, &result->metrics),
                           fail, TAG, "failed to execute workload op");
+
+        if (op.is_write) {
+            uint32_t sectors_per_op = (uint32_t)(op.data_len / page_size);
+            result->sectors_written += sectors_per_op;
+        }
+    }
+
+    if (scenario->recovery_check && nand_fault_sim_is_crashed()) {
+        result->status = "crashed";
+
+        /* Tear down the crashed instance so run_recovery_check can remount. */
+        if (workload_inited) {
+            workload_ops->deinit(&workload_ctx);
+            workload_inited = false;
+        }
+        if (bdl_inited) {
+            wl_bdl->ops->release(wl_bdl);
+            bdl_inited = false;
+        }
+        nand_fault_sim_deinit();
+        fault_sim_inited = false;
+
+        esp_err_t rec_err = run_recovery_check(cfg, &fault_cfg, &emul_cfg,
+                                               ftl_cfg, result->sectors_written, result);
+        if (ret == ESP_OK && rec_err != ESP_OK) {
+            ret = rec_err;
+        }
+
+        cJSON_Delete(workload_config_json);
+        workload_config_json = NULL;
+        free(allocated_bad_blocks);
+        allocated_bad_blocks = NULL;
+        if (recovery_image_path[0] != '\0') {
+            remove(recovery_image_path);
+        }
+        return ret;
     }
 
     ESP_GOTO_ON_ERROR(wl_bdl->ops->sync(wl_bdl), fail, TAG, "bdl sync failed");
@@ -321,6 +504,10 @@ fail:
 
     cJSON_Delete(workload_config_json);
     free(allocated_bad_blocks);
+
+    if (recovery_image_path[0] != '\0') {
+        remove(recovery_image_path);
+    }
 
     if (ret != ESP_OK) {
         result->status = "failed";

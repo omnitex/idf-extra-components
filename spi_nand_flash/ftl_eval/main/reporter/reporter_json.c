@@ -132,6 +132,11 @@ static cJSON *reporter_json_build_metrics(const metrics_t *metrics)
     cJSON_AddNumberToObject(obj, "blocks_worn_out", (double)metrics->blocks_worn_out);
     cJSON_AddNumberToObject(obj, "first_worn_out_at_write", (double)metrics->first_worn_out_at_write);
     cJSON_AddNumberToObject(obj, "ftl_errors", (double)metrics->ftl_errors);
+    cJSON_AddNumberToObject(obj, "ecc_mid_events", (double)metrics->ecc_mid_events);
+    cJSON_AddNumberToObject(obj, "ecc_high_events", (double)metrics->ecc_high_events);
+    cJSON_AddNumberToObject(obj, "ecc_fail_events", (double)metrics->ecc_fail_events);
+    cJSON_AddNumberToObject(obj, "page_relief_skips", (double)metrics->page_relief_skips);
+    cJSON_AddNumberToObject(obj, "page_relief_first_at_write", (double)metrics->page_relief_first_at_write);
     return obj;
 }
 
@@ -156,6 +161,10 @@ static esp_err_t reporter_json_write_result(void *ctx, const run_result_t *resul
     cJSON_AddStringToObject(item, "scenario", (result->scenario_name != NULL) ? result->scenario_name : "");
     cJSON_AddStringToObject(item, "ftl_config", (result->ftl_config_name != NULL) ? result->ftl_config_name : "");
     cJSON_AddStringToObject(item, "status", (result->status != NULL) ? result->status : "failed");
+    if (result->recovery_status != NULL) {
+        cJSON_AddStringToObject(item, "recovery_status", result->recovery_status);
+        cJSON_AddNumberToObject(item, "data_loss_pages", (double)result->data_loss_pages);
+    }
     cJSON_AddItemToObject(item, "metrics", metrics);
     cJSON_AddItemToArray((cJSON *)json_ctx->results, item);
     return ESP_OK;

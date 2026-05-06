@@ -12,6 +12,7 @@
 
 #include "esp_blockdev.h"
 #include "esp_nand_blockdev.h"
+#include "nand_device_types.h"
 #include "nand_fault_sim.h"
 
 static int compare_u32_ascending(const void *lhs, const void *rhs)
@@ -114,6 +115,39 @@ void metrics_record_worn_out(metrics_t *m, uint32_t write_index)
     if (m->first_worn_out_at_write == 0) {
         m->first_worn_out_at_write = write_index;
     }
+}
+
+void metrics_record_ecc_event(metrics_t *m, nand_ecc_status_t status)
+{
+    if (m == NULL) {
+        return;
+    }
+
+    switch (status) {
+    case NAND_ECC_1_TO_3_BITS_CORRECTED:
+        m->ecc_mid_events++;
+        break;
+    case NAND_ECC_4_TO_6_BITS_CORRECTED:
+        m->ecc_high_events++;
+        break;
+    case NAND_ECC_NOT_CORRECTED:
+        m->ecc_fail_events++;
+        break;
+    default:
+        break;
+    }
+}
+
+void metrics_record_page_relief(metrics_t *m)
+{
+    if (m == NULL) {
+        return;
+    }
+
+    if (m->page_relief_skips == 0) {
+        m->page_relief_first_at_write = m->writes_attempted;
+    }
+    m->page_relief_skips++;
 }
 
 esp_err_t metrics_collect_bad_blocks(metrics_t *m, esp_blockdev_handle_t bdl, bool initial_sample)

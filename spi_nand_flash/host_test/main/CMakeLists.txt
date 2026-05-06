@@ -22,6 +22,10 @@ else()
     list(APPEND src "test_nand_flash.cpp" "test_nand_flash_ftl.cpp")
 endif()
 
+if(CONFIG_NAND_FLASH_PROG_PAGE_RELIEF AND CONFIG_NAND_FLASH_FAULT_SIM AND CONFIG_NAND_FLASH_ENABLE_BDL)
+    list(APPEND src "test_page_relief.cpp")
+endif()
+
 idf_component_register(SRCS ${src}
                        WHOLE_ARCHIVE
                        )
