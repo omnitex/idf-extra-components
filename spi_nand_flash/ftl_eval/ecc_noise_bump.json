@@ -1,0 +1,59 @@
+{
+  "name": "ecc_noise_bump",
+  "output": "report_ecc_noise_bump.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    {
+      "name": "baseline_no_noise",
+      "pre_warm_erase_cycles": 0,
+      "max_erase_cycles": 2000,
+      "ecc_prog_mid_erase_threshold": 400,
+      "ecc_prog_high_erase_threshold": 700,
+      "ecc_prog_fail_erase_threshold": 1800,
+      "ecc_prog_noise_prob": 0.0,
+      "ecc_data_refresh_threshold": 4
+    },
+    {
+      "name": "noise_low_prob",
+      "pre_warm_erase_cycles": 0,
+      "max_erase_cycles": 2000,
+      "ecc_prog_mid_erase_threshold": 400,
+      "ecc_prog_high_erase_threshold": 700,
+      "ecc_prog_fail_erase_threshold": 1800,
+      "ecc_prog_noise_prob": 0.01,
+      "ecc_data_refresh_threshold": 4
+    },
+    {
+      "name": "noise_high_prob",
+      "pre_warm_erase_cycles": 0,
+      "max_erase_cycles": 2000,
+      "ecc_prog_mid_erase_threshold": 400,
+      "ecc_prog_high_erase_threshold": 700,
+      "ecc_prog_fail_erase_threshold": 1800,
+      "ecc_prog_noise_prob": 0.25,
+      "ecc_data_refresh_threshold": 4
+    },
+    {
+      "name": "noise_above_high_threshold",
+      "pre_warm_erase_cycles": 500,
+      "max_erase_cycles": 2000,
+      "ecc_prog_mid_erase_threshold": 400,
+      "ecc_prog_high_erase_threshold": 700,
+      "ecc_prog_fail_erase_threshold": 1800,
+      "ecc_prog_noise_prob": 0.15,
+      "ecc_data_refresh_threshold": 4
+    }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 }
+  ],
+  "workload": {
+    "type": "random",
+    "total_writes": 10000,
+    "write_size_bytes": 2048
+  }
+}

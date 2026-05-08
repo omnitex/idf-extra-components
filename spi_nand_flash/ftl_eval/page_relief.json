@@ -1,0 +1,25 @@
+{
+  "name": "page_relief_ecc",
+  "output": "report_page_relief.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    { "name": "fresh_no_relief", "preset": "FRESH" },
+    { "name": "relief_threshold_1",  "pre_warm_erase_cycles": 50, "ecc_prog_high_erase_threshold": 1,  "ecc_prog_noise_prob": 0.01 },
+    { "name": "relief_threshold_2", "pre_warm_erase_cycles": 50, "ecc_prog_high_erase_threshold": 2, "ecc_prog_noise_prob": 0.01 },
+    { "name": "relief_threshold_3", "pre_warm_erase_cycles": 50, "ecc_prog_high_erase_threshold": 3, "ecc_prog_noise_prob": 0.01 },
+    { "name": "relief_threshold_4", "pre_warm_erase_cycles": 50, "ecc_prog_high_erase_threshold": 4, "ecc_prog_noise_prob": 0.01 },
+    { "name": "relief_threshold_5", "pre_warm_erase_cycles": 50, "ecc_prog_high_erase_threshold": 5, "ecc_prog_noise_prob": 0.01 }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 }
+  ],
+  "workload": {
+    "type": "random",
+    "total_writes": 10000,
+    "write_size_bytes": 2048
+  }
+}
