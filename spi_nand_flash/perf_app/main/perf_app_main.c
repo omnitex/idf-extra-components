@@ -27,6 +27,8 @@
 
 #define BENCH_DEFAULT_NUM_PAGES     2048
 #define BENCH_DEFAULT_NUM_PASSES    5
+#define BENCH_ZIPF_SKEW             1.0f
+#define BENCH_ZIPF_SEED             42u
 /* setup end */
 
 #define GC_RATIO ((100 / GC_RESERVE_OVERHEAD_PERCENT) - 1)
@@ -140,6 +142,8 @@ void app_main(void)
         .page_size   = page_size,
         .verify_data = false,
         .hw          = hw_cfg,
+        .zipf_skew   = BENCH_ZIPF_SKEW,
+        .zipf_seed   = BENCH_ZIPF_SEED,
     };
 
     if (cfg.num_passes > PERF_MAX_PASSES) {
@@ -150,7 +154,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Warmup pass (not timed)...");
     ESP_ERROR_CHECK(perf_warmup(&cfg));
 
-    bench_result_t results[2] = {0};
+    bench_result_t results[3] = {0};
 
     results[0].name = "Sequential";
     ESP_LOGI(TAG, "Running sequential benchmark...");
@@ -162,8 +166,13 @@ void app_main(void)
     ESP_ERROR_CHECK(run_random_bench(&cfg, &results[1]));
     perf_print_result(&results[1]);
 
-    perf_print_summary_table(results, 2);
-    perf_emit_benchmark_report_json(&cfg, results, 2);
+    results[2].name = "Zipf";
+    ESP_LOGI(TAG, "Running Zipf benchmark (skew=%.1f)...", (double)cfg.zipf_skew);
+    ESP_ERROR_CHECK(run_zipf_bench(&cfg, &results[2]));
+    perf_print_result(&results[2]);
+
+    perf_print_summary_table(results, 3);
+    perf_emit_benchmark_report_json(&cfg, results, 3);
 
     example_deinit_nand_flash(flash, spi);
     ESP_LOGI(TAG, "Done.");

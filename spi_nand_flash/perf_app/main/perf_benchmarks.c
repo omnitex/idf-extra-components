@@ -334,6 +334,122 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
     return ESP_OK;
 }
 
+/* -------------------------------------------------------------------------
+ * Zipf benchmark
+ * ------------------------------------------------------------------------- */
+
+static esp_err_t build_zipf_cdf(uint32_t num_pages, double skew, uint32_t *cdf)
+{
+    double sum = 0.0;
+    for (uint32_t i = 0; i < num_pages; i++) {
+        sum += 1.0 / pow((double)(i + 1), skew);
+    }
+    if (sum == 0.0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    double running = 0.0;
+    for (uint32_t i = 0; i < num_pages; i++) {
+        running += 1.0 / pow((double)(i + 1), skew);
+        cdf[i] = (uint32_t)((running / sum) * (double)RAND_MAX);
+    }
+    cdf[num_pages - 1] = (uint32_t)RAND_MAX;
+    return ESP_OK;
+}
+
+static uint32_t sample_zipf(const uint32_t *cdf, uint32_t num_pages, unsigned int *seed)
+{
+    unsigned int r = rand_r(seed);
+    uint32_t lo = 0;
+    uint32_t hi = num_pages - 1;
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if (cdf[mid] < r) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
+{
+    int64_t  *lats = heap_caps_malloc(cfg->num_pages * sizeof(int64_t), MALLOC_CAP_DEFAULT);
+    uint8_t  *buf  = heap_caps_malloc(cfg->page_size, MALLOC_CAP_DMA);
+    uint32_t *cdf  = heap_caps_malloc(cfg->num_pages * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
+
+    if (!lats || !buf || !cdf) {
+        free(lats);
+        free(buf);
+        free(cdf);
+        return ESP_ERR_NO_MEM;
+    }
+
+    double skew = (cfg->zipf_skew > 0.0f) ? (double)cfg->zipf_skew : 1.0;
+    esp_err_t err = build_zipf_cdf(cfg->num_pages, skew, cdf);
+    if (err != ESP_OK) {
+        free(lats);
+        free(buf);
+        free(cdf);
+        return err;
+    }
+
+    unsigned int write_seed = cfg->zipf_seed ? cfg->zipf_seed : 42u;
+    unsigned int read_seed  = write_seed ^ 0xDEADBEEFu;
+
+    direction_result_init(&result->write, cfg->num_pages, cfg->page_size, cfg->num_passes);
+    direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
+
+    /* WRITE PHASE — sample a fresh Zipf sequence each pass */
+    for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
+        unsigned int pass_seed = write_seed + pass;
+        int64_t pass_start = esp_timer_get_time();
+        for (uint32_t p = 0; p < cfg->num_pages; p++) {
+            uint32_t page_idx = sample_zipf(cdf, cfg->num_pages, &pass_seed);
+            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / 4,
+                                              pass * cfg->num_pages + page_idx);
+            int64_t t0 = esp_timer_get_time();
+            ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, page_idx));
+            lats[p] = esp_timer_get_time() - t0;
+        }
+        ESP_ERROR_CHECK(spi_nand_flash_sync(cfg->flash));
+        int64_t pass_elapsed = esp_timer_get_time() - pass_start;
+        result->write.pass_kbps[pass] =
+            (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->write, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
+    }
+
+    /* READ PHASE — independent Zipf sequence (different seed) */
+    for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
+        unsigned int pass_seed = read_seed + pass;
+        int64_t pass_start = esp_timer_get_time();
+        for (uint32_t p = 0; p < cfg->num_pages; p++) {
+            uint32_t page_idx = sample_zipf(cdf, cfg->num_pages, &pass_seed);
+            int64_t t0 = esp_timer_get_time();
+            ESP_ERROR_CHECK(spi_nand_flash_read_page(cfg->flash, buf, page_idx));
+            lats[p] = esp_timer_get_time() - t0;
+        }
+        int64_t pass_elapsed = esp_timer_get_time() - pass_start;
+        result->read.pass_kbps[pass] =
+            (float)(cfg->page_size * cfg->num_pages) / (float)pass_elapsed * 1000.0f;
+        accumulate_pass(&result->read, lats, cfg->num_pages);
+        ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
+                 result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
+    }
+
+    compute_tp_stats(&result->write);
+    finalise_lat_stats(&result->write);
+    compute_tp_stats(&result->read);
+    finalise_lat_stats(&result->read);
+
+    free(lats);
+    free(buf);
+    free(cdf);
+    return ESP_OK;
+}
+
 void perf_print_result(const bench_result_t *result)
 {
     const perf_direction_result_t *w = &result->write;

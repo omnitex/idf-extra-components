@@ -99,6 +99,10 @@ typedef struct {
     uint32_t                 page_size;    ///< Filled in by init from flash query
     bool                     verify_data;  ///< Read-back verify writes (slower but safe)
     perf_spi_hw_config_t     hw;           ///< SPI + NAND config snapshot for JSON export
+
+    /* Zipf workload parameters (used by run_zipf_bench only) */
+    float                    zipf_skew;    ///< Zipf exponent s ≥ 0.0 (0 = uniform, 1.0 = classic Zipf, >1 = more skewed)
+    uint32_t                 zipf_seed;    ///< RNG seed for Zipf sampling (0 → use 42)
 } bench_cfg_t;
 
 /**
@@ -122,6 +126,20 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result);
  * Shuffles page indices (Fisher-Yates) then writes/reads in that order.
  */
 esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result);
+
+/**
+ * @brief Zipf-distributed write then Zipf-distributed read benchmark.
+ *
+ * Samples cfg->num_pages page indices from a Zipf distribution (exponent
+ * cfg->zipf_skew) for the write phase, then samples a fresh sequence for
+ * the read phase.  Hot pages are visited many times; cold pages rarely or
+ * never — stressing Dhara's remapping under skewed write pressure.
+ *
+ * cfg->zipf_skew = 0.0  → uniform (equivalent to random bench)
+ * cfg->zipf_skew = 1.0  → classic Zipf
+ * cfg->zipf_skew > 1.0  → increasingly concentrated on the first few pages
+ */
+esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result);
 
 /**
  * @brief Print a bench_result_t in a human-readable format to the ESP log.

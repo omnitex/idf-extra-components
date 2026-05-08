@@ -10,6 +10,7 @@ Dhara FTL wear-leveling layer.
 
 - **Sequential benchmark**: Write all logical pages in order, then read them back.
 - **Random benchmark**: Write/read pages in shuffled order (stresses Dhara journal).
+- **Zipf benchmark**: Write/read pages sampled from a Zipf distribution (skew=1.0 by default), modelling real-world hot-spot access patterns where a small fraction of pages receives the majority of writes.
 
 Each benchmark runs multiple passes and reports:
 - Per-pass throughput (kB/s)
