@@ -84,5 +84,6 @@ menu "SPI NAND Flash configuration"
             retention failure, per-operation probabilistic failures, power-loss crash
             with torn writes, and ECC read-disturb simulation.
             Linux target only. Zero impact on firmware builds.
+            Used by the ftl_eval evaluation app.
 
 endmenu

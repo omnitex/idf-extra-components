@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2026 Martin Havlik <omnitex.git@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +7,7 @@
 #include <cstring>
 
 extern "C" {
-#include "../../ftl_eval/main/config/app_config.h"
+#include "../main/config/app_config.h"
 }
 
 #include <catch2/catch_test_macros.hpp>
