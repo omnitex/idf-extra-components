@@ -1,0 +1,34 @@
+{
+  "name": "relief_onset_matrix",
+  "output": "report_relief_onset_matrix.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    { "name": "warm300_thr50",  "pre_warm_erase_cycles": 300, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 50,  "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm300_thr100", "pre_warm_erase_cycles": 300, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 100, "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm300_thr200", "pre_warm_erase_cycles": 300, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 200, "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm500_thr50",  "pre_warm_erase_cycles": 500, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 50,  "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm500_thr100", "pre_warm_erase_cycles": 500, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 100, "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm700_thr50",  "pre_warm_erase_cycles": 700, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 50,  "ecc_prog_noise_prob": 0.02 },
+    { "name": "warm700_thr100", "pre_warm_erase_cycles": 700, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 100, "ecc_prog_noise_prob": 0.02 }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 }
+  ],
+  "workload": {
+    "type": "zipf",
+    "total_writes": 50000,
+    "write_size_bytes": 2048,
+    "zipf_skew": 1.0
+  }
+}

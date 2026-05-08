@@ -1,0 +1,30 @@
+{
+  "name": "relief_noise_vs_waf",
+  "output": "report_relief_noise_vs_waf.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    { "name": "no_noise",   "pre_warm_erase_cycles": 600, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 400, "ecc_prog_noise_prob": 0.00 },
+    { "name": "noise_0.01", "pre_warm_erase_cycles": 600, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 400, "ecc_prog_noise_prob": 0.01 },
+    { "name": "noise_0.05", "pre_warm_erase_cycles": 600, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 400, "ecc_prog_noise_prob": 0.05 },
+    { "name": "noise_0.10", "pre_warm_erase_cycles": 600, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 400, "ecc_prog_noise_prob": 0.10 },
+    { "name": "noise_0.25", "pre_warm_erase_cycles": 600, "max_erase_cycles": 1000,
+      "ecc_prog_high_erase_threshold": 400, "ecc_prog_noise_prob": 0.25 }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 }
+  ],
+  "workload": {
+    "type": "zipf",
+    "total_writes": 50000,
+    "write_size_bytes": 2048,
+    "zipf_skew": 1.0
+  }
+}
