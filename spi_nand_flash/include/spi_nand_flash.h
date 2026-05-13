@@ -259,6 +259,50 @@ esp_err_t spi_nand_flash_reset_cache_stats(spi_nand_flash_device_t *handle);
 esp_err_t spi_nand_flash_print_cache_stats(spi_nand_flash_device_t *handle,
                                             const char *label);
 
+/**
+ * @brief Accumulated page-relief statistics for one spi_nand_flash_device_t instance.
+ *
+ * Page relief fires when a pre-program ECC read on the destination page shows
+ * correctable-bit wear at or above CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC.
+ * Dhara receives DHARA_E_PAGE_RELIEF and redirects the write to the next
+ * physical page, leaving the worn page unwritten.
+ *
+ * Counters start at zero after spi_nand_flash_init_device() and can be reset
+ * via spi_nand_flash_reset_relief_stats().
+ */
+typedef struct {
+    uint32_t prog_relief_count;  /**< nand_prog() calls skipped due to page relief */
+    uint32_t copy_relief_count;  /**< nand_copy() calls skipped due to page relief */
+} spi_nand_relief_stats_t;
+
+/**
+ * @brief Read the current page-relief statistics.
+ *
+ * @param handle  Device handle.
+ * @param[out] stats  Filled with the current counters on success.
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle or stats is NULL.
+ */
+esp_err_t spi_nand_flash_get_relief_stats(spi_nand_flash_device_t *handle,
+                                           spi_nand_relief_stats_t *stats);
+
+/**
+ * @brief Reset all page-relief counters to zero.
+ *
+ * @param handle  Device handle.
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle is NULL.
+ */
+esp_err_t spi_nand_flash_reset_relief_stats(spi_nand_flash_device_t *handle);
+
+/**
+ * @brief Print a human-readable page-relief statistics summary to stdout.
+ *
+ * @param handle  Device handle.
+ * @param label   Optional label printed before the summary (may be NULL).
+ * @return ESP_OK on success, ESP_ERR_INVALID_ARG if handle is NULL.
+ */
+esp_err_t spi_nand_flash_print_relief_stats(spi_nand_flash_device_t *handle,
+                                             const char *label);
+
 //---------------------------------------------------------------------------------------------------------------------------------------------
 // NEW LAYERED ARCHITECTURE API
 //---------------------------------------------------------------------------------------------------------------------------------------------

@@ -198,6 +198,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
 
     /* WRITE PHASE */
     spi_nand_flash_reset_cache_stats(cfg->flash);
+    spi_nand_flash_reset_relief_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -218,9 +219,11 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->write);
     finalise_lat_stats(&result->write);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_write);
 
     /* READ PHASE */
     spi_nand_flash_reset_cache_stats(cfg->flash);
+    spi_nand_flash_reset_relief_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -246,6 +249,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_read);
 
     free(lats);
     free(buf);
@@ -283,6 +287,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
 
     /* WRITE PHASE */
     spi_nand_flash_reset_cache_stats(cfg->flash);
+    spi_nand_flash_reset_relief_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -304,9 +309,11 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->write);
     finalise_lat_stats(&result->write);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_write);
 
     /* READ PHASE */
     spi_nand_flash_reset_cache_stats(cfg->flash);
+    spi_nand_flash_reset_relief_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -333,6 +340,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_read);
 
     free(lats);
     free(buf);
@@ -439,9 +447,11 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->write);
     finalise_lat_stats(&result->write);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_write);
 
     /* READ PHASE */
     spi_nand_flash_reset_cache_stats(cfg->flash);
+    spi_nand_flash_reset_relief_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         unsigned int pass_seed = read_seed + pass;
         int64_t pass_start = esp_timer_get_time();
@@ -469,6 +479,7 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
     spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
+    spi_nand_flash_get_relief_stats(cfg->flash, &result->relief_stats_read);
 
     free(lats);
     free(buf);
@@ -615,6 +626,17 @@ static cJSON *cache_stats_to_json(const spi_nand_cache_stats_t *s)
     return o;
 }
 
+static cJSON *relief_stats_to_json(const spi_nand_relief_stats_t *s)
+{
+    cJSON *o = cJSON_CreateObject();
+    if (!o) {
+        return NULL;
+    }
+    cJSON_AddNumberToObject(o, "prog_relief", (double)s->prog_relief_count);
+    cJSON_AddNumberToObject(o, "copy_relief", (double)s->copy_relief_count);
+    return o;
+}
+
 static cJSON *direction_to_json(const perf_direction_result_t *d)
 {
     cJSON *o = cJSON_CreateObject();
@@ -753,11 +775,15 @@ void perf_emit_benchmark_report_json(const bench_cfg_t *cfg,
         cJSON *r = direction_to_json(&results[i].read);
         cJSON *csw = cache_stats_to_json(&results[i].cache_stats_write);
         cJSON *csr = cache_stats_to_json(&results[i].cache_stats_read);
-        if (!w || !r || !csw || !csr) {
+        cJSON *rsw = relief_stats_to_json(&results[i].relief_stats_write);
+        cJSON *rsr = relief_stats_to_json(&results[i].relief_stats_read);
+        if (!w || !r || !csw || !csr || !rsw || !rsr) {
             cJSON_Delete(w);
             cJSON_Delete(r);
             cJSON_Delete(csw);
             cJSON_Delete(csr);
+            cJSON_Delete(rsw);
+            cJSON_Delete(rsr);
             cJSON_Delete(br);
             cJSON_Delete(arr);
             cJSON_Delete(root);
@@ -767,6 +793,8 @@ void perf_emit_benchmark_report_json(const bench_cfg_t *cfg,
         cJSON_AddItemToObject(br, "read", r);
         cJSON_AddItemToObject(br, "cache_stats_write", csw);
         cJSON_AddItemToObject(br, "cache_stats_read",  csr);
+        cJSON_AddItemToObject(br, "relief_stats_write", rsw);
+        cJSON_AddItemToObject(br, "relief_stats_read",  rsr);
         cJSON_AddItemToArray(arr, br);
     }
     cJSON_AddItemToObject(root, "results", arr);

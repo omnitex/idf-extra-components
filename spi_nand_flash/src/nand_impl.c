@@ -119,6 +119,8 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
     (*handle)->nand_page_cache_valid = false;
     (*handle)->l1_read_total         = 0;
     (*handle)->l1_read_hits          = 0;
+    (*handle)->prog_relief_count     = 0;
+    (*handle)->copy_relief_count     = 0;
 
     (*handle)->chip.ecc_data.ecc_status_reg_len_in_bits = 2;
     (*handle)->chip.ecc_data.ecc_data_refresh_threshold = 4;

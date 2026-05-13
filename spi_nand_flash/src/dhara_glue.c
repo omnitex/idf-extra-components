@@ -545,3 +545,43 @@ esp_err_t spi_nand_flash_print_cache_stats(spi_nand_flash_device_t *handle,
     ESP_LOGI(TAG, "---\n");
     return ESP_OK;
 }
+
+esp_err_t spi_nand_flash_get_relief_stats(spi_nand_flash_device_t *handle,
+                                           spi_nand_relief_stats_t *stats)
+{
+    if (handle == NULL || stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    stats->prog_relief_count = handle->prog_relief_count;
+    stats->copy_relief_count = handle->copy_relief_count;
+    return ESP_OK;
+}
+
+esp_err_t spi_nand_flash_reset_relief_stats(spi_nand_flash_device_t *handle)
+{
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    handle->prog_relief_count = 0;
+    handle->copy_relief_count = 0;
+    return ESP_OK;
+}
+
+esp_err_t spi_nand_flash_print_relief_stats(spi_nand_flash_device_t *handle,
+                                             const char *label)
+{
+    spi_nand_relief_stats_t s;
+    esp_err_t ret = spi_nand_flash_get_relief_stats(handle, &s);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    if (label) {
+        ESP_LOGI(TAG, "--- Relief stats [%s] ---\n", label);
+    } else {
+        ESP_LOGI(TAG, "--- Relief stats ---\n");
+    }
+    ESP_LOGI(TAG, "  prog relief : %"PRIu32"\n", s.prog_relief_count);
+    ESP_LOGI(TAG, "  copy relief : %"PRIu32"\n", s.copy_relief_count);
+    ESP_LOGI(TAG, "---\n");
+    return ESP_OK;
+}

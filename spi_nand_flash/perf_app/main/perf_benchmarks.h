@@ -70,6 +70,8 @@ typedef struct {
     perf_direction_result_t  read;
     spi_nand_cache_stats_t   cache_stats_write;  ///< Cache counters accumulated during the write phase only
     spi_nand_cache_stats_t   cache_stats_read;   ///< Cache counters accumulated during the read phase only
+    spi_nand_relief_stats_t  relief_stats_write; ///< Page-relief counters accumulated during the write phase only
+    spi_nand_relief_stats_t  relief_stats_read;  ///< Page-relief counters accumulated during the read phase only
 } bench_result_t;
 
 /**

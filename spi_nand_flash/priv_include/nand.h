@@ -74,8 +74,12 @@ struct spi_nand_flash_device_t {
     bool              nand_page_cache_valid; /*!< true when last_loaded_page is valid */
 
     /* Layer 1 counters (incremented in nand_impl.c) */
-    uint32_t          l1_read_total;  /*!< Total calls to read_page_and_wait() */
-    uint32_t          l1_read_hits;   /*!< Calls that were served from the page register */
+    uint32_t          l1_read_total;      /*!< Total calls to read_page_and_wait() */
+    uint32_t          l1_read_hits;       /*!< Calls that were served from the page register */
+
+    /* Page-relief counters (incremented in nand_impl_wrap.c) */
+    uint32_t          prog_relief_count;  /*!< nand_prog() calls that returned PAGE_RELIEF */
+    uint32_t          copy_relief_count;  /*!< nand_copy() calls that returned PAGE_RELIEF */
 };
 
 /** @return true if corrected-bit ECC class meets or exceeds the data-refresh threshold */

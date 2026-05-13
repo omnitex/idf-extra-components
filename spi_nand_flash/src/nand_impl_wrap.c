@@ -59,6 +59,7 @@ esp_err_t nand_wrap_prog(spi_nand_flash_device_t *handle, uint32_t page, const u
     ret = nand_prog(handle, page, data, oob_lpn);
     xSemaphoreGive(handle->mutex);
     if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+        handle->prog_relief_count++;
         ESP_LOGD(TAG, "page %" PRIu32 " skipped (page relief)", page);
         return ESP_OK;
     }
@@ -90,6 +91,7 @@ esp_err_t nand_wrap_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t
     ret = nand_copy(handle, src, dst, oob_lpn);
     xSemaphoreGive(handle->mutex);
     if (ret == ESP_ERR_SPI_NAND_PAGE_RELIEF) {
+        handle->copy_relief_count++;
         ESP_LOGD(TAG, "copy to page %" PRIu32 " skipped (page relief)", dst);
         return ESP_OK;
     }
