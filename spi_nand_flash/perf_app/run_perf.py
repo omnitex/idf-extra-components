@@ -42,7 +42,7 @@ BAUD = 115_200
 APP_DONE_MARKER = b'Returned from app_main()'
 JSON_BEGIN = b'<<<NAND_PERF_JSON_BEGIN>>>'
 JSON_END = b'<<<NAND_PERF_JSON_END>>>'
-JSON_SCHEMA = 'esp_nand_perf_v1'
+JSON_SCHEMA = 'esp_nand_perf_v2'
 
 PERF_RESULTS_DIR = Path(__file__).parent / 'perf_results'
 

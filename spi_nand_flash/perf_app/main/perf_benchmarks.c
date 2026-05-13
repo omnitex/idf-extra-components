@@ -197,6 +197,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
     direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
     /* WRITE PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -214,8 +215,12 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
+    compute_tp_stats(&result->write);
+    finalise_lat_stats(&result->write);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
 
     /* READ PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -238,11 +243,9 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
     }
-
-    compute_tp_stats(&result->write);
-    finalise_lat_stats(&result->write);
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
 
     free(lats);
     free(buf);
@@ -279,6 +282,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
     direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
     /* WRITE PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -297,8 +301,12 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
+    compute_tp_stats(&result->write);
+    finalise_lat_stats(&result->write);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
 
     /* READ PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
@@ -322,11 +330,9 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
     }
-
-    compute_tp_stats(&result->write);
-    finalise_lat_stats(&result->write);
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
 
     free(lats);
     free(buf);
@@ -409,6 +415,7 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
     /* WRITE PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         unsigned int pass_seed = write_seed + pass;
         int64_t pass_start = esp_timer_get_time();
@@ -429,8 +436,12 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] write pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
+    compute_tp_stats(&result->write);
+    finalise_lat_stats(&result->write);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_write);
 
     /* READ PHASE */
+    spi_nand_flash_reset_cache_stats(cfg->flash);
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         unsigned int pass_seed = read_seed + pass;
         int64_t pass_start = esp_timer_get_time();
@@ -455,11 +466,9 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
         ESP_LOGI(TAG, "  [%s] read  pass %" PRIu32 "/%" PRIu32 ": %.0f kB/s",
                  result->name, pass + 1, cfg->num_passes, result->read.pass_kbps[pass]);
     }
-
-    compute_tp_stats(&result->write);
-    finalise_lat_stats(&result->write);
     compute_tp_stats(&result->read);
     finalise_lat_stats(&result->read);
+    spi_nand_flash_get_cache_stats(cfg->flash, &result->cache_stats_read);
 
     free(lats);
     free(buf);
@@ -587,6 +596,22 @@ static cJSON *hw_config_to_json(const perf_spi_hw_config_t *hw)
     cJSON_AddNumberToObject(o, "max_transfer_sz",  (double)hw->max_transfer_sz);
     cJSON_AddNumberToObject(o, "gc_factor",        (double)hw->gc_factor);
     cJSON_AddNumberToObject(o, "gc_percentage",    (double)hw->gc_percentage);
+    return o;
+}
+
+static cJSON *cache_stats_to_json(const spi_nand_cache_stats_t *s)
+{
+    cJSON *o = cJSON_CreateObject();
+    if (!o) {
+        return NULL;
+    }
+    cJSON_AddNumberToObject(o, "l1_total",           (double)s->l1_read_total);
+    cJSON_AddNumberToObject(o, "l1_hits",            (double)s->l1_read_hits);
+    cJSON_AddNumberToObject(o, "l2_hits",            (double)s->l2_meta_hits);
+    cJSON_AddNumberToObject(o, "l2_misses",          (double)s->l2_meta_misses);
+    cJSON_AddNumberToObject(o, "l3_calls",           (double)s->l3_path_calls);
+    cJSON_AddNumberToObject(o, "l3_hits",            (double)s->l3_path_hits);
+    cJSON_AddNumberToObject(o, "l3_levels_skipped",  (double)s->l3_path_levels_skipped);
     return o;
 }
 
@@ -726,9 +751,13 @@ void perf_emit_benchmark_report_json(const bench_cfg_t *cfg,
 
         cJSON *w = direction_to_json(&results[i].write);
         cJSON *r = direction_to_json(&results[i].read);
-        if (!w || !r) {
+        cJSON *csw = cache_stats_to_json(&results[i].cache_stats_write);
+        cJSON *csr = cache_stats_to_json(&results[i].cache_stats_read);
+        if (!w || !r || !csw || !csr) {
             cJSON_Delete(w);
             cJSON_Delete(r);
+            cJSON_Delete(csw);
+            cJSON_Delete(csr);
             cJSON_Delete(br);
             cJSON_Delete(arr);
             cJSON_Delete(root);
@@ -736,6 +765,8 @@ void perf_emit_benchmark_report_json(const bench_cfg_t *cfg,
         }
         cJSON_AddItemToObject(br, "write", w);
         cJSON_AddItemToObject(br, "read", r);
+        cJSON_AddItemToObject(br, "cache_stats_write", csw);
+        cJSON_AddItemToObject(br, "cache_stats_read",  csr);
         cJSON_AddItemToArray(arr, br);
     }
     cJSON_AddItemToObject(root, "results", arr);

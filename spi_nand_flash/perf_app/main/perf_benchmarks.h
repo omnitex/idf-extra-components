@@ -22,7 +22,7 @@ extern "C" {
 #define PERF_MAX_PASSES 10
 
 /** JSON report schema version (bump when fields change). */
-#define PERF_JSON_SCHEMA "esp_nand_perf_v1"
+#define PERF_JSON_SCHEMA "esp_nand_perf_v2"
 
 /** Marker lines for host-side log scraping (stable across releases unless schema bumps). */
 #define PERF_JSON_BEGIN "<<<NAND_PERF_JSON_BEGIN>>>"
@@ -68,6 +68,8 @@ typedef struct {
     const char              *name;
     perf_direction_result_t  write;
     perf_direction_result_t  read;
+    spi_nand_cache_stats_t   cache_stats_write;  ///< Cache counters accumulated during the write phase only
+    spi_nand_cache_stats_t   cache_stats_read;   ///< Cache counters accumulated during the read phase only
 } bench_result_t;
 
 /**
