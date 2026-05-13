@@ -138,6 +138,9 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result);
  * cfg->zipf_skew = 0.0  → uniform (equivalent to random bench)
  * cfg->zipf_skew = 1.0  → classic Zipf
  * cfg->zipf_skew > 1.0  → increasingly concentrated on the first few pages
+ *
+ * When @p cfg->verify_data is true, read-back uses the last write pattern per
+ * logical page (Zipf may omit pages in a pass or overwrite hot pages many times).
  */
 esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result);
 

@@ -169,7 +169,7 @@ esp_err_t perf_warmup(const bench_cfg_t *cfg)
     }
 
     for (uint32_t p = 0; p < cfg->num_pages; p++) {
-        spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / 4, p);
+        spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t), p);
         ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, p));
     }
     ESP_ERROR_CHECK(spi_nand_flash_sync(cfg->flash));
@@ -200,7 +200,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
-            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / 4,
+            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t),
                                               pass * cfg->num_pages + p);
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, p));
@@ -224,7 +224,7 @@ esp_err_t run_sequential_bench(const bench_cfg_t *cfg, bench_result_t *result)
             lats[p] = esp_timer_get_time() - t0;
 
             if (cfg->verify_data) {
-                int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / 4,
+                int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t),
                                (cfg->num_passes - 1) * cfg->num_pages + p);
                 if (mismatch) {
                     ESP_LOGW(TAG, "seq read verify mismatch: page %" PRIu32 " word %d", p, mismatch);
@@ -283,7 +283,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
             uint32_t page_idx = page_order[p];
-            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / 4,
+            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t),
                                               pass * cfg->num_pages + page_idx);
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, page_idx));
@@ -308,7 +308,7 @@ esp_err_t run_random_bench(const bench_cfg_t *cfg, bench_result_t *result)
             lats[p] = esp_timer_get_time() - t0;
 
             if (cfg->verify_data) {
-                int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / 4,
+                int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t),
                                (cfg->num_passes - 1) * cfg->num_pages + page_idx);
                 if (mismatch) {
                     ESP_LOGW(TAG, "rnd read verify mismatch: page %" PRIu32 " word %d", page_idx, mismatch);
@@ -377,11 +377,13 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     int64_t  *lats = heap_caps_malloc(cfg->num_pages * sizeof(int64_t), MALLOC_CAP_DEFAULT);
     uint8_t  *buf  = heap_caps_malloc(cfg->page_size, MALLOC_CAP_DMA);
     uint32_t *cdf  = heap_caps_malloc(cfg->num_pages * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
+    uint32_t *page_last_seed = heap_caps_malloc(cfg->num_pages * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
 
-    if (!lats || !buf || !cdf) {
+    if (!lats || !buf || !cdf || !page_last_seed) {
         free(lats);
         free(buf);
         free(cdf);
+        free(page_last_seed);
         return ESP_ERR_NO_MEM;
     }
 
@@ -391,7 +393,13 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
         free(lats);
         free(buf);
         free(cdf);
+        free(page_last_seed);
         return err;
+    }
+
+    /* Same seed base as perf_warmup (page p filled with seed p) for never-written pages. */
+    for (uint32_t i = 0; i < cfg->num_pages; i++) {
+        page_last_seed[i] = i;
     }
 
     unsigned int write_seed = cfg->zipf_seed ? cfg->zipf_seed : 42u;
@@ -400,17 +408,18 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     direction_result_init(&result->write, cfg->num_pages, cfg->page_size, cfg->num_passes);
     direction_result_init(&result->read,  cfg->num_pages, cfg->page_size, cfg->num_passes);
 
-    /* WRITE PHASE — sample a fresh Zipf sequence each pass */
+    /* WRITE PHASE */
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         unsigned int pass_seed = write_seed + pass;
         int64_t pass_start = esp_timer_get_time();
         for (uint32_t p = 0; p < cfg->num_pages; p++) {
             uint32_t page_idx = sample_zipf(cdf, cfg->num_pages, &pass_seed);
-            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / 4,
-                                              pass * cfg->num_pages + page_idx);
+            uint32_t pattern_seed = pass * cfg->num_pages + page_idx;
+            spi_nand_flash_fill_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t), pattern_seed);
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_write_page(cfg->flash, buf, page_idx));
             lats[p] = esp_timer_get_time() - t0;
+            page_last_seed[page_idx] = pattern_seed;
         }
         ESP_ERROR_CHECK(spi_nand_flash_sync(cfg->flash));
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
@@ -421,7 +430,7 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
                  result->name, pass + 1, cfg->num_passes, result->write.pass_kbps[pass]);
     }
 
-    /* READ PHASE — independent Zipf sequence (different seed) */
+    /* READ PHASE */
     for (uint32_t pass = 0; pass < cfg->num_passes; pass++) {
         unsigned int pass_seed = read_seed + pass;
         int64_t pass_start = esp_timer_get_time();
@@ -430,6 +439,14 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
             int64_t t0 = esp_timer_get_time();
             ESP_ERROR_CHECK(spi_nand_flash_read_page(cfg->flash, buf, page_idx));
             lats[p] = esp_timer_get_time() - t0;
+
+            if (cfg->verify_data) {
+                int mismatch = spi_nand_flash_check_buffer_seeded(buf, cfg->page_size / sizeof(uint32_t),
+                               page_last_seed[page_idx]);
+                if (mismatch) {
+                    ESP_LOGW(TAG, "zip read verify mismatch: page %" PRIu32 " word %d", page_idx, mismatch);
+                }
+            }
         }
         int64_t pass_elapsed = esp_timer_get_time() - pass_start;
         result->read.pass_kbps[pass] =
@@ -447,6 +464,7 @@ esp_err_t run_zipf_bench(const bench_cfg_t *cfg, bench_result_t *result)
     free(lats);
     free(buf);
     free(cdf);
+    free(page_last_seed);
     return ESP_OK;
 }
 
