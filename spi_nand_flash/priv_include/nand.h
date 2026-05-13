@@ -62,6 +62,7 @@ struct spi_nand_flash_device_t {
 #ifdef CONFIG_IDF_TARGET_LINUX
     nand_mmap_emul_handle_t *emul_handle;
 #endif
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     /* Layer 1 — NAND page-register cache.
      * Tracks whether the NAND chip's internal page register already holds a
      * specific page so that read_page_and_wait() can skip the expensive
@@ -76,6 +77,7 @@ struct spi_nand_flash_device_t {
     /* Layer 1 counters (incremented in nand_impl.c) */
     uint32_t          l1_read_total;      /*!< Total calls to read_page_and_wait() */
     uint32_t          l1_read_hits;       /*!< Calls that were served from the page register */
+#endif /* CONFIG_NAND_PAGE_REGISTER_CACHE */
 
     /* Page-relief counters (incremented in nand_impl_wrap.c) */
     uint32_t          prog_relief_count;  /*!< nand_prog() calls that returned PAGE_RELIEF */

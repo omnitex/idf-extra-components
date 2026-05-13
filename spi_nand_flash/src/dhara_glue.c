@@ -442,8 +442,13 @@ esp_err_t spi_nand_flash_get_cache_stats(spi_nand_flash_device_t *handle,
         return ESP_ERR_INVALID_ARG;
     }
 
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     stats->l1_read_total = handle->l1_read_total;
     stats->l1_read_hits  = handle->l1_read_hits;
+#else
+    stats->l1_read_total = 0;
+    stats->l1_read_hits  = 0;
+#endif
 
 #if DHARA_META_CACHE_SLOTS > 0
     if (handle->ops_priv_data != NULL) {
@@ -487,8 +492,10 @@ esp_err_t spi_nand_flash_reset_cache_stats(spi_nand_flash_device_t *handle)
         return ESP_ERR_INVALID_ARG;
     }
 
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     handle->l1_read_total = 0;
     handle->l1_read_hits  = 0;
+#endif
 
 #if DHARA_META_CACHE_SLOTS > 0
     if (handle->ops_priv_data != NULL) {

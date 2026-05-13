@@ -8,6 +8,19 @@ menu "SPI NAND Flash configuration"
             back and verified. This can catch hardware problems with SPI NAND flash, or flash which
             was not erased before verification.
 
+    config NAND_PAGE_REGISTER_CACHE
+        bool "Skip READ PAGE on repeated access to the same page"
+        default n
+        help
+            The NAND chip holds one page in its internal register.  When this
+            option is enabled, the driver remembers which page is currently
+            loaded and skips the redundant READ PAGE command (~25–100 µs)
+            on back-to-back reads of the same page.  The tracking is reset
+            automatically after every program or erase.
+
+            Disable to force a fresh READ PAGE on every read — useful for
+            measuring baseline read latency without this optimisation.
+
     config NAND_FLASH_ENABLE_BDL
         bool "Enable Block Device Layer (BDL) support"
         depends on IDF_INIT_VERSION >= "6.0"

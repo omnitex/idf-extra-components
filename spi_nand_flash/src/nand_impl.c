@@ -115,10 +115,12 @@ esp_err_t nand_init_device(spi_nand_flash_config_t *config, spi_nand_flash_devic
 
     memcpy(&(*handle)->config, config, sizeof(spi_nand_flash_config_t));
 
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     (*handle)->last_loaded_page      = UINT32_MAX;
     (*handle)->nand_page_cache_valid = false;
     (*handle)->l1_read_total         = 0;
     (*handle)->l1_read_hits          = 0;
+#endif
     (*handle)->prog_relief_count     = 0;
     (*handle)->copy_relief_count     = 0;
 
@@ -236,6 +238,7 @@ static esp_err_t wait_for_ready(spi_nand_flash_device_t *dev, uint32_t expected_
 
 static esp_err_t read_page_and_wait(spi_nand_flash_device_t *dev, uint32_t page, uint8_t *status_out)
 {
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     dev->l1_read_total++;
     if (dev->nand_page_cache_valid && dev->last_loaded_page == page) {
         dev->l1_read_hits++;
@@ -244,16 +247,19 @@ static esp_err_t read_page_and_wait(spi_nand_flash_device_t *dev, uint32_t page,
         }
         return ESP_OK;
     }
+#endif
 
     ESP_RETURN_ON_ERROR(spi_nand_read_page(dev, page), TAG, "");
 
     uint8_t status = 0;
     esp_err_t ret = wait_for_ready(dev, dev->chip.read_page_delay_us, &status);
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     if (ret == ESP_OK) {
         dev->last_loaded_page    = page;
         dev->last_loaded_status  = status;
         dev->nand_page_cache_valid = true;
     }
+#endif
     if (status_out) {
         *status_out = status;
     }
@@ -265,7 +271,9 @@ static esp_err_t program_execute_and_wait(spi_nand_flash_device_t *dev, uint32_t
     ESP_RETURN_ON_ERROR(spi_nand_program_execute(dev, page), TAG, "");
 
     esp_err_t ret = wait_for_ready(dev, dev->chip.program_page_delay_us, status_out);
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     dev->nand_page_cache_valid = false;
+#endif
     return ret;
 }
 
@@ -368,7 +376,9 @@ esp_err_t nand_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
     ESP_GOTO_ON_ERROR(wait_for_ready(handle,
                                      handle->chip.erase_block_delay_us, &status),
                       fail, TAG, "");
+#if CONFIG_NAND_PAGE_REGISTER_CACHE
     handle->nand_page_cache_valid = false;
+#endif
 
     if ((status & STAT_ERASE_FAILED) != 0) {
         ret = ESP_ERR_NOT_FINISHED;
