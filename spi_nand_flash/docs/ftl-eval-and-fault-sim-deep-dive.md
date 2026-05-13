@@ -31,7 +31,7 @@
    - [Write Amplification Factor](#51-write-amplification-factor)
    - [Full Metrics Schema](#52-full-metrics-schema)
 6. [Existing JSON Sweep Configs](#6-existing-json-sweep-configs)
-   - [sweep.json — GC Overhead Sweep](#61-sweepjson--gc-overhead-sweep)
+   - [waf_vs_gc_vs_lifetime.json — GC overhead / lifetime](#61-waf_vs_gc_vs_lifetimejson--gc-overhead--lifetime)
    - [page_relief.json — Page Relief Threshold Sweep](#62-page-reliefjson--page-relief-threshold-sweep)
    - [ecc_noise_bump.json — ECC Noise Probability Sweep](#63-ecc_noise_bumpjson--ecc-noise-probability-sweep)
 7. [Real Run Data from report.json](#7-real-run-data-from-reportjson)
@@ -49,7 +49,7 @@
 ## 1. Architecture Overview
 
 ```
-ftl_eval.elf --config sweep.json
+ftl_eval.elf --config configs/<sweep>.json
       │
       ▼
   app_config_parse()          ← JSON sweep → sweep_config_t
@@ -93,16 +93,15 @@ Non-faulted paths delegate to nand_emul_* (nand_linux_mmap_emul.c).
 ```
 ftl_eval/
 ├── CMakeLists.txt                  Top-level CMake (Linux target, BDL=y, fault sim=y)
+├── Makefile                        make run CONFIG=…, make runall, make clean (reports in this dir)
 ├── README.md                       User guide: build, CLI, sweep schema, output format
 ├── sdkconfig                       Generated sdkconfig for the build
 │
-├── sweep.json                      Default sweep: 3 scenarios × 4 GC overheads, random workload
-├── page_relief.json                ECC write-wear threshold sweep (6 scenarios)
-├── ecc_noise_bump.json             ECC noise probability sweep (4 scenarios)
-│
-├── report.json                     Example output for sweep.json run (real data)
-├── report_page_relief.json         Example output for page_relief.json run
-├── report_ecc_noise_bump.json      Example output for ecc_noise_bump.json run
+├── configs/                        Sweep JSON (pass as --config configs/<name>.json)
+│   ├── page_relief.json            ECC write-wear threshold sweep (6 scenarios)
+│   ├── ecc_noise_bump.json         ECC noise probability sweep (4 scenarios)
+│   ├── waf_vs_gc_vs_lifetime.json  GC overhead × lifetime-style scenarios (zipf workload)
+│   └── …                           Other sweeps (waf_vs_write_size_*, zipf_skew_*, relief_noise_vs_waf)
 │
 └── main/
     ├── main.c                      Entry: CLI parsing, JSON load, run_suite, reporter
@@ -142,6 +141,8 @@ test/
 ├── dhara_ftl.cpp                   Dhara FTL adapter for tests
 └── ftl_interface.hpp               Test harness FTL interface
 ```
+
+Each sweep’s `"output"` path is relative to the process working directory; run from `ftl_eval/` so reports land beside `build/`, not inside `configs/`.
 
 ### NAND Fault Simulator (component level)
 
@@ -200,7 +201,7 @@ idf.py build
 
 **Run:**
 ```bash
-./build/ftl_eval.elf --config sweep.json [--output report.json]
+./build/ftl_eval.elf --config configs/page_relief.json [--output /tmp/my_report.json]
 ```
 
 | Flag | Required | Description |
@@ -318,7 +319,7 @@ Each workload implements the `workload_ops_t` interface:
 - `is_done(ctx)` — signals completion
 - `deinit(ctx)` — free resources
 
-The workload config JSON is built from `sweep.json`'s `workload` object and forwarded as cJSON to the selected implementation.
+The workload config JSON is built from the sweep file’s `workload` object and forwarded as cJSON to the selected implementation.
 
 ### 3.5 Output — report.json
 
@@ -635,9 +636,11 @@ typedef struct {
 
 ## 6. Existing JSON Sweep Configs
 
-### 6.1 sweep.json — GC Overhead Sweep
+### 6.1 waf_vs_gc_vs_lifetime.json — GC overhead / lifetime
 
-**Intent:** Measure WAF and wear distribution as a function of GC overhead (Dhara `gc_factor`).
+**Shipped path:** `configs/waf_vs_gc_vs_lifetime.json`.
+
+**Intent:** Measure WAF and wear distribution as a function of GC overhead (Dhara `gc_factor`) together with lifetime-style pre-warmed scenarios.
 
 ```json
 {
@@ -657,6 +660,8 @@ typedef struct {
 }
 ```
 
+**Illustrative snippet:** the shipped `configs/waf_vs_gc_vs_lifetime.json` adds `name`, `output`, lifetime-oriented scenarios (pre-warm, erase limits, ECC thresholds), and a `zipf` workload—see that file for the exact matrix.
+
 **What it shows:** How GC overhead % trades off against WAF and Gini. Lower `gc_overhead_percent` → higher WAF (more GC work per logical write) → more uniform wear.
 
 **What it doesn't show:** ECC escalation, page-relief behaviour (fresh/failing presets either don't have ecc thresholds or they're not the focus).
@@ -664,6 +669,8 @@ typedef struct {
 ---
 
 ### 6.2 page_relief.json — Page Relief Threshold Sweep
+
+**Shipped path:** `configs/page_relief.json`.
 
 **Intent:** Find the `ecc_prog_high_erase_threshold` value at which page-relief starts firing, and measure the effect on WAF and skips.
 
@@ -683,6 +690,8 @@ typedef struct {
 ---
 
 ### 6.3 ecc_noise_bump.json — ECC Noise Probability Sweep
+
+**Shipped path:** `configs/ecc_noise_bump.json`.
 
 **Intent:** Measure how ECC noise probability (`ecc_prog_noise_prob`) affects write-wear ECC event frequency and WAF.
 

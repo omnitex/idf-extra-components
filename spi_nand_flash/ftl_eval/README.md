@@ -7,13 +7,23 @@
 
 ## Quick start
 
+Sweep JSON files live in **`configs/`**. Run the app from the **`ftl_eval`** directory so relative `"output"` paths in a sweep resolve next to `build/` (not inside `configs/`).
+
 ```bash
 # From the spi_nand_flash/ftl_eval directory, with ESP-IDF loaded:
 idf.py build
-./build/ftl_eval.elf --config sweep.json
+./build/ftl_eval.elf --config configs/page_relief.json
 ```
 
-The results are written to `report.json` (or whatever `"output"` is set to in your sweep file).
+Or use the **Makefile** helpers (same directory):
+
+```bash
+make run CONFIG=page_relief          # runs ./build/ftl_eval.elf --config configs/page_relief.json
+make runall                          # every configs/*.json (stops on first failure)
+make clean                           # removes report_*.json and report.json here
+```
+
+The results are written to the path in the sweep’s `"output"` field (for example `report_page_relief.json`) relative to the **current working directory**, unless you override with `--output`.
 
 ---
 
@@ -45,17 +55,27 @@ BDL (Block Device Layer) is required and enabled by default. No `set-target`, `m
 ## CLI usage
 
 ```
-ftl_eval.elf --config <sweep.json> [--output <report.json>]
+ftl_eval.elf --config <path/to/sweep.json> [--output <report.json>]
 ```
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--config <path>` | Yes | Path to sweep configuration JSON |
+| `--config <path>` | Yes | Path to sweep configuration JSON (typically `configs/<name>.json`) |
 | `--output <path>` | No | Overrides the `"output"` field in the sweep file |
 
 ---
 
-## Sweep configuration (`sweep.json`)
+## Makefile (`Makefile`)
+
+| Target | Description |
+|--------|-------------|
+| `make run CONFIG=<name>` | Run one sweep; `<name>` is a basename (`page_relief` or `page_relief.json`). Requires `./build/ftl_eval.elf`. |
+| `make runall` | Run every `configs/*.json` in sorted order; exits on first failure (`set -e`). |
+| `make clean` | Delete `report_*.json` and `report.json` in this directory (regenerated outputs only). |
+
+---
+
+## Sweep configuration (JSON)
 
 The sweep file drives a full matrix of **scenarios × FTL configs**, all using the same NAND geometry and workload.
 
@@ -143,9 +163,9 @@ Each scenario configures `nand_fault_sim` before the run. Use a **named preset**
 
 ---
 
-## Output — `report.json`
+## Output — `report.json` / `report_*.json`
 
-One result entry is produced for every scenario × FTL config combination.
+One result entry is produced for every scenario × FTL config combination. The report file is whatever the sweep sets as `"output"` (for example `report_page_relief.json`), resolved **relative to the process working directory** when you start the ELF (usually the `ftl_eval` root). Use `--output` to force a different path.
 
 ```json
 {

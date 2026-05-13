@@ -235,7 +235,7 @@ void app_main(void)
 
     ret = parse_cli_args(&args, &config_path, &output_override);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Usage: ftl_eval --config sweep.json [--output report.json]");
+        ESP_LOGE(TAG, "Usage: ftl_eval --config configs/<sweep>.json [--output report.json]");
         free_process_args(&args);
         exit(1);
     }
