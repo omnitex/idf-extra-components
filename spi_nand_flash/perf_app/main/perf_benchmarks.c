@@ -550,6 +550,13 @@ static cJSON *build_config_to_json(void)
         false
 #endif
     );
+    cJSON_AddBoolToObject(o, "nand_page_register_cache",
+#ifdef CONFIG_NAND_PAGE_REGISTER_CACHE
+        true
+#else
+        false
+#endif
+    );
     cJSON_AddBoolToObject(o, "nand_enable_bdl",
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
         true
@@ -574,16 +581,14 @@ static cJSON *build_config_to_json(void)
     );
 #ifdef CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
 #if defined(CONFIG_NAND_RELIEF_AT_1_TO_3_BITS)
-#define RELIEF_MIN_ECC  1
+    cJSON_AddStringToObject(o, "dhara_prog_page_relief_threshold", "1-3 bits corrected");
 #elif defined(CONFIG_NAND_RELIEF_AT_7_TO_8_BITS)
-#define RELIEF_MIN_ECC  5
+    cJSON_AddStringToObject(o, "dhara_prog_page_relief_threshold", "7-8 bits corrected");
 #else
-#define RELIEF_MIN_ECC  3
+    cJSON_AddStringToObject(o, "dhara_prog_page_relief_threshold", "4-6 bits corrected");
 #endif
-    cJSON_AddNumberToObject(o, "dhara_prog_page_relief_min_ecc", RELIEF_MIN_ECC);
-#undef RELIEF_MIN_ECC
 #else
-    cJSON_AddNullToObject(o, "dhara_prog_page_relief_min_ecc");
+    cJSON_AddNullToObject(o, "dhara_prog_page_relief_threshold");
 #endif
     cJSON_AddNumberToObject(o, "dhara_radix_depth", CONFIG_DHARA_RADIX_DEPTH);
     return o;
