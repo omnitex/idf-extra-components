@@ -42,6 +42,8 @@ static void nand_oob_pack_lpn_le(uint32_t oob_lpn, uint8_t lpn_buf[4])
 
 static bool is_ecc_error(spi_nand_flash_device_t *dev, uint8_t status);
 
+static esp_err_t read_page_and_wait(spi_nand_flash_device_t *dev, uint32_t page, uint8_t *status_out);
+
 static esp_err_t detect_chip(spi_nand_flash_device_t *dev)
 {
     uint8_t manufacturer_id = 0;
@@ -167,19 +169,36 @@ fail:
 /***************************************************************************************/
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
-static esp_err_t s_verify_write(spi_nand_flash_device_t *handle, const uint8_t *expected_buffer, uint16_t offset, uint16_t length)
+/**
+ * Read back a programmed region from the physical array and compare to @p expected.
+ *
+ * SPI NAND "fast read" only shifts data out of the on-die page buffer for whatever page
+ * was last loaded by the READ PAGE sequence. After program/erase, `program_execute_and_wait`
+ * clears the driver's logical cache (`nand_page_cache_valid`), and the buffer contents
+ * are not tied to a known page until READ PAGE runs again. Callers must therefore never
+ * call `spi_nand_read` alone to verify a write — this helper always issues
+ * `read_page_and_wait(page)` first, then reads `column_addr..column_addr+length` and memcmp's.
+ * Several verifies in a row for the same `page` only hit the die once thanks to
+ * `read_page_and_wait`'s L1 cache of `last_loaded_page`.
+ */
+static esp_err_t s_verify_programmed_region(spi_nand_flash_device_t *handle, uint32_t page,
+                                            uint16_t column_addr, uint16_t length,
+                                            const uint8_t *expected)
 {
-    uint8_t *temp_buf = NULL;
-    temp_buf = heap_caps_malloc(length, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    ESP_RETURN_ON_FALSE(temp_buf != NULL, ESP_ERR_NO_MEM, TAG, "nomem");
-    if (spi_nand_read(handle, temp_buf, offset, length)) {
-        ESP_LOGE(TAG, "%s: Failed to read nand flash to verify previous write", __func__);
-        free(temp_buf);
-        return ESP_FAIL;
-    }
+    ESP_RETURN_ON_ERROR(read_page_and_wait(handle, page, NULL), TAG, "");
 
-    if (memcmp(temp_buf, expected_buffer, length)) {
-        ESP_LOGE(TAG, "%s: Data mismatch detected. The previously written buffer does not match the read buffer.", __func__);
+    uint8_t *temp_buf = heap_caps_malloc(length, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    ESP_RETURN_ON_FALSE(temp_buf != NULL, ESP_ERR_NO_MEM, TAG, "nomem");
+
+    esp_err_t err = spi_nand_read(handle, temp_buf, column_addr, length);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "%s: read-back failed page=%" PRIu32 " col=%u len=%u (%s)", __func__, page,
+                 column_addr, length, esp_err_to_name(err));
+        free(temp_buf);
+        return err;
+    }
+    if (memcmp(temp_buf, expected, length) != 0) {
+        ESP_LOGE(TAG, "%s: data mismatch page=%" PRIu32 " col=%u len=%u", __func__, page, column_addr, length);
         free(temp_buf);
         return ESP_FAIL;
     }
@@ -322,7 +341,7 @@ esp_err_t nand_mark_bad(spi_nand_flash_device_t *handle, uint32_t block)
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, first_block_page, NULL), fail, TAG, "");
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
-    ret = s_verify_write(handle, (uint8_t *)&markers, column_addr, 4);
+    ret = s_verify_programmed_region(handle, first_block_page, column_addr, 4, (const uint8_t *)&markers);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "%s: mark_bad write verification failed for block=%"PRIu32" and page=%"PRIu32"", __func__, block, first_block_page);
     }
@@ -445,21 +464,28 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     }
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
-    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, NULL), fail, TAG, "");
-    ret = s_verify_write(handle, data, column_addr, handle->chip.page_size);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "%s: prog page=%"PRIu32" write verification failed", __func__, page);
+    {
+        esp_err_t v = s_verify_programmed_region(handle, page, column_addr, handle->chip.page_size, data);
+        if (v != ESP_OK) {
+            ESP_LOGE(TAG, "%s: prog page=%"PRIu32" write verification failed", __func__, page);
+            ret = v;
+        }
     }
-    ret = s_verify_write(handle, (uint8_t *)&markers, column_addr + handle->chip.page_size, 4);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "%s: prog page=%"PRIu32" markers write verification failed", __func__, page);
+    {
+        esp_err_t v = s_verify_programmed_region(handle, page, column_addr + handle->chip.page_size, 4, (const uint8_t *)&markers);
+        if (v != ESP_OK) {
+            ESP_LOGE(TAG, "%s: prog page=%"PRIu32" markers write verification failed", __func__, page);
+            ret = v;
+        }
     }
     if (oob_lpn != DHARA_OOB_LPN_NONE) {
         uint8_t lpn_chk[4];
         nand_oob_pack_lpn_le(oob_lpn, lpn_chk);
-        ret = s_verify_write(handle, lpn_chk, column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4);
-        if (ret != ESP_OK) {
+        esp_err_t v = s_verify_programmed_region(handle, page,
+                                                 column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4, lpn_chk);
+        if (v != ESP_OK) {
             ESP_LOGE(TAG, "%s: prog page=%"PRIu32" OOB LPN write verification failed", __func__, page);
+            ret = v;
         }
     }
 #endif //CONFIG_NAND_FLASH_VERIFY_WRITE
@@ -550,14 +576,21 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
     ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", oob_lpn=%"PRIu32"", src, dst, oob_lpn);
     esp_err_t ret = ESP_OK;
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
-    uint8_t *temp_buf = NULL;
-#endif //CONFIG_NAND_FLASH_VERIFY_WRITE
+    /* Expected main payload on `dst` after program: snapshot from physical `src` post-write. */
+    uint8_t *golden_main = NULL;
+#endif
+    /* Cross-plane copies stage full page in RAM; same-plane path keeps data on-die only. */
+    uint8_t *copy_buf = NULL;
 
     uint8_t status;
-    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
 
+    /*
+     * Initial read of `src` for ECC / sanity. Page-relief below may load `dst` afterward,
+     * so any later `spi_nand_read` of `src` must be preceded by `read_page_and_wait(src)`.
+     */
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
     if (is_ecc_error(handle, status)) {
-        ESP_LOGD(TAG, "copy, ecc error");
+        ESP_LOGD(TAG, "copy, ecc error on src");
         return ESP_FAIL;
     }
 
@@ -566,6 +599,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
         uint8_t dst_pre = 0;
         ESP_GOTO_ON_ERROR(read_page_and_wait(handle, dst, &dst_pre), fail, TAG, "");
         if (is_ecc_error(handle, dst_pre)) {
+            ESP_LOGD(TAG, "copy, ecc error on dst (pre-check)");
             return ESP_FAIL;
         }
         {
@@ -579,24 +613,39 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
 #endif
 
     ESP_GOTO_ON_ERROR(spi_nand_write_enable(handle), fail, TAG, "");
+
     uint32_t src_block = src >> handle->chip.log2_ppb;
     uint32_t dst_block = dst >> handle->chip.log2_ppb;
     uint16_t src_column_addr = get_column_address(handle, src_block, 0);
     uint16_t dst_column_addr = get_column_address(handle, dst_block, 0);
+    const bool cross_plane = (src_column_addr != dst_column_addr);
 
-    if (src_column_addr != dst_column_addr) {
-        // In a 2 plane structure of the flash, if the pages are not on the same plane, the data must be copied through RAM.
-        uint8_t *copy_buf = heap_caps_malloc(handle->chip.page_size, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-        ESP_GOTO_ON_FALSE(copy_buf, ESP_ERR_NO_MEM, fail, TAG, "Failed to allocate copy buffer");
+    /*
+     * `program_load` fills the on-die program buffer starting at `dst_column_addr` (plane bit in column).
+     * That buffer must currently hold the *source* page image before we patch OOB or replace main.
+     * Page-relief may have left the cache on `dst`, so always reload `src` here.
+     */
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
+    if (is_ecc_error(handle, status)) {
+        ESP_LOGD(TAG, "copy, ecc error on src (before program)");
+        ret = ESP_FAIL;
+        goto fail;
+    }
 
-        ESP_GOTO_ON_ERROR(spi_nand_read(handle, copy_buf, src_column_addr, handle->chip.page_size), fail, TAG, "");
+    if (cross_plane) {
+        /*
+         * Different plane column base: cannot treat the loaded register image as both src and dst.
+         * Pull main data into RAM, then build the full destination image (main + used markers + LPN).
+         */
+        copy_buf = heap_caps_malloc(handle->chip.page_size, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        ESP_GOTO_ON_FALSE(copy_buf != NULL, ESP_ERR_NO_MEM, fail, TAG, "Failed to allocate copy buffer");
 
-        ESP_GOTO_ON_ERROR(spi_nand_write_enable(handle), fail, TAG, "");
+        ESP_GOTO_ON_ERROR(spi_nand_read(handle, copy_buf, src_column_addr, handle->chip.page_size),
+                          fail, TAG, "");
 
         ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, copy_buf, dst_column_addr, handle->chip.page_size),
                           fail, TAG, "");
 
-        // Write 4 bytes: bad block marker (0xFFFF - good block) + page used marker (0x0000 - used)
         uint8_t markers[4] = { 0xFF, 0xFF, 0x00, 0x00 };
         ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, (uint8_t *)&markers,
                                                 dst_column_addr + handle->chip.page_size, 4), fail, TAG, "");
@@ -607,66 +656,79 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
                                                     dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
                               fail, TAG, "");
         }
-        ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
-
-        if ((status & STAT_PROGRAM_FAILED) != 0) {
-            ESP_LOGD(TAG, "copy, prog failed");
-            return ESP_ERR_NOT_FINISHED;
+    } else {
+        /*
+         * Same plane column base: buffer already mirrors physical `src`. Only optional OOB LPN
+         * for `dst` must be patched before the single program_execute to `dst`.
+         */
+        if (oob_lpn != DHARA_OOB_LPN_NONE) {
+            uint8_t lpn_buf[4];
+            nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+            ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, lpn_buf,
+                                                    dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
+                              fail, TAG, "");
         }
-        free(copy_buf);
-    } else if (oob_lpn != DHARA_OOB_LPN_NONE) {
-        /* Same plane: src is already in the read cache; patch destination OOB LPN before program. */
-        uint8_t lpn_buf[4];
-        nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
-        ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, lpn_buf,
-                                                dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4),
-                          fail, TAG, "");
     }
 
+    /* One program_execute per logical copy (avoids a second execute with undefined buffer state). */
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
+
     if ((status & STAT_PROGRAM_FAILED) != 0) {
         ESP_LOGD(TAG, "copy, prog failed");
-        return ESP_ERR_NOT_FINISHED;
+        ret = ESP_ERR_NOT_FINISHED;
+        goto cleanup;
     }
 
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
-    // First read src page data from cache to temp_buf
-    if (src_column_addr != dst_column_addr) {
-        // Then read src page data from nand memory array and load it in cache
-        ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
-        if (is_ecc_error(handle, status)) {
-            ESP_LOGE(TAG, "%s: dst_page=%"PRIu32" read, ecc error", __func__, dst);
-            goto fail;
+    golden_main = heap_caps_malloc(handle->chip.page_size, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    ESP_GOTO_ON_FALSE(golden_main != NULL, ESP_ERR_NO_MEM, fail, TAG, "nomem");
+
+    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
+    if (is_ecc_error(handle, status)) {
+        ESP_LOGE(TAG, "%s: post-write read src=%"PRIu32", ecc error", __func__, src);
+        ret = ESP_FAIL;
+        goto fail;
+    }
+    ESP_GOTO_ON_ERROR(spi_nand_read(handle, golden_main, src_column_addr, handle->chip.page_size),
+                      fail, TAG, "");
+
+    {
+        esp_err_t v = s_verify_programmed_region(handle, dst, dst_column_addr, handle->chip.page_size, golden_main);
+        if (v != ESP_OK) {
+            ESP_LOGE(TAG, "%s: dst page=%"PRIu32" main verify failed", __func__, dst);
+            ret = v;
         }
     }
+    {
+        const uint8_t used_markers[4] = { 0xFF, 0xFF, 0x00, 0x00 };
+        esp_err_t v = s_verify_programmed_region(handle, dst, dst_column_addr + handle->chip.page_size, 4, used_markers);
+        if (v != ESP_OK) {
+            ESP_LOGE(TAG, "%s: dst page=%"PRIu32" markers verify failed", __func__, dst);
+            ret = v;
+        }
+    }
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        uint8_t lpn_chk[4];
+        nand_oob_pack_lpn_le(oob_lpn, lpn_chk);
+        esp_err_t v = s_verify_programmed_region(handle, dst,
+                                                 dst_column_addr + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET, 4, lpn_chk);
+        if (v != ESP_OK) {
+            ESP_LOGE(TAG, "%s: dst page=%"PRIu32" OOB LPN verify failed", __func__, dst);
+            ret = v;
+        }
+    }
+#endif
 
-    temp_buf = heap_caps_malloc(handle->chip.page_size, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    ESP_RETURN_ON_FALSE(temp_buf != NULL, ESP_ERR_NO_MEM, TAG, "nomem");
-    if (spi_nand_read(handle, temp_buf, src_column_addr, handle->chip.page_size)) {
-        ESP_LOGE(TAG, "%s: Failed to read src_page=%"PRIu32"", __func__, src);
-        goto fail;
-    }
-    // Then read dst page data from nand memory array and load it in cache
-    ESP_GOTO_ON_ERROR(read_page_and_wait(handle, dst, &status), fail, TAG, "");
-    if (is_ecc_error(handle, status)) {
-        ESP_LOGE(TAG, "%s: dst_page=%"PRIu32" read, ecc error", __func__, dst);
-        goto fail;
-    }
-    // Check if the data in the src page matches the dst page
-    ret = s_verify_write(handle, temp_buf, dst_column_addr, handle->chip.page_size);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "%s: dst_page=%"PRIu32" write verification failed", __func__, dst);
-    }
-
-    free(temp_buf);
-#endif //CONFIG_NAND_FLASH_VERIFY_WRITE
-    return ret;
+    goto cleanup;
 
 fail:
-#if CONFIG_NAND_FLASH_VERIFY_WRITE
-    free(temp_buf);
-#endif //CONFIG_NAND_FLASH_VERIFY_WRITE
     ESP_LOGE(TAG, "Error in nand_copy %d", ret);
+
+cleanup:
+#if CONFIG_NAND_FLASH_VERIFY_WRITE
+    free(golden_main);
+#endif
+    free(copy_buf);
     return ret;
 }
 
