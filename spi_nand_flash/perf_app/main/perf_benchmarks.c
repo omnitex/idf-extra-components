@@ -573,7 +573,15 @@ static cJSON *build_config_to_json(void)
 #endif
     );
 #ifdef CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
-    cJSON_AddNumberToObject(o, "dhara_prog_page_relief_min_ecc", CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC);
+#if defined(CONFIG_NAND_RELIEF_AT_1_TO_3_BITS)
+#define RELIEF_MIN_ECC  1
+#elif defined(CONFIG_NAND_RELIEF_AT_7_TO_8_BITS)
+#define RELIEF_MIN_ECC  5
+#else
+#define RELIEF_MIN_ECC  3
+#endif
+    cJSON_AddNumberToObject(o, "dhara_prog_page_relief_min_ecc", RELIEF_MIN_ECC);
+#undef RELIEF_MIN_ECC
 #else
     cJSON_AddNullToObject(o, "dhara_prog_page_relief_min_ecc");
 #endif

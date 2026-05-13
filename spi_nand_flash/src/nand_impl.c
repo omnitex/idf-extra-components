@@ -19,6 +19,16 @@
 
 #define ROM_WAIT_THRESHOLD_US 1000
 
+#if CONFIG_NAND_FLASH_PROG_PAGE_RELIEF
+#if defined(CONFIG_NAND_RELIEF_AT_1_TO_3_BITS)
+#define NAND_PAGE_RELIEF_MIN_ECC  1
+#elif defined(CONFIG_NAND_RELIEF_AT_7_TO_8_BITS)
+#define NAND_PAGE_RELIEF_MIN_ECC  5
+#else
+#define NAND_PAGE_RELIEF_MIN_ECC  3
+#endif
+#endif
+
 /*
  * Experimental: byte offset of the 4-byte LPN (LE) inside OOB, counted from the
  * first spare column after main page data (column == page_size → OOB byte 0).
@@ -445,7 +455,7 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
         {
             nand_ecc_status_t ecc_st = handle->chip.ecc_data.ecc_corrected_bits_status;
             if (ecc_st != NAND_ECC_OK &&
-                (int)ecc_st >= CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC) {
+                (int)ecc_st >= NAND_PAGE_RELIEF_MIN_ECC) {
                 return ESP_ERR_SPI_NAND_PAGE_RELIEF;
             }
         }
@@ -617,7 +627,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
         {
             nand_ecc_status_t ecc_dst = handle->chip.ecc_data.ecc_corrected_bits_status;
             if (ecc_dst != NAND_ECC_OK &&
-                (int)ecc_dst >= CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC) {
+                (int)ecc_dst >= NAND_PAGE_RELIEF_MIN_ECC) {
                 return ESP_ERR_SPI_NAND_PAGE_RELIEF;
             }
         }

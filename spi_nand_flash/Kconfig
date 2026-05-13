@@ -9,7 +9,7 @@ menu "SPI NAND Flash configuration"
             was not erased before verification.
 
     config NAND_PAGE_REGISTER_CACHE
-        bool "Skip READ PAGE on repeated access to the same page"
+        bool "Page-register cache – skip redundant READ PAGE on repeated access"
         default n
         help
             The NAND chip holds one page in its internal register.  When this
@@ -26,65 +26,76 @@ menu "SPI NAND Flash configuration"
         depends on IDF_INIT_VERSION >= "6.0"
         default n
         help
-            Enable Block Device Layer (BDL) support for SPI NAND Flash. This provides:
-            - Standard esp_blockdev_t interface for layered architecture
-            - Flash Block Device Layer (raw NAND flash access)
-            - Wear-Leveling Block Device Layer (logical sector access with wear leveling)
-            - Advanced layered API (spi_nand_flash_init_with_layers)
-            When disabled, only the legacy API is available.
-            When enabled, the legacy spi_nand_flash_init_device() is not available (returns
-            ESP_ERR_NOT_SUPPORTED). Use spi_nand_flash_init_with_layers().
+            Enables a layered block-device architecture (ESP-IDF >= 6.0 only).
+            This exposes the NAND flash through the standard block-device
+            interface, with separate layers for raw flash access and
+            wear-levelled logical sectors.
 
-            Note: This option requires ESP-IDF >= 6.0 (esp_blockdev component).
-            Enabling this on ESP-IDF < 6.0 will result in a build error.
+            When enabled, use spi_nand_flash_init_with_layers() to initialise
+            the device.  The legacy spi_nand_flash_init_device() API is no
+            longer available and will return an error.
 
     config DHARA_META_CACHE_SLOTS
-        int "Metadata checkpoint-page cache slots (0 = disabled)"
+        int "Dhara metadata cache – DRAM slots for NAND metadata pages"
         range 0 8
         default 0
         help
-            Number of full NAND pages cached in internal DRAM to accelerate
-            repeated metadata reads from the same checkpoint group. Each slot
-            holds one page (typically 2048 bytes) in DMA-aligned internal DRAM.
-            Total cost: SLOTS x page_size bytes.
-            Set 0 to disable (no RAM overhead, original behaviour).
-            Recommended value TODO for targets with spare RAM.
+            Number of full NAND pages kept in DRAM to avoid re-reading
+            metadata that the wear-leveling layer accesses repeatedly.
+            Each slot costs one page of RAM (typically 2048 bytes).
+
+            Set to 0 to disable (no extra RAM usage).  Values of 2–4 are a
+            reasonable starting point on targets with spare DRAM.
 
     config DHARA_MAP_PATH_CACHE
-        bool "Enable trace_path sequential locality cache"
+        bool "Dhara map-path cache – cache sector lookup for sequential access"
         default n
         help
-            When enabled, dhara_map caches the last successful read-only
-            trace_path traversal (136 bytes in struct dhara_map). Consecutive
-            sector lookups that share a common radix-tree prefix skip the
-            already-known levels entirely, reducing dhara_journal_read_meta
-            calls by up to 31 of 32 for sequential sector access patterns.
-            Set to false to disable (no RAM overhead, original behaviour).
+            When enabled, consecutive reads to sequentially-numbered sectors
+            skip the parts of the internal lookup tree that have already been
+            traversed.  This can eliminate most of the per-sector metadata
+            reads during sequential workloads.
+
+            Costs 136 bytes of static RAM.  Disable for purely random
+            access patterns where the overhead offers no benefit.
 
     config NAND_ENABLE_STATS
-        bool "Host test statistics enabled"
+        bool "Collect runtime statistics (Linux host tests only)"
         depends on IDF_TARGET_LINUX
         default n
         help
-            This option enables gathering host test statistics and SPI NAND flash wear levelling simulation.
+            Track per-operation counters (erase/program/read counts, cache
+            hit rates, wear distribution) during host-test runs.  The stats
+            are exposed through the spi_nand_flash_get_cache_stats() API and
+            are used by the host test and evaluation apps.
+
+            Linux target only — has no effect on firmware builds.
 
     config NAND_FLASH_PROG_PAGE_RELIEF
-        bool "Pre-program read: request Dhara page relief on high correctable ECC"
+        bool "Program page relief – skip pages with high ECC corrections before programming"
         default n
         help
-            After the mandatory pre-program page read, if the NAND reports correctable ECC at or above
-            NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC, nand_prog returns ESP_ERR_FLASH_BASE + DHARA_E_PAGE_RELIEF.
-            The Dhara journal consumes a filler metadata slot and uses the next physical page without
-            marking the block bad. Uncorrectable ECC still fails the operation with ESP_FAIL.
+            Before programming a page, the NAND chip reads it back to check
+            its condition.  If the ECC engine reports a correctable-bit count
+            at or above the chosen threshold, that page is skipped and the
+            next available page is used instead — the block is not marked bad.
 
-    config NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC
-        int "Minimum nand_ecc_status_t value to trigger page relief (inclusive)"
+            This prevents programming pages that are already showing wear
+            signs, reducing the risk of future uncorrectable errors.
+            Uncorrectable ECC still fails the operation immediately.
+
+    choice NAND_FLASH_PROG_PAGE_RELIEF_THRESHOLD
+        prompt "ECC correction threshold for page relief"
         depends on NAND_FLASH_PROG_PAGE_RELIEF
-        range 1 7
-        default 3
-        help
-            Compared against ecc_corrected_bits_status after the pre-read (see nand_ecc_status_t).
-            Typical values: 1 = NAND_ECC_1_TO_3_BITS_CORRECTED, 3 = NAND_ECC_4_TO_6_BITS_CORRECTED.
+        default NAND_RELIEF_AT_4_TO_6_BITS
+
+        config NAND_RELIEF_AT_1_TO_3_BITS
+            bool "1–3 bits corrected (aggressive)"
+        config NAND_RELIEF_AT_4_TO_6_BITS
+            bool "4–6 bits corrected (balanced)"
+        config NAND_RELIEF_AT_7_TO_8_BITS
+            bool "7–8 bits corrected (conservative)"
+    endchoice
 
     config NAND_FLASH_FAULT_SIM
         bool "Enable NAND fault-injection simulator (for linux target ftl_eval app)"
