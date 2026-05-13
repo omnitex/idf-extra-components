@@ -65,7 +65,6 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
 
 #if DHARA_META_CACHE_SLOTS > 0
     {
-        bool cache_ok = true;
         int i;
 #ifndef CONFIG_IDF_TARGET_LINUX
         size_t dma_alignment = spi_nand_get_dma_alignment();
@@ -80,6 +79,22 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
             dhara_priv_data->meta_cache_bufs[i] = heap_caps_malloc(
                 handle->chip.page_size, MALLOC_CAP_DEFAULT);
 #endif
+        }
+        /* dhara_journal_set_meta_cache() must be called AFTER
+         * dhara_map_resume(): resume() calls reset_journal() internally,
+         * which zeroes cache_slots/cache_bufs/cache_keys, silently
+         * detaching any cache registered before that point. */
+    }
+#endif
+
+    dhara_error_t ignored;
+    dhara_map_resume(&dhara_priv_data->dhara_map, &ignored);
+
+#if DHARA_META_CACHE_SLOTS > 0
+    {
+        bool cache_ok = true;
+        int i;
+        for (i = 0; i < DHARA_META_CACHE_SLOTS; i++) {
             if (!dhara_priv_data->meta_cache_bufs[i]) {
                 cache_ok = false;
                 break;
@@ -94,9 +109,6 @@ static esp_err_t dhara_init(spi_nand_flash_device_t *handle, void *bdl_handle)
         }
     }
 #endif
-
-    dhara_error_t ignored;
-    dhara_map_resume(&dhara_priv_data->dhara_map, &ignored);
 
     return ESP_OK;
 }

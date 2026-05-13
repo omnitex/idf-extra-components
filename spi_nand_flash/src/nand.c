@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2026 Martin Havlik <omnitex.git@gmail.com>
  */
 
 #include <string.h>
@@ -67,6 +68,7 @@ esp_err_t spi_nand_erase_chip(spi_nand_flash_device_t *handle)
         goto end;
     }
     handle->ops->deinit(handle);
+    ret = handle->ops->init(handle, NULL);
 
 end:
     xSemaphoreGive(handle->mutex);
