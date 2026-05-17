@@ -1,0 +1,40 @@
+{
+  "name": "gc_vs_wear_monotonic",
+  "output": "report_gc_vs_wear_monotonic.json",
+  "nand": {
+    "num_blocks": 128,
+    "pages_per_block": 64,
+    "page_size": 2048
+  },
+  "scenarios": [
+    { "name": "fresh",      "preset": "FRESH" },
+    { "name": "life_10pct", "pre_warm_erase_cycles": 100,  "max_erase_cycles": 1000,
+      "ecc_prog_mid_erase_threshold": 50,  "ecc_prog_high_erase_threshold": 80,
+      "ecc_prog_fail_erase_threshold": 950, "ecc_prog_noise_prob": 0.02 },
+    { "name": "life_25pct", "pre_warm_erase_cycles": 250,  "max_erase_cycles": 1000,
+      "ecc_prog_mid_erase_threshold": 125, "ecc_prog_high_erase_threshold": 200,
+      "ecc_prog_fail_erase_threshold": 950, "ecc_prog_noise_prob": 0.02 },
+    { "name": "life_50pct", "pre_warm_erase_cycles": 500,  "max_erase_cycles": 1000,
+      "ecc_prog_mid_erase_threshold": 250, "ecc_prog_high_erase_threshold": 400,
+      "ecc_prog_fail_erase_threshold": 950, "ecc_prog_noise_prob": 0.02 },
+    { "name": "life_75pct", "pre_warm_erase_cycles": 750,  "max_erase_cycles": 1000,
+      "ecc_prog_mid_erase_threshold": 375, "ecc_prog_high_erase_threshold": 600,
+      "ecc_prog_fail_erase_threshold": 950, "ecc_prog_noise_prob": 0.02 },
+    { "name": "life_90pct", "pre_warm_erase_cycles": 900,  "max_erase_cycles": 1000,
+      "ecc_prog_mid_erase_threshold": 450, "ecc_prog_high_erase_threshold": 720,
+      "ecc_prog_fail_erase_threshold": 950, "ecc_prog_noise_prob": 0.02 }
+  ],
+  "ftl_configs": [
+    { "name": "dhara_5pct",  "ftl": "dhara", "gc_overhead_percent": 5.0  },
+    { "name": "dhara_10pct", "ftl": "dhara", "gc_overhead_percent": 10.0 },
+    { "name": "dhara_15pct", "ftl": "dhara", "gc_overhead_percent": 15.0 },
+    { "name": "dhara_20pct", "ftl": "dhara", "gc_overhead_percent": 20.0 },
+    { "name": "dhara_25pct", "ftl": "dhara", "gc_overhead_percent": 25.0 }
+  ],
+  "workload": {
+    "type": "zipf",
+    "total_writes": 100000,
+    "write_size_bytes": 2048,
+    "zipf_skew": 1.0
+  }
+}
