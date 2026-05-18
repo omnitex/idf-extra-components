@@ -45,7 +45,6 @@ The build is controlled by `sdkconfig.defaults`, which sets:
 CONFIG_IDF_TARGET="linux"
 CONFIG_NAND_FLASH_FAULT_SIM=y
 CONFIG_NAND_FLASH_ENABLE_BDL=y
-CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y
 ```
 
 BDL (Block Device Layer) is required and enabled by default. No `set-target`, `menuconfig`, or manual Kconfig merge step is needed.

@@ -197,7 +197,6 @@ idf.py build
 - `CONFIG_IDF_TARGET="linux"`
 - `CONFIG_NAND_FLASH_FAULT_SIM=y`
 - `CONFIG_NAND_FLASH_ENABLE_BDL=y`
-- `CONFIG_SPI_NAND_FLASH_WL_NVBLOCK=y`
 
 **Run:**
 ```bash

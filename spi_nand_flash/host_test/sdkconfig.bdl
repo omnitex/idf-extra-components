@@ -1,0 +1,2 @@
+# Block Device Layer (IDF >= 6.0)
+CONFIG_NAND_FLASH_ENABLE_BDL=y
