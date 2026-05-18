@@ -26,6 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.transforms import blended_transform_factory
 
 from perf_inventory import ConfigKey, RunInfo, group_by_config, load_results
 
@@ -373,13 +374,111 @@ def add_config_note(fig, configs: list[AggregatedConfig], columns: int = 2):
 
 
 HEATMAP_COLUMNS = [
-    ("Sequential", "write", "Seq W"),
-    ("Sequential", "read", "Seq R"),
-    ("Random", "write", "Rnd W"),
-    ("Random", "read", "Rnd R"),
-    ("Zipf", "write", "Zipf W"),
-    ("Zipf", "read", "Zipf R"),
+    ("Sequential", "write", "SeqW"),
+    ("Sequential", "read", "SeqR"),
+    ("Random", "write", "RndW"),
+    ("Random", "read", "RndR"),
+    ("Zipf", "write", "ZipfW"),
+    ("Zipf", "read", "ZipfR"),
 ]
+HEATMAP_SUMMARY_COLUMNS = ("Mean", "GMean")
+
+
+def _row_geometric_mean(matrix: np.ndarray) -> np.ndarray:
+    positive = matrix > 0
+    geom = np.zeros((matrix.shape[0], 1), dtype=float)
+    valid_rows = positive.all(axis=1)
+    if valid_rows.any():
+        geom[valid_rows, 0] = np.exp(np.mean(np.log(matrix[valid_rows]), axis=1))
+    return geom
+
+
+def _empty_operation_stats() -> OperationStats:
+    return OperationStats(0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], CacheStats())
+
+
+def _build_heatmap_matrix(filtered: list[AggregatedConfig], value_attr: str) -> np.ndarray:
+    empty = _empty_operation_stats()
+    return np.array(
+        [
+            [getattr(cfg.benchmarks.get(bench, {}).get(direction, empty), value_attr) for bench, direction, _ in HEATMAP_COLUMNS]
+            for cfg in filtered
+        ],
+        dtype=float,
+    )
+
+
+def _heatmap_color_norm(matrix: np.ndarray):
+    flat = matrix[np.isfinite(matrix)]
+    if not flat.size:
+        return None
+    median = float(np.median(flat))
+    if np.min(flat) != np.max(flat):
+        return mcolors.TwoSlopeNorm(vmin=float(np.min(flat)), vcenter=median, vmax=float(np.max(flat)))
+    return None
+
+
+def _heatmap_text_color(value: float, flat: np.ndarray) -> str:
+    if not flat.size or flat.max() == flat.min():
+        return "black"
+    brightness = (value - flat.min()) / (flat.max() - flat.min())
+    return "white" if brightness > 0.55 else "black"
+
+
+def _annotate_heatmap_cells(ax, data: np.ndarray, flat: np.ndarray, *, contrast_text: bool):
+    for row in range(data.shape[0]):
+        for col in range(data.shape[1]):
+            val = data[row, col]
+            kwargs = {"ha": "center", "va": "center", "fontsize": 7}
+            if contrast_text:
+                kwargs["color"] = _heatmap_text_color(val, flat)
+            ax.text(col, row, f"{val:.0f}", **kwargs)
+
+
+def _render_overview_heatmap(
+    filtered: list[AggregatedConfig],
+    output_dir: Path,
+    *,
+    matrix: np.ndarray,
+    file_token: str,
+    cmap: str,
+    cbar_label: str,
+    title: str,
+    contrast_text: bool = False,
+) -> list[Path]:
+    if not filtered:
+        fig, ax = plt.subplots(figsize=thesis_figsize(), layout="constrained")
+        ax.set_title(title)
+        ax.axis("off")
+        return save_figure(fig, output_dir, FIGURE_FILES[file_token])
+
+    row_labels = [f"{cfg.code} {cfg.label}" for cfg in filtered]
+    benchmark_labels = [label for _, _, label in HEATMAP_COLUMNS]
+    row_mean = matrix.mean(axis=1, keepdims=True)
+    row_gmean = _row_geometric_mean(matrix)
+    display = np.hstack([matrix, row_mean, row_gmean])
+    col_labels = [*benchmark_labels, *HEATMAP_SUMMARY_COLUMNS]
+    norm = _heatmap_color_norm(matrix)
+    flat = matrix[np.isfinite(matrix)]
+
+    n_rows, n_benchmark_cols = matrix.shape
+    n_display_cols = display.shape[1]
+    width, _ = thesis_figsize()
+    width *= 1.0 + (len(HEATMAP_SUMMARY_COLUMNS) / n_benchmark_cols)
+    height = max(2.4, 0.34 * n_rows + 1.2)
+    fig, ax = plt.subplots(figsize=(width, height), layout="constrained")
+    im = ax.imshow(display, aspect="auto", cmap=cmap, norm=norm)
+
+    ax.set_xticks(range(n_display_cols), col_labels)
+    ax.set_yticks(range(n_rows), row_labels)
+    ax.set_title(title)
+    ax.set_xlabel("Benchmark")
+
+    cbar = fig.colorbar(im, ax=ax, shrink=0.9)
+    cbar.set_label(cbar_label)
+
+    _annotate_heatmap_cells(ax, display, flat, contrast_text=contrast_text)
+    return save_figure(fig, output_dir, FIGURE_FILES[file_token])
 
 
 def _filter_by_relief(configs: list[AggregatedConfig], relief: bool | None) -> list[AggregatedConfig]:
@@ -390,71 +489,37 @@ def _filter_by_relief(configs: list[AggregatedConfig], relief: bool | None) -> l
 
 def render_heatmap(configs: list[AggregatedConfig], output_dir: Path, relief: bool | None = None, file_token: str = "1"):
     filtered = _filter_by_relief(configs, relief)
-    matrix = np.array(
-        [
-            [cfg.benchmarks.get(bench, {}).get(direction, OperationStats(0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], CacheStats())).mean_kbps for bench, direction, _ in HEATMAP_COLUMNS]
-            for cfg in filtered
-        ],
-        dtype=float,
-    )
-    flat = matrix[np.isfinite(matrix)]
-    median = float(np.median(flat)) if flat.size else 0.0
-    if flat.size and np.min(flat) != np.max(flat):
-        norm = mcolors.TwoSlopeNorm(vmin=float(np.min(flat)), vcenter=median, vmax=float(np.max(flat)))
-    else:
-        norm = None
-    width, _ = thesis_figsize()
-    height = max(2.4, 0.34 * len(filtered) + 1.2)
-    fig, ax = plt.subplots(figsize=(width, height), layout="constrained")
-    im = ax.imshow(matrix, aspect="auto", cmap="RdBu_r", norm=norm)
-    ax.set_xticks(range(len(HEATMAP_COLUMNS)), [label for _, _, label in HEATMAP_COLUMNS])
-    ax.set_yticks(range(len(filtered)), [f"{cfg.code} {cfg.label}" for cfg in filtered])
+    matrix = _build_heatmap_matrix(filtered, "mean_kbps")
     title = "Mean throughput overview across benchmark classes"
     if relief is not None:
         title += f" — Prog Relief {'Y' if relief else 'N'}"
-    ax.set_title(title)
-    cbar = fig.colorbar(im, ax=ax, shrink=0.9)
-    cbar.set_label("Throughput (kB/s)")
-    for row in range(matrix.shape[0]):
-        for col in range(matrix.shape[1]):
-            ax.text(col, row, f"{matrix[row, col]:.0f}", ha="center", va="center", fontsize=7)
-    return save_figure(fig, output_dir, FIGURE_FILES[file_token])
+    return _render_overview_heatmap(
+        filtered,
+        output_dir,
+        matrix=matrix,
+        file_token=file_token,
+        cmap="RdBu_r",
+        cbar_label="Throughput (kB/s)",
+        title=title,
+    )
 
 
 def render_latency_heatmap(configs: list[AggregatedConfig], output_dir: Path, relief: bool | None = None, file_token: str = "1b"):
     filtered = _filter_by_relief(configs, relief)
-    matrix = np.array(
-        [
-            [cfg.benchmarks.get(bench, {}).get(direction, OperationStats(0, 0, 0, 0, 0, 0, 0, 0, 0, [], [], CacheStats())).latency_p95 for bench, direction, _ in HEATMAP_COLUMNS]
-            for cfg in filtered
-        ],
-        dtype=float,
-    )
-    flat = matrix[np.isfinite(matrix)]
-    median = float(np.median(flat)) if flat.size else 0.0
-    if flat.size and np.min(flat) != np.max(flat):
-        norm = mcolors.TwoSlopeNorm(vmin=float(np.min(flat)), vcenter=median, vmax=float(np.max(flat)))
-    else:
-        norm = None
-    width, _ = thesis_figsize()
-    height = max(2.4, 0.34 * len(filtered) + 1.2)
-    fig, ax = plt.subplots(figsize=(width, height), layout="constrained")
-    im = ax.imshow(matrix, aspect="auto", cmap="RdYlGn_r", norm=norm)
-    ax.set_xticks(range(len(HEATMAP_COLUMNS)), [label for _, _, label in HEATMAP_COLUMNS])
-    ax.set_yticks(range(len(filtered)), [f"{cfg.code} {cfg.label}" for cfg in filtered])
+    matrix = _build_heatmap_matrix(filtered, "latency_p95")
     title = "p95 latency overview across benchmark classes"
     if relief is not None:
         title += f" — Prog Relief {'Y' if relief else 'N'}"
-    ax.set_title(title)
-    cbar = fig.colorbar(im, ax=ax, shrink=0.9)
-    cbar.set_label("Latency p95 (µs)")
-    for row in range(matrix.shape[0]):
-        for col in range(matrix.shape[1]):
-            val = matrix[row, col]
-            brightness = (val - flat.min()) / (flat.max() - flat.min()) if flat.size and flat.max() != flat.min() else 0.5
-            text_color = "white" if brightness > 0.55 else "black"
-            ax.text(col, row, f"{val:.0f}", ha="center", va="center", fontsize=7, color=text_color)
-    return save_figure(fig, output_dir, FIGURE_FILES[file_token])
+    return _render_overview_heatmap(
+        filtered,
+        output_dir,
+        matrix=matrix,
+        file_token=file_token,
+        cmap="RdYlGn_r",
+        cbar_label="Latency p95 (µs)",
+        title=title,
+        contrast_text=True,
+    )
 
 
 def render_throughput_bars(configs: list[AggregatedConfig], benchmark: str, token: str, output_dir: Path):
@@ -478,6 +543,36 @@ def render_throughput_bars(configs: list[AggregatedConfig], benchmark: str, toke
     return save_figure(fig, output_dir, FIGURE_FILES[token])
 
 
+def _set_waterfall_y_labels(ax, steps: list[tuple[str, AggregatedConfig, float]], y: np.ndarray):
+    ax.set_yticks(y)
+    ax.set_yticklabels([])
+    label_trans = blended_transform_factory(ax.transAxes, ax.transData)
+    line_gap = 0.17
+    for idx, (step_name, cfg, _) in enumerate(steps):
+        ypos = float(y[idx])
+        ax.text(
+            -0.02,
+            ypos + line_gap / 2,
+            f"{step_name}  {cfg.code}",
+            transform=label_trans,
+            ha="right",
+            va="center",
+            fontsize=8,
+            clip_on=False,
+        )
+        ax.text(
+            -0.02,
+            ypos - line_gap / 2,
+            cfg.label,
+            transform=label_trans,
+            ha="right",
+            va="center",
+            fontsize=6,
+            color="#555555",
+            clip_on=False,
+        )
+
+
 def select_waterfall_configs(configs: list[AggregatedConfig]) -> tuple[list[tuple[str, AggregatedConfig]], list[str]]:
     selected = []
     missing = []
@@ -497,25 +592,22 @@ def render_waterfall(configs: list[AggregatedConfig], benchmark: str, token: str
     panel_height = n_steps * step_height + 0.8
     total_height = panel_height * 2 + 0.6
     width, _ = thesis_figsize()
+    width *= 1.12
     fig, axes = plt.subplots(2, 1, figsize=(width, total_height), layout="constrained")
     for ax, direction in zip(axes, DIRECTIONS):
-        names = []
-        values = []
-        codes = []
+        steps: list[tuple[str, AggregatedConfig, float]] = []
         for step_name, cfg in selected:
             if benchmark in cfg.benchmarks and direction in cfg.benchmarks[benchmark]:
-                names.append(step_name)
-                values.append(cfg.benchmarks[benchmark][direction].mean_kbps)
-                codes.append(cfg.code)
-        if not values:
+                steps.append((step_name, cfg, cfg.benchmarks[benchmark][direction].mean_kbps))
+        if not steps:
             ax.text(0.5, 0.5, "No matching data", ha="center", va="center")
             ax.set_axis_off()
             continue
-        y = np.arange(len(values) - 1, -1, -1)
+        y = np.arange(len(steps) - 1, -1, -1)
+        values = [value for _, _, value in steps]
         max_val = max(values) if values else 1.0
-        label_x = max_val * 1.02
         prev_value = None
-        for idx, value in enumerate(values):
+        for idx, (_, _, value) in enumerate(steps):
             color = STEP_COLORS[min(idx, len(STEP_COLORS) - 1)]
             ax.barh(y[idx], value, height=0.6, color=color, edgecolor="white", linewidth=0.5)
             bar_end = value
@@ -541,11 +633,12 @@ def render_waterfall(configs: list[AggregatedConfig], benchmark: str, token: str
                     color="#555555",
                 )
             prev_value = value
-        ax.set_yticks(y, [f"{name}  {code}" for name, code in zip(names, codes)])
+        _set_waterfall_y_labels(ax, steps, y)
         ax.set_xlim(0, max_val * 1.35)
         ax.set_xlabel("Throughput (kB/s)")
         ax.grid(axis="x", alpha=0.25)
         ax.set_title(f"{direction.capitalize()}")
+    fig.subplots_adjust(left=0.40)
     fig.suptitle(f"{benchmark} — additive throughput progression")
     if missing:
         fig.text(0.5, 0.01, f"Missing steps: {', '.join(missing)}", ha="center", fontsize=7, color="#888888")
