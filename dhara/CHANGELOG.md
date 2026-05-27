@@ -1,3 +1,9 @@
+## [1.1.0]
+
+### New Features
+
+- **Path cache for sequential FTL map lookups** (`DHARA_MAP_PATH_CACHE`). When enabled (compile-time define), `trace_path()` caches the last successful read-only radix-tree traversal (136 bytes in `dhara_map`). Consecutive sector lookups that share a common prefix skip the shared levels entirely, saving up to 31 of 32 `dhara_journal_read_meta` calls for sequential sector access patterns. Disabled by default; can be overridden via `CONFIG_NAND_DHARA_FTL_MAP_PATH_CACHE` Kconfig in `spi_nand_flash`. Adds `prev_target`, `prev_path[]`, and `prev_root` fields to `struct dhara_map`, and moves `DHARA_RADIX_DEPTH` to the public `map.h` header.
+
 ## [1.0.0]
 
 ### Versioning
