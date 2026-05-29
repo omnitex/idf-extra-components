@@ -14,8 +14,8 @@
 #include "nand_linux_mmap_emul.h"
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
 #include "nand_oob_device.h"
+#include "nand_oob_field.h"
 #include "nand_oob_layout_default.h"
-#include "nand_oob_xfer.h"
 #include <limits.h>
 #include <stdlib.h>
 #endif
@@ -298,13 +298,12 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset, data, handle->chip.page_size), TAG, "Error in nand_prog %d", ret);
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
     uint8_t scratch[4];
-    memset(scratch, 0, sizeof(scratch));
+    memset(scratch, 0xFF, sizeof(scratch));
     memcpy(scratch + handle->oob_layout->bbm.bbm_offset, handle->oob_layout->bbm.good_pattern, handle->oob_layout->bbm.bbm_length);
-    spi_nand_oob_xfer_ctx_t ctx;
-    ESP_RETURN_ON_ERROR(nand_oob_xfer_ctx_init(&ctx, handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_ECC, scratch, 4),
-                        TAG, "nand_prog xfer ctx");
     const uint8_t page_used_prog[2] = { 0x00, 0x00 };
-    ESP_RETURN_ON_ERROR(nand_oob_scatter(&ctx, 0, page_used_prog, 2), TAG, "nand_prog scatter");
+    ESP_RETURN_ON_ERROR(nand_oob_field_scatter(handle, SPI_NAND_OOB_FIELD_PAGE_USED,
+                                                scratch, sizeof(scratch), page_used_prog, sizeof(page_used_prog)),
+                        TAG, "nand_prog field scatter");
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size, scratch, sizeof(scratch)), TAG, "Error in nand_prog %d", ret);
 #else
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size,
@@ -324,11 +323,10 @@ esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_
                         TAG, "Error in nand_is_free %d", ret);
 
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
-    spi_nand_oob_xfer_ctx_t ctx;
-    ESP_RETURN_ON_ERROR(nand_oob_xfer_ctx_init(&ctx, handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_ECC, markers, 4),
-                        TAG, "nand_is_free xfer ctx");
     uint8_t page_used[2];
-    ESP_RETURN_ON_ERROR(nand_oob_gather(&ctx, 0, page_used, 2), TAG, "nand_is_free gather");
+    ESP_RETURN_ON_ERROR(nand_oob_field_gather(handle, SPI_NAND_OOB_FIELD_PAGE_USED,
+                                               markers, sizeof(markers), page_used, sizeof(page_used)),
+                        TAG, "nand_is_free field gather");
     ESP_LOGD(TAG, "is free, page=%"PRIu32", used_marker=%02x%02x,", page, page_used[0], page_used[1]);
     *is_free_status = (page_used[0] == 0xFF && page_used[1] == 0xFF);
 #else

@@ -15,7 +15,7 @@
 #include "nand_device_types.h"
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
 #include "nand_oob_device.h"
-#include "nand_oob_xfer.h"
+#include "nand_oob_field.h"
 #endif
 
 #define ROM_WAIT_THRESHOLD_US 1000
@@ -431,15 +431,13 @@ esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_
     ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, data, column_addr, handle->chip.page_size),
                       fail, TAG, "");
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
-    // Markers layout: BBM from layout + PAGE_USED via FREE_ECC scatter (proposal default §1.2).
     uint8_t *scratch = handle->temp_buffer;
-    memset(scratch, 0, 4);
+    memset(scratch, 0xFF, 4);
     memcpy(scratch + handle->oob_layout->bbm.bbm_offset, handle->oob_layout->bbm.good_pattern, handle->oob_layout->bbm.bbm_length);
-    spi_nand_oob_xfer_ctx_t ctx;
-    ESP_GOTO_ON_ERROR(nand_oob_xfer_ctx_init(&ctx, handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_ECC, scratch, 4),
-                      fail, TAG, "");
     const uint8_t page_used_prog[2] = { 0x00, 0x00 };
-    ESP_GOTO_ON_ERROR(nand_oob_scatter(&ctx, 0, page_used_prog, 2), fail, TAG, "");
+    ESP_GOTO_ON_ERROR(nand_oob_field_scatter(handle, SPI_NAND_OOB_FIELD_PAGE_USED,
+                                              scratch, 4, page_used_prog, sizeof(page_used_prog)),
+                      fail, TAG, "");
     ESP_GOTO_ON_ERROR(spi_nand_program_load(handle, scratch, column_addr + handle->chip.page_size, 4), fail, TAG, "");
 #else
     // Markers layout: [bad_block_marker (bytes 0-1)][page_used_marker (bytes 2-3)]
@@ -492,11 +490,10 @@ esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_
                                     column_addr, 4), fail, TAG, "");
 
 #ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
-    spi_nand_oob_xfer_ctx_t ctx;
-    ESP_GOTO_ON_ERROR(nand_oob_xfer_ctx_init(&ctx, handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_ECC, handle->read_buffer, 4),
-                      fail, TAG, "");
     uint8_t page_used[2];
-    ESP_GOTO_ON_ERROR(nand_oob_gather(&ctx, 0, page_used, 2), fail, TAG, "");
+    ESP_GOTO_ON_ERROR(nand_oob_field_gather(handle, SPI_NAND_OOB_FIELD_PAGE_USED,
+                                             handle->read_buffer, 4, page_used, sizeof(page_used)),
+                      fail, TAG, "");
     ESP_LOGD(TAG, "is free, page=%"PRIu32", used_marker=%02x,%02x,", page, page_used[0], page_used[1]);
     *is_free_status = (page_used[0] == 0xFF && page_used[1] == 0xFF);
 #else
