@@ -71,6 +71,8 @@ struct spi_nand_flash_device_t {
     uint8_t oob_cached_reg_count_free_ecc;
     spi_nand_oob_region_desc_t oob_cached_regs_free_no_ecc[SPI_NAND_OOB_MAX_REGIONS];
     uint8_t oob_cached_reg_count_free_no_ecc;
+    uint16_t oob_total_logical_len_free_ecc;
+    uint16_t oob_total_logical_len_free_no_ecc;
 #endif
 #ifdef CONFIG_IDF_TARGET_LINUX
     nand_mmap_emul_handle_t *emul_handle;

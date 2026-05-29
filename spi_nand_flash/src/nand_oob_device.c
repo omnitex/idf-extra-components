@@ -26,6 +26,9 @@ static esp_err_t nand_oob_spare_bytes_for_handle(const spi_nand_flash_device_t *
         *spare_out = 16;
         return ESP_OK;
     case 2048:
+        /* TODO: Some chips (e.g. all GigaDevice GD5F* models) have 2048+128
+         * layout, not 2048+64. When per-vendor layouts are added, this should
+         * come from the chip database instead of a page_size switch. */
         *spare_out = 64;
         return ESP_OK;
     case 4096:
@@ -50,15 +53,10 @@ esp_err_t nand_oob_device_layout_init(spi_nand_flash_device_t *handle)
     memset(handle->oob_cached_regs_free_no_ecc, 0, sizeof(handle->oob_cached_regs_free_no_ecc));
     handle->oob_cached_reg_count_free_ecc = 0;
     handle->oob_cached_reg_count_free_no_ecc = 0;
+    handle->oob_total_logical_len_free_ecc = 0;
+    handle->oob_total_logical_len_free_no_ecc = 0;
 
     handle->oob_layout = nand_oob_layout_get_default();
-
-    spi_nand_oob_field_spec_t *pu = &handle->oob_fields[SPI_NAND_OOB_FIELD_PAGE_USED];
-    pu->id = SPI_NAND_OOB_FIELD_PAGE_USED;
-    pu->length = 2;
-    pu->oob_class = SPI_NAND_OOB_CLASS_FREE_ECC;
-    pu->logical_offset = 0;
-    pu->assigned = true;
 
     for (int section = 0;; section++) {
         spi_nand_oob_region_desc_t desc;
@@ -76,22 +74,40 @@ esp_err_t nand_oob_device_layout_init(spi_nand_flash_device_t *handle)
             ESP_RETURN_ON_FALSE(handle->oob_cached_reg_count_free_ecc < SPI_NAND_OOB_MAX_REGIONS,
                                 ESP_ERR_NO_MEM, TAG, "too many FREE_ECC OOB regions");
             handle->oob_cached_regs_free_ecc[handle->oob_cached_reg_count_free_ecc++] = desc;
+            handle->oob_total_logical_len_free_ecc += desc.length;
         } else {
             ESP_RETURN_ON_FALSE(handle->oob_cached_reg_count_free_no_ecc < SPI_NAND_OOB_MAX_REGIONS,
                                 ESP_ERR_NO_MEM, TAG, "too many FREE_NOECC OOB regions");
             handle->oob_cached_regs_free_no_ecc[handle->oob_cached_reg_count_free_no_ecc++] = desc;
+            handle->oob_total_logical_len_free_no_ecc += desc.length;
         }
+    }
+
+    spi_nand_oob_field_spec_t *pu = &handle->oob_fields[SPI_NAND_OOB_FIELD_PAGE_USED];
+    pu->id = SPI_NAND_OOB_FIELD_PAGE_USED;
+    pu->length = 2;
+    pu->oob_class = SPI_NAND_OOB_CLASS_FREE_ECC;
+    pu->logical_offset = 0;
+    pu->assigned = true;
+
+    for (int i = 0; i < SPI_NAND_OOB_FIELD_COUNT; i++) {
+        spi_nand_oob_field_spec_t *f = &handle->oob_fields[i];
+        if (!f->assigned) {
+            continue;
+        }
+        uint16_t total = (f->oob_class == SPI_NAND_OOB_CLASS_FREE_ECC)
+                             ? handle->oob_total_logical_len_free_ecc
+                             : handle->oob_total_logical_len_free_no_ecc;
+        ESP_RETURN_ON_FALSE((uint32_t)f->logical_offset + (uint32_t)f->length <= (uint32_t)total,
+                            ESP_ERR_INVALID_SIZE, TAG, "OOB field %d overflows its class layout", i);
     }
 
 #ifndef NDEBUG
     if (handle->oob_layout == nand_oob_layout_get_default()) {
-        size_t total_ecc = 0;
-        for (unsigned i = 0; i < handle->oob_cached_reg_count_free_ecc; i++) {
-            total_ecc += handle->oob_cached_regs_free_ecc[i].length;
-        }
-        assert(total_ecc == 2);
+        assert(handle->oob_total_logical_len_free_ecc == 2);
         assert(handle->oob_cached_reg_count_free_ecc == 1);
         assert(handle->oob_cached_regs_free_ecc[0].offset == 2 && handle->oob_cached_regs_free_ecc[0].length == 2);
+        assert(handle->oob_total_logical_len_free_no_ecc == 0);
         assert(handle->oob_cached_reg_count_free_no_ecc == 0);
     }
 #endif
