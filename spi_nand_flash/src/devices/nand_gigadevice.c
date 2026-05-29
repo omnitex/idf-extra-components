@@ -59,7 +59,22 @@ esp_err_t spi_nand_gigadevice_init(spi_nand_flash_device_t *dev)
         dev->chip.num_planes = 2;
         break;
     default:
-        return ESP_ERR_INVALID_RESPONSE;
+        return ESP_ERR_NOT_SUPPORTED;
     }
+
+#ifdef CONFIG_NAND_FLASH_EXPERIMENTAL_OOB_LAYOUT
+    /*
+     * Per-vendor OOB layout scaffold: when a chip has a non-standard spare
+     * layout (e.g. GD5F* with 2048+128), set dev->oob_layout to a
+     * vendor-specific spi_nand_oob_layout_t here. nand_oob_device_layout_init()
+     * will respect a pre-set layout and skip the default.
+     *
+     * Example (fill in when per-vendor layouts are added):
+     *   if (device_id == GIGADEVICE_DI_51) {
+     *       dev->oob_layout = &gd5f_oob_layout_2048_128;
+     *   }
+     */
+#endif
+
     return ESP_OK;
 }

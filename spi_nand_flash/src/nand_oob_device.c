@@ -44,10 +44,6 @@ esp_err_t nand_oob_device_layout_init(spi_nand_flash_device_t *handle)
 {
     ESP_RETURN_ON_FALSE(handle != NULL, ESP_ERR_INVALID_ARG, TAG, "handle is NULL");
 
-    uint16_t spare = 0;
-    ESP_RETURN_ON_ERROR(nand_oob_spare_bytes_for_handle(handle, &spare), TAG, "spare size");
-    ESP_RETURN_ON_FALSE(spare >= 4, ESP_ERR_INVALID_SIZE, TAG, "spare too small for marker layout");
-
     memset(handle->oob_fields, 0, sizeof(handle->oob_fields));
     memset(handle->oob_cached_regs_free_ecc, 0, sizeof(handle->oob_cached_regs_free_ecc));
     memset(handle->oob_cached_regs_free_no_ecc, 0, sizeof(handle->oob_cached_regs_free_no_ecc));
@@ -56,7 +52,15 @@ esp_err_t nand_oob_device_layout_init(spi_nand_flash_device_t *handle)
     handle->oob_total_logical_len_free_ecc = 0;
     handle->oob_total_logical_len_free_no_ecc = 0;
 
-    handle->oob_layout = nand_oob_layout_get_default();
+    if (handle->oob_layout == NULL) {
+        handle->oob_layout = nand_oob_layout_get_default();
+    }
+
+    uint16_t spare = handle->oob_layout->oob_bytes;
+    if (spare == 0) {
+        ESP_RETURN_ON_ERROR(nand_oob_spare_bytes_for_handle(handle, &spare), TAG, "spare size");
+    }
+    ESP_RETURN_ON_FALSE(spare >= 4, ESP_ERR_INVALID_SIZE, TAG, "spare too small for marker layout");
 
     for (int section = 0;; section++) {
         spi_nand_oob_region_desc_t desc;
