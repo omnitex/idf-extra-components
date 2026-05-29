@@ -57,7 +57,7 @@ typedef struct {
  * (see default layout implementation notes).
  */
 typedef struct spi_nand_oob_layout {
-    uint8_t oob_bytes;
+    uint16_t oob_bytes;
     spi_nand_oob_bbm_t bbm;
     const spi_nand_ooblayout_ops_t *ops;
 } spi_nand_oob_layout_t;

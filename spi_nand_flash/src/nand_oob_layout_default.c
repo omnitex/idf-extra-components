@@ -1,9 +1,7 @@
 /*
- * SPDX-FileCopyrightText: 2022 mikkeldamsgaard project
+ * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
- *
- * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #include "nand_oob_layout_default.h"
