@@ -11,7 +11,9 @@
 
 #include "esp_check.h"
 #include "nand.h"
+#include "nand_oob_field.h"
 #include "nand_oob_layout_default.h"
+#include "nand_oob_xfer.h"
 
 static const char *TAG = "nand_oob_dev";
 
@@ -62,38 +64,29 @@ esp_err_t nand_oob_device_layout_init(spi_nand_flash_device_t *handle)
     }
     ESP_RETURN_ON_FALSE(spare >= 4, ESP_ERR_INVALID_SIZE, TAG, "spare too small for marker layout");
 
-    for (int section = 0;; section++) {
-        spi_nand_oob_region_desc_t desc;
-        esp_err_t err = handle->oob_layout->ops->free_region(handle, section, &desc);
-        if (err == ESP_ERR_NOT_FOUND) {
-            break;
-        }
-        ESP_RETURN_ON_ERROR(err, TAG, "free_region");
-        if (!desc.programmable) {
-            continue;
-        }
-        ESP_RETURN_ON_FALSE((uint32_t)desc.offset + (uint32_t)desc.length <= (uint32_t)spare,
-                            ESP_ERR_INVALID_SIZE, TAG, "free region out of spare");
-        if (desc.ecc_protected) {
-            ESP_RETURN_ON_FALSE(handle->oob_cached_reg_count_free_ecc < SPI_NAND_OOB_MAX_REGIONS,
-                                ESP_ERR_NO_MEM, TAG, "too many FREE_ECC OOB regions");
-            handle->oob_cached_regs_free_ecc[handle->oob_cached_reg_count_free_ecc++] = desc;
-            handle->oob_total_logical_len_free_ecc += desc.length;
-        } else {
-            ESP_RETURN_ON_FALSE(handle->oob_cached_reg_count_free_no_ecc < SPI_NAND_OOB_MAX_REGIONS,
-                                ESP_ERR_NO_MEM, TAG, "too many FREE_NOECC OOB regions");
-            handle->oob_cached_regs_free_no_ecc[handle->oob_cached_reg_count_free_no_ecc++] = desc;
-            handle->oob_total_logical_len_free_no_ecc += desc.length;
-        }
-    }
+    /*
+     * Cache free_region() per class once (two walks at init). Runtime nand_oob_xfer_ctx_bind()
+     * copies these arrays instead of calling layout ops again on every field read/write.
+     */
+    ESP_RETURN_ON_ERROR(
+        nand_oob_layout_regions_for_class(handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_ECC, spare,
+                                          handle->oob_cached_regs_free_ecc, SPI_NAND_OOB_MAX_REGIONS,
+                                          &handle->oob_cached_reg_count_free_ecc,
+                                          &handle->oob_total_logical_len_free_ecc),
+        TAG, "FREE_ECC regions");
+    ESP_RETURN_ON_ERROR(
+        nand_oob_layout_regions_for_class(handle->oob_layout, handle, SPI_NAND_OOB_CLASS_FREE_NOECC, spare,
+                                          handle->oob_cached_regs_free_no_ecc, SPI_NAND_OOB_MAX_REGIONS,
+                                          &handle->oob_cached_reg_count_free_no_ecc,
+                                          &handle->oob_total_logical_len_free_no_ecc),
+        TAG, "FREE_NOECC regions");
 
-    spi_nand_oob_field_spec_t *pu = &handle->oob_fields[SPI_NAND_OOB_FIELD_PAGE_USED];
-    pu->id = SPI_NAND_OOB_FIELD_PAGE_USED;
-    pu->length = 2;
-    pu->oob_class = SPI_NAND_OOB_CLASS_FREE_ECC;
-    pu->logical_offset = 0;
-    pu->assigned = true;
+    /* Driver-owned default field; WL may add more via nand_oob_field_assign later. */
+    ESP_RETURN_ON_ERROR(nand_oob_field_assign(handle, SPI_NAND_OOB_FIELD_PAGE_USED, 2,
+                                              SPI_NAND_OOB_CLASS_FREE_ECC, 0),
+                        TAG, "PAGE_USED field");
 
+    /* logical_offset + length must fit in the packed stream for that field's class. */
     for (int i = 0; i < SPI_NAND_OOB_FIELD_COUNT; i++) {
         spi_nand_oob_field_spec_t *f = &handle->oob_fields[i];
         if (!f->assigned) {

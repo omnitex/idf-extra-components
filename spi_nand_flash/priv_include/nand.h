@@ -66,7 +66,12 @@ struct spi_nand_flash_device_t {
     /** Read-only after nand_oob_device_layout_init(); points at static rodata (e.g. default layout). */
     const spi_nand_oob_layout_t *oob_layout;
     spi_nand_oob_field_spec_t oob_fields[SPI_NAND_OOB_FIELD_COUNT];
-    /** FREE_ECC / FREE_NOECC regions from free_region(), cached once at init for stack xfer ctx (steps 06+). */
+    /**
+     * FREE_ECC / FREE_NOECC region lists from layout->free_region(), filled once in
+     * nand_oob_device_layout_init(). Runtime scatter/gather copies these into a stack
+     * spi_nand_oob_xfer_ctx_t via nand_oob_xfer_ctx_bind() so free_region is not walked
+     * on every field read/write.
+     */
     spi_nand_oob_region_desc_t oob_cached_regs_free_ecc[SPI_NAND_OOB_MAX_REGIONS];
     uint8_t oob_cached_reg_count_free_ecc;
     spi_nand_oob_region_desc_t oob_cached_regs_free_no_ecc[SPI_NAND_OOB_MAX_REGIONS];

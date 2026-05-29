@@ -102,7 +102,11 @@ typedef struct {
 } spi_nand_oob_field_spec_t;
 
 /**
- * @brief Per-call xfer state (implementation fills regs[] in step 04); keep stack-local for BDL paths.
+ * @brief Per-spare-buffer xfer state for scatter/gather (stack-local; no heap).
+ *
+ * regs[] are usually copied from handle init cache via nand_oob_xfer_ctx_bind(); only
+ * oob_raw/oob_size change when switching RAM spare buffers. Use nand_oob_xfer_ctx_init()
+ * only when no handle cache exists.
  */
 typedef struct {
     const spi_nand_oob_layout_t *layout;
