@@ -1,9 +1,7 @@
 /*
- * SPDX-FileCopyrightText: 2022 mikkeldamsgaard project
+ * SPDX-FileCopyrightText: 2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
- *
- * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #pragma once
@@ -83,10 +81,9 @@ typedef enum {
 /** Init-time field slots; runtime nand_* uses cached offsets, not per-call enum dispatch. */
 typedef enum {
     SPI_NAND_OOB_FIELD_PAGE_USED = 0,
+    /* Add new fields above this line. */
+    SPI_NAND_OOB_FIELD_COUNT,
 } spi_nand_oob_field_id_t;
-
-/** Keep equal to the number of valid @ref spi_nand_oob_field_id_t values (size of device::oob_fields). */
-#define SPI_NAND_OOB_FIELD_COUNT 1
 
 /** Logical stream class for assigning PAGE_USED and similar into free spare. */
 typedef enum {
