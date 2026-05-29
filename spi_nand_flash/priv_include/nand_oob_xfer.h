@@ -49,6 +49,15 @@ esp_err_t nand_oob_scatter(spi_nand_oob_xfer_ctx_t *ctx,
                            const void *src,
                            size_t len);
 
+void nand_oob_bbm_fill_good(const spi_nand_oob_layout_t *layout,
+                             uint8_t *buf, uint16_t len);
+
+void nand_oob_bbm_fill_bad(const spi_nand_oob_layout_t *layout,
+                            uint8_t *buf, uint16_t len);
+
+bool nand_oob_bbm_is_good(const spi_nand_oob_layout_t *layout,
+                           const uint8_t *buf, uint16_t len);
+
 #ifdef __cplusplus
 }
 #endif

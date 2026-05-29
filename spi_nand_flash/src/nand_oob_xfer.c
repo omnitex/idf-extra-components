@@ -159,3 +159,39 @@ esp_err_t nand_oob_scatter(spi_nand_oob_xfer_ctx_t *ctx,
     }
     return ESP_OK;
 }
+
+void nand_oob_bbm_fill_good(const spi_nand_oob_layout_t *layout,
+                             uint8_t *buf, uint16_t len)
+{
+    if (buf == NULL || layout == NULL) {
+        return;
+    }
+    memset(buf, 0xFF, len);
+    if (layout->bbm.bbm_offset + layout->bbm.bbm_length <= len) {
+        memcpy(buf + layout->bbm.bbm_offset, layout->bbm.good_pattern, layout->bbm.bbm_length);
+    }
+}
+
+void nand_oob_bbm_fill_bad(const spi_nand_oob_layout_t *layout,
+                            uint8_t *buf, uint16_t len)
+{
+    if (buf == NULL || layout == NULL) {
+        return;
+    }
+    memset(buf, 0xFF, len);
+    for (unsigned i = 0; i < layout->bbm.bbm_length && (layout->bbm.bbm_offset + i) < len; i++) {
+        buf[layout->bbm.bbm_offset + i] = (uint8_t)(layout->bbm.good_pattern[i] ^ 0xFF);
+    }
+}
+
+bool nand_oob_bbm_is_good(const spi_nand_oob_layout_t *layout,
+                           const uint8_t *buf, uint16_t len)
+{
+    if (buf == NULL || layout == NULL) {
+        return false;
+    }
+    if (layout->bbm.bbm_offset + layout->bbm.bbm_length > len) {
+        return false;
+    }
+    return memcmp(buf + layout->bbm.bbm_offset, layout->bbm.good_pattern, layout->bbm.bbm_length) == 0;
+}
