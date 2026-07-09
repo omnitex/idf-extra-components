@@ -7,12 +7,15 @@
  */
 
 #include <string.h>
+#include <inttypes.h>
 #include <sys/lock.h>
 #include "dhara/nand.h"
 #include "dhara/map.h"
+#include "dhara/journal.h"
 #include "dhara/error.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
 #endif
@@ -24,6 +27,8 @@
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
 #include "esp_nand_blockdev.h"
 #endif
+
+static const char *TAG = "dhara_glue";
 
 /* Any page-read failure — ECC corruption, bus error, or timeout — maps to
  * DHARA_E_ECC because dhara's recovery path ("treat this page as untrustworthy
@@ -118,6 +123,20 @@ static esp_err_t dhara_trim(spi_nand_flash_device_t *handle, dhara_sector_t sect
 static esp_err_t dhara_sync(spi_nand_flash_device_t *handle)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+
+    const struct dhara_journal *j = &dhara_priv_data->dhara_map.journal;
+    if (dhara_journal_is_clean(j)) {
+        ESP_LOGD(TAG, "sync: journal clean (no-op)");
+    } else {
+        const uint32_t ppc            = 1u << j->log2_ppc;
+        const uint32_t num_user_slots = ppc - 1u;
+        const uint32_t group_offset   = (uint32_t)j->head & (ppc - 1u);
+        const uint32_t remaining_slots = num_user_slots - group_offset;
+        ESP_LOGD(TAG, "sync: dirty head=%" PRIu32 " ppc=%" PRIu32
+                 " slot=%" PRIu32 "/%" PRIu32 " remaining_slots=%" PRIu32,
+                 (uint32_t)j->head, ppc, group_offset, num_user_slots - 1u, remaining_slots);
+    }
+
     dhara_error_t err;
     if (dhara_map_sync(&dhara_priv_data->dhara_map, &err)) {
         return ESP_ERR_FLASH_BASE + err;
