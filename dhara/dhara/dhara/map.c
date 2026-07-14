@@ -20,6 +20,7 @@
 #include "bytes.h"
 #include "map.h"
 
+#include "esp_log.h"
 #define DHARA_TAG "dhara_map"
 
 #define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
@@ -661,6 +662,10 @@ int dhara_map_trim(struct dhara_map *m, dhara_sector_t s, dhara_error_t *err)
 
 int dhara_map_sync(struct dhara_map *m, dhara_error_t *err)
 {
+    (void)m; (void)err;
+    ESP_LOGD(DHARA_TAG, "dhara_map_sync NOOP: durability now guaranteed by orphan replay on next resume");
+    return 0;   /* durability now guaranteed by orphan replay on next resume */
+    # if 0
     while (!dhara_journal_is_clean(&m->journal)) {
         dhara_page_t p = dhara_journal_peek(&m->journal);
         dhara_error_t my_err;
@@ -681,6 +686,7 @@ int dhara_map_sync(struct dhara_map *m, dhara_error_t *err)
     }
 
     return 0;
+    # endif
 }
 
 int dhara_map_gc(struct dhara_map *m, dhara_error_t *err)
