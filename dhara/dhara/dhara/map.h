@@ -24,9 +24,6 @@
  */
 typedef uint32_t dhara_sector_t;
 
-/* This sector value is reserved */
-#define DHARA_SECTOR_NONE   0xffffffff
-
 struct dhara_map {
     struct dhara_journal    journal;
 
@@ -49,6 +46,22 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
  * on the chip, -1 is returned, and an empty map is initialized.
  */
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err);
+
+/* Rebuild in-RAM map metadata for user pages that were programmed after the
+ * last durable checkpoint (e.g. power loss before sync).
+ *
+ * An "orphan" has valid data and a logical sector number in NAND OOB, but its
+ * meta slot in the journal page_buf still reflects the pre-crash checkpoint.
+ * dhara_map_resume() calls this after dhara_journal_resume(); you may also call
+ * it directly if you manage journal resume yourself.
+ *
+ * Updates j->page_buf and m->count only (no NAND rewrite). Scan algorithm and
+ * diagram: dhara_map_replay_orphans() in map.c.
+ *
+ * Returns 0 on success (including when there is nothing to replay). Returns -1
+ * only on NAND/read errors, not when the scan ends at head or an unprogrammed page.
+ */
+int dhara_map_replay_orphans(struct dhara_map *m, dhara_error_t *err);
 
 /* Clear the map (delete all sectors). */
 void dhara_map_clear(struct dhara_map *m);

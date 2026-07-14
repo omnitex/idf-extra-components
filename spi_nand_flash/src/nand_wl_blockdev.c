@@ -190,6 +190,10 @@ static esp_err_t spi_nand_flash_wl_blockdev_ioctl(esp_blockdev_handle_t handle, 
     break;
 
     default:
+        /* Dhara attaches directly to the raw flash BDL (not this WL BDL), so
+         * LPN/copy/bad-block ioctls (PROG_PAGE_EXT, COPY_PAGE_EXT,
+         * READ_PAGE_LPN, COPY_PAGE, IS_BAD_BLOCK, MARK_BAD_BLOCK, IS_FREE_PAGE)
+         * are handled by nand_flash_blockdev_ioctl and are not forwarded here. */
         return ESP_ERR_NOT_SUPPORTED;
     }
 

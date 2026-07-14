@@ -7,10 +7,13 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
+#include "nand_oob.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "spi_nand_flash.h"
 #include "nand.h"
+
+#define SPI_NAND_OOB_LPN_OFFSET CONFIG_NAND_FLASH_OOB_LPN_OFFSET
 #include "nand_linux_mmap_emul.h"
 
 static const char *TAG = "nand_linux";
@@ -212,17 +215,36 @@ esp_err_t nand_erase_chip(spi_nand_flash_device_t *handle)
     return ret;
 }
 
-esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data)
+static esp_err_t nand_prog_ext_impl(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data,
+                                     uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
 {
-    ESP_LOGV(TAG, "prog, page=%"PRIu32",", page);
+    ESP_LOGV(TAG, "prog, page=%"PRIu32", oob_offset=%u, oob_len=%u", page, oob_offset, oob_len);
     esp_err_t ret = ESP_OK;
     uint32_t data_offset = page * handle->chip.emulated_page_size;
 
+    /* Write main page data */
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset, data, handle->chip.page_size), TAG, "Error in nand_prog %d", ret);
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size,
                                         s_oob_used_page_markers, sizeof(s_oob_used_page_markers)), TAG, "Error in nand_prog %d", ret);
 
+    /* Write arbitrary OOB bytes at caller-specified offset */
+    if (oob_len > 0 && oob_data) {
+        ESP_RETURN_ON_ERROR(nand_emul_write(handle, data_offset + handle->chip.page_size + oob_offset,
+                                            oob_data, oob_len), TAG, "Error in nand_prog (OOB) %d", ret);
+    }
+
     return ret;
+}
+
+esp_err_t nand_prog(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data)
+{
+    return nand_prog_ext_impl(handle, page, data, 0, 0, NULL);
+}
+
+esp_err_t nand_prog_ext(spi_nand_flash_device_t *handle, uint32_t page, const uint8_t *data,
+                        uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
+{
+    return nand_prog_ext_impl(handle, page, data, oob_offset, oob_len, oob_data);
 }
 
 esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_free_status)
@@ -251,13 +273,15 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     return ret;
 }
 
-esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
+static esp_err_t nand_copy_ext_impl(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
+                                     uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
 {
-    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32"", src, dst);
+    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32", oob_offset=%u, oob_len=%u", src, dst, oob_offset, oob_len);
     esp_err_t ret = ESP_OK;
     uint32_t dst_offset = dst * handle->chip.emulated_page_size;
     uint32_t src_offset = src * handle->chip.emulated_page_size;
 
+    /* Copy main page data */
     ESP_RETURN_ON_ERROR(nand_emul_read(handle, (size_t)src_offset, (void *)handle->read_buffer, handle->chip.page_size),
                         TAG, "Error in nand_copy %d", ret);
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, (size_t)dst_offset, (void *)handle->read_buffer, handle->chip.page_size),
@@ -265,7 +289,43 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
     ESP_RETURN_ON_ERROR(nand_emul_write(handle, (size_t)dst_offset + handle->chip.page_size,
                                         s_oob_used_page_markers, sizeof(s_oob_used_page_markers)), TAG, "Error in nand_copy %d", ret);
 
+    /* Write arbitrary OOB bytes at caller-specified offset on destination */
+    if (oob_len > 0 && oob_data) {
+        ESP_RETURN_ON_ERROR(nand_emul_write(handle, dst_offset + handle->chip.page_size + oob_offset,
+                                            oob_data, oob_len), TAG, "Error in nand_copy (OOB) %d", ret);
+    }
+
     return ret;
+}
+
+esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
+{
+    return nand_copy_ext_impl(handle, src, dst, 0, 0, NULL);
+}
+
+esp_err_t nand_copy_ext(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst,
+                        uint16_t oob_offset, uint16_t oob_len, const uint8_t *oob_data)
+{
+    return nand_copy_ext_impl(handle, src, dst, oob_offset, oob_len, oob_data);
+}
+
+esp_err_t nand_read_lpn(spi_nand_flash_device_t *handle, uint32_t page, uint32_t *oob_lpn_out)
+{
+    ESP_LOGV(TAG, "read_lpn, page=%"PRIu32"", page);
+    uint8_t lpn_buf[4];
+    uint32_t oob_lpn_offset = page * handle->chip.emulated_page_size + handle->chip.page_size + SPI_NAND_OOB_LPN_OFFSET;
+
+    ESP_RETURN_ON_ERROR(nand_emul_read(handle, oob_lpn_offset, lpn_buf, sizeof(lpn_buf)),
+                        TAG, "Error in nand_read_lpn");
+
+    /* Reconstruct as little-endian 32-bit value.
+     * 0xFFFFFFFF = erased (NAND_OOB_LPN_NONE), meaning no LPN stored.
+     */
+    *oob_lpn_out = (uint32_t)lpn_buf[0]
+                   | ((uint32_t)lpn_buf[1] << 8)
+                   | ((uint32_t)lpn_buf[2] << 16)
+                   | ((uint32_t)lpn_buf[3] << 24);
+    return ESP_OK;
 }
 
 esp_err_t nand_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page)

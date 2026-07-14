@@ -239,6 +239,24 @@ static esp_err_t nand_flash_blockdev_ioctl(esp_blockdev_handle_t handle, const u
         return ret;
     }
 
+    case ESP_BLOCKDEV_CMD_PROG_PAGE_EXT: {
+        esp_blockdev_cmd_arg_prog_page_ext_t *a = (esp_blockdev_cmd_arg_prog_page_ext_t *)args;
+        return nand_prog_ext(dev, a->page_num, a->data,
+                             a->oob_offset, a->oob_len, a->oob_data);
+    }
+
+    case ESP_BLOCKDEV_CMD_COPY_PAGE_EXT: {
+        esp_blockdev_cmd_arg_copy_page_ext_t *a = (esp_blockdev_cmd_arg_copy_page_ext_t *)args;
+        return nand_copy_ext(dev, a->src_page, a->dst_page,
+                             a->oob_offset, a->oob_len, a->oob_data);
+    }
+
+    case ESP_BLOCKDEV_CMD_READ_PAGE_LPN: {
+        esp_blockdev_cmd_arg_read_page_lpn_t *read_cmd = (esp_blockdev_cmd_arg_read_page_lpn_t *)args;
+        esp_err_t ret = nand_read_lpn(dev, read_cmd->page_num, &read_cmd->oob_lpn);
+        return ret;
+    }
+
     /* Full device scan for diagnostics; can be slow on large devices. Intended for debug/health checks only. */
     case ESP_BLOCKDEV_CMD_GET_ECC_STATS: {
         esp_blockdev_cmd_arg_ecc_stats_t *ecc_stats = (esp_blockdev_cmd_arg_ecc_stats_t *)args;

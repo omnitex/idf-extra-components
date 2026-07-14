@@ -1,6 +1,10 @@
 set(srcs "src/diskio_nand.c"
          "src/vfs_fat_spinandflash.c")
 
+if(CONFIG_NAND_FLASH_ENABLE_BDL)
+    list(APPEND srcs "src/vfs_fat_nand_bdl.c")
+endif()
+
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS "include"

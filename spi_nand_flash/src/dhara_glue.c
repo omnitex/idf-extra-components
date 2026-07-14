@@ -3,26 +3,38 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * SPDX-FileContributor: 2015-2024 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileContributor: 2015-2026 Espressif Systems (Shanghai) CO LTD
  */
 
 #include <string.h>
+#include <inttypes.h>
 #include <sys/lock.h>
 #include "dhara/nand.h"
 #include "dhara/map.h"
+#include "dhara/journal.h"
 #include "dhara/error.h"
 #include "esp_check.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #ifndef CONFIG_IDF_TARGET_LINUX
 #include "spi_nand_oper.h"
 #endif
 #include "nand_impl.h"
+#include "nand_oob.h"
 #include "nand.h"
 #include "nand_device_types.h"
 
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
 #include "esp_nand_blockdev.h"
 #endif
+
+static const char *TAG = "dhara_glue";
+
+/* Any page-read failure — ECC corruption, bus error, or timeout — maps to
+ * DHARA_E_ECC because dhara's recovery path ("treat this page as untrustworthy
+ * and recover") is correct regardless of the root cause.  If dhara ever adds a
+ * dedicated DHARA_E_IO code, change only this definition. */
+#define DHARA_E_PAGE_UNREADABLE  DHARA_E_ECC
 
 typedef struct {
     struct dhara_nand dhara_nand;
@@ -111,6 +123,20 @@ static esp_err_t dhara_trim(spi_nand_flash_device_t *handle, dhara_sector_t sect
 static esp_err_t dhara_sync(spi_nand_flash_device_t *handle)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
+
+    const struct dhara_journal *j = &dhara_priv_data->dhara_map.journal;
+    if (dhara_journal_is_clean(j)) {
+        ESP_LOGD(TAG, "sync: journal clean (no-op)");
+    } else {
+        const uint32_t ppc            = 1u << j->log2_ppc;
+        const uint32_t num_user_slots = ppc - 1u;
+        const uint32_t group_offset   = (uint32_t)j->head & (ppc - 1u);
+        const uint32_t remaining_slots = num_user_slots - group_offset;
+        ESP_LOGD(TAG, "sync: dirty head=%" PRIu32 " ppc=%" PRIu32
+                 " slot=%" PRIu32 "/%" PRIu32 " remaining_slots=%" PRIu32,
+                 (uint32_t)j->head, ppc, group_offset, num_user_slots - 1u, remaining_slots);
+    }
+
     dhara_error_t err;
     if (dhara_map_sync(&dhara_priv_data->dhara_map, &err)) {
         return ESP_ERR_FLASH_BASE + err;
@@ -207,18 +233,33 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
     return 0;
 }
 
-int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data, dhara_error_t *err)
+int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *data,
+                    dhara_sector_t oob_lpn, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     esp_err_t ret = ESP_OK;
+    uint8_t lpn_buf[4];
+    uint16_t oob_len = 0;
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+        oob_len = 4;
+    }
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
     assert(dhara_priv_data->bdl_handle != NULL);
     esp_blockdev_handle_t bdl_handle = dhara_priv_data->bdl_handle;
-    ret = bdl_handle->ops->write(bdl_handle, data, (p * bdl_handle->geometry.write_size),
-                                 bdl_handle->geometry.write_size);
+    esp_blockdev_cmd_arg_prog_page_ext_t prog_arg = {
+        .page_num   = p,
+        .data       = data,
+        .oob_offset = CONFIG_NAND_FLASH_OOB_LPN_OFFSET,
+        .oob_len    = oob_len,
+        .oob_data   = oob_len ? lpn_buf : NULL,
+    };
+    ret = bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_PROG_PAGE_EXT, &prog_arg);
 #else
     spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_prog(dev_handle, p, data);
+    ret = nand_prog_ext(dev_handle, p, data,
+                        CONFIG_NAND_FLASH_OOB_LPN_OFFSET, oob_len,
+                        oob_len ? lpn_buf : NULL);
 #endif
     if (ret) {
         if (ret == ESP_ERR_NOT_FINISHED) {
@@ -312,24 +353,36 @@ int dhara_nand_is_free(const struct dhara_nand *n, dhara_page_t p)
     return 0;
 }
 
-int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst, dhara_error_t *err)
+int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t dst,
+                    dhara_sector_t oob_lpn, dhara_error_t *err)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     spi_nand_flash_device_t *dev_handle = NULL;
     esp_err_t ret = ESP_OK;
+    uint8_t lpn_buf[4];
+    uint16_t oob_len = 0;
+    if (oob_lpn != DHARA_OOB_LPN_NONE) {
+        nand_oob_pack_lpn_le(oob_lpn, lpn_buf);
+        oob_len = 4;
+    }
 
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
     assert(dhara_priv_data->bdl_handle != NULL);
+    dev_handle = (spi_nand_flash_device_t *)dhara_priv_data->bdl_handle->ctx;
     esp_blockdev_handle_t bdl_handle = dhara_priv_data->bdl_handle;
-    dev_handle = (spi_nand_flash_device_t *)bdl_handle->ctx;
-    esp_blockdev_cmd_arg_copy_page_t copy_arg = {
-        .src_page = src,
-        .dst_page = dst
+    esp_blockdev_cmd_arg_copy_page_ext_t copy_arg = {
+        .src_page   = src,
+        .dst_page   = dst,
+        .oob_offset = CONFIG_NAND_FLASH_OOB_LPN_OFFSET,
+        .oob_len    = oob_len,
+        .oob_data   = oob_len ? lpn_buf : NULL,
     };
-    ret = dhara_priv_data->bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_COPY_PAGE, &copy_arg);
+    ret = bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_COPY_PAGE_EXT, &copy_arg);
 #else
     dev_handle = dhara_priv_data->parent_handle;
-    ret = nand_copy(dev_handle, src, dst);
+    ret = nand_copy_ext(dev_handle, src, dst,
+                        CONFIG_NAND_FLASH_OOB_LPN_OFFSET, oob_len,
+                        oob_len ? lpn_buf : NULL);
 #endif
     if (ret) {
         if (dev_handle->chip.ecc_data.ecc_corrected_bits_status == NAND_ECC_NOT_CORRECTED) {
@@ -341,4 +394,35 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
         return -1;
     }
     return 0;
+}
+
+int dhara_nand_read_lpn(const struct dhara_nand *n, dhara_page_t p,
+                        dhara_sector_t *oob_lpn_out, dhara_error_t *err)
+{
+    spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
+#ifdef CONFIG_NAND_FLASH_ENABLE_BDL
+    if (dhara_priv_data->bdl_handle == NULL) {
+        dhara_set_error(err, DHARA_E_PAGE_UNREADABLE);
+        return -1;
+    }
+    {
+        esp_blockdev_handle_t bdl_handle = dhara_priv_data->bdl_handle;
+        esp_blockdev_cmd_arg_read_page_lpn_t read_arg = { .page_num = p, .oob_lpn = ESP_BLOCKDEV_LPN_NONE };
+        esp_err_t ret = bdl_handle->ops->ioctl(bdl_handle, ESP_BLOCKDEV_CMD_READ_PAGE_LPN, &read_arg);
+        if (ret != ESP_OK) {
+            dhara_set_error(err, DHARA_E_PAGE_UNREADABLE);
+            return -1;
+        }
+        *oob_lpn_out = read_arg.oob_lpn;
+    }
+    return 0;
+#else
+    spi_nand_flash_device_t *dev_handle = dhara_priv_data->parent_handle;
+    esp_err_t ret = nand_read_lpn(dev_handle, p, oob_lpn_out);
+    if (ret != ESP_OK) {
+        dhara_set_error(err, DHARA_E_PAGE_UNREADABLE);
+        return -1;
+    }
+    return 0;
+#endif
 }

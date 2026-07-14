@@ -123,6 +123,11 @@ static dhara_block_t next_block(const struct dhara_nand *n, dhara_block_t blk)
 static dhara_page_t next_upage(const struct dhara_journal *j,
                                dhara_page_t p)
 {
+    /* DHARA_PAGE_NONE (0xffffffff) is an explicit "start from the beginning"
+     * sentinel: p++ wraps to 0 under uint32_t arithmetic, giving the first
+     * physical page — the same result as any other wrap from the last page.
+     * journal_resume_empty_checkpoint relies on this to iterate from page 0
+     * when no checkpoint has ever been written (j->root == DHARA_PAGE_NONE). */
     p++;
     if (is_aligned(p + 1, j->log2_ppc)) {
         p++;
@@ -375,6 +380,8 @@ static int find_root(struct dhara_journal *j, dhara_page_t start,
 static int find_head(struct dhara_journal *j, dhara_page_t start,
                      dhara_error_t *err)
 {
+    int crossed_block = 0;
+
     j->head = next_upage(j, start);
     if (!j->head) {
         roll_stats(j);
@@ -383,7 +390,11 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
     /* Starting from the last good checkpoint, find either:
      *
      *   (a) the next free user-page in the same block
-     *   (b) or, the first page of the next block
+     *   (b) or, the first free user-page in the immediately following block
+     *       if the checkpoint block was completely full (every group had a
+     *       written checkpoint), in which case the in-progress group and any
+     *       orphan user pages start at the beginning of the next block.
+     *   (c) or, the first page of the block after that
      *
      * The block we end up on might be bad, but that's ok -- we'll
      * skip it when we go to prepare the next write.
@@ -414,15 +425,84 @@ static int find_head(struct dhara_journal *j, dhara_page_t start,
             roll_stats(j);
         }
 
-        /* If we hit the end of the block, we're done */
+        /* If we hit the end of the block, we're done — unless the
+         * checkpoint block was completely full, in which case the
+         * orphan tail begins at the first page of the next block.
+         * Allow exactly one block-boundary crossing to find those
+         * orphans; stop at the second boundary. */
         if (is_aligned(j->head, j->nand->log2_ppb)) {
             /* Make sure we don't chase over the tail */
             if (align_eq(j->head, j->tail, j->nand->log2_ppb))
                 j->tail = next_block(j->nand,
                                      j->tail >> j->nand->log2_ppb) <<
                           j->nand->log2_ppb;
+            if (crossed_block) {
+                break;
+            }
+            crossed_block = 1;
+        }
+    }
+
+    return 0;
+}
+
+/* No checkpoint on media (e.g. power loss before first CP flush): infer the
+ * journal head from contiguous programmed user pages starting at the journal
+ * origin so orphan OOB replay can run. Assumes writes began at page 0 without
+ * gaps — true for a fresh chip / empty journal until the first checkpoint.
+ *
+ * j->root stays DHARA_PAGE_NONE here; dhara_map_replay_orphans() rebuilds the
+ * map index and advances root over the same page range.
+ *
+ * Scan is bounded to one checkpoint group (2**log2_ppc next_upage steps): without
+ * any CP magic on media, push_meta never completed a group flush.
+ */
+static int journal_resume_empty_checkpoint(struct dhara_journal *j,
+        dhara_error_t *err)
+{
+    const unsigned int max_iter = 1u << j->log2_ppc;
+    dhara_page_t p;
+    dhara_page_t last_user = DHARA_PAGE_NONE;
+    unsigned int iter;
+
+    /* Empty journal state; page_buf is 0xff until map orphan replay patches it. */
+    reset_journal(j);
+    /* Cookie sector count is restored by dhara_map_replay_orphans / resume. */
+    dhara_w32(j->page_buf + DHARA_HEADER_SIZE, 0);
+
+    p = dhara_journal_next_upage(j, j->root);
+    for (iter = 0; iter < max_iter; iter++) {
+        if (dhara_nand_is_free(j->nand, p)) {
             break;
         }
+
+        {
+            dhara_sector_t oob_lpn;
+
+            if (dhara_nand_read_lpn(j->nand, p, &oob_lpn, err) < 0) {
+                return -1;
+            }
+            /* No LPN in OOB => not a map user page; end of contiguous run. */
+            if (oob_lpn == DHARA_OOB_LPN_NONE) {
+                break;
+            }
+        }
+
+        /* Still inside the programmed tail; keep scanning forward. */
+        last_user = p;
+        p = dhara_journal_next_upage(j, p);
+    }
+
+    /* First free user page after the run (matches find_head's role on CP path). */
+    j->head = p;
+    if (last_user != DHARA_PAGE_NONE) {
+        /* At least one user page exists; queue tail is the last programmed one. */
+        j->tail = last_user;
+        j->tail_sync = last_user;
+    }
+
+    if (err) {
+        dhara_set_error(err, DHARA_E_NONE);
     }
 
     return 0;
@@ -435,8 +515,7 @@ int dhara_journal_resume(struct dhara_journal *j, dhara_error_t *err)
 
     /* Find the first checkpoint-containing block */
     if (find_checkblock(j, 0, &first, err) < 0) {
-        reset_journal(j);
-        return -1;
+        return journal_resume_empty_checkpoint(j, err);
     }
 
     /* Find the last checkpoint-containing block in this epoch */
@@ -703,7 +782,8 @@ static int dump_meta(struct dhara_journal *j, dhara_error_t *err)
         /* Try to dump metadata on this page */
         if (!(prepare_head(j, &my_err) ||
                 dhara_nand_prog(j->nand, j->head,
-                                j->page_buf, &my_err))) {
+                                j->page_buf, DHARA_OOB_LPN_NONE,
+                                &my_err))) {
             j->recover_meta = j->head;
             j->head = next_upage(j, j->head);
             if (!j->head) {
@@ -828,7 +908,8 @@ static int push_meta(struct dhara_journal *j, const uint8_t *meta,
     hdr_set_bb_current(j->page_buf, j->bb_current);
     hdr_set_bb_last(j->page_buf, j->bb_last);
 
-    if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf, &my_err) < 0) {
+    if (dhara_nand_prog(j->nand, j->head + 1, j->page_buf,
+                        DHARA_OOB_LPN_NONE, &my_err) < 0) {
         return recover_from(j, my_err, err);
     }
 
@@ -862,6 +943,8 @@ int dhara_journal_enqueue(struct dhara_journal *j,
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
         if (!(prepare_head(j, &my_err) ||
                 (data && dhara_nand_prog(j->nand, j->head, data,
+                                         meta ? dhara_r32(meta) :
+                                         DHARA_OOB_LPN_NONE,
                                          &my_err)))) {
             return push_meta(j, meta, err);
         }
@@ -884,7 +967,9 @@ int dhara_journal_copy(struct dhara_journal *j,
 
     for (i = 0; i < DHARA_MAX_RETRIES; i++) {
         if (!(prepare_head(j, &my_err) ||
-                dhara_nand_copy(j->nand, p, j->head, &my_err))) {
+                dhara_nand_copy(j->nand, p, j->head,
+                                meta ? dhara_r32(meta) :
+                                DHARA_OOB_LPN_NONE, &my_err))) {
             return push_meta(j, meta, err);
         }
 
@@ -916,4 +1001,10 @@ dhara_page_t dhara_journal_next_recoverable(struct dhara_journal *j)
     }
 
     return n;
+}
+
+dhara_page_t dhara_journal_next_upage(const struct dhara_journal *j,
+                                      dhara_page_t p)
+{
+    return next_upage(j, p);
 }

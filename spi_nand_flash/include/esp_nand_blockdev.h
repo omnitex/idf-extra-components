@@ -136,6 +136,76 @@ extern "C" {
  */
 #define ESP_BLOCKDEV_CMD_COPY_PAGE                  (ESP_BLOCKDEV_CMD_NAND_BASE + 7)
 
+/** @brief Program a page with optional arbitrary OOB bytes
+ *
+ * Programs @c page_size bytes of main data, then optionally writes
+ * @c oob_len bytes from @c oob_data into the OOB spare area at byte offset
+ * @c oob_offset.  When @c oob_len == 0 no OOB is written (equivalent to the
+ * plain prog path).
+ *
+ * The driver always writes the 4-byte OOB markers (bad-block + page-used)
+ * internally; @c oob_offset and @c oob_len refer to the caller-visible portion
+ * of the spare area only.
+ *
+ * For FTL/wear-leveling layers that need to record a Logical Page Number (LPN)
+ * in the page's spare (OOB) area, pass @c oob_offset = @c CONFIG_NAND_FLASH_OOB_LPN_OFFSET,
+ * @c oob_len = 4, and @c oob_data pointing to the packed little-endian LPN bytes.
+ *
+ * @code{c}
+ * uint8_t lpn_buf[4] = { 7, 0, 0, 0 };
+ * esp_blockdev_cmd_arg_prog_page_ext_t cmd = {
+ *     .page_num   = 42,
+ *     .data       = page_buf,
+ *     .oob_offset = CONFIG_NAND_FLASH_OOB_LPN_OFFSET,
+ *     .oob_len    = 4,
+ *     .oob_data   = lpn_buf,
+ * };
+ * esp_err_t ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_PROG_PAGE_EXT, &cmd);
+ * @endcode
+ */
+#define ESP_BLOCKDEV_CMD_PROG_PAGE_EXT             (ESP_BLOCKDEV_CMD_NAND_BASE + 8)
+
+/** @brief Copy a page with optional arbitrary OOB bytes on the destination
+ *
+ * Copies @c src_page to @c dst_page, then optionally writes @c oob_len bytes
+ * from @c oob_data into the destination OOB spare area at byte offset
+ * @c oob_offset.  When @c oob_len == 0 no OOB is modified (plain copy).
+ *
+ * Used by FTL garbage-collection / wear-leveling when relocating a page with
+ * its journal metadata. For LPN recording, pass @c oob_offset =
+ * @c CONFIG_NAND_FLASH_OOB_LPN_OFFSET, @c oob_len = 4.
+ *
+ * @code{c}
+ * uint8_t lpn_buf[4] = { 7, 0, 0, 0 };
+ * esp_blockdev_cmd_arg_copy_page_ext_t cmd = {
+ *     .src_page   = 10,
+ *     .dst_page   = 20,
+ *     .oob_offset = CONFIG_NAND_FLASH_OOB_LPN_OFFSET,
+ *     .oob_len    = 4,
+ *     .oob_data   = lpn_buf,
+ * };
+ * esp_err_t ret = bdl->ops->ioctl(bdl, ESP_BLOCKDEV_CMD_COPY_PAGE_EXT, &cmd);
+ * @endcode
+ */
+#define ESP_BLOCKDEV_CMD_COPY_PAGE_EXT             (ESP_BLOCKDEV_CMD_NAND_BASE + 9)
+
+/** @brief Read the Logical Page Number (LPN) from a page's OOB
+ *
+ * Reads the 4-byte little-endian LPN stored in the page's spare area.
+ * A value of @ref ESP_BLOCKDEV_LPN_NONE (0xFFFFFFFF) means no LPN was recorded
+ * (OOB bytes are erased / all-ones).
+ *
+ * @code{c}
+ * esp_blockdev_cmd_arg_read_page_lpn_t cmd = { .page_num = 42 };
+ * esp_err_t ret = flash_bdl->ops->ioctl(flash_bdl, ESP_BLOCKDEV_CMD_READ_PAGE_LPN, &cmd);
+ * if (cmd.oob_lpn != ESP_BLOCKDEV_LPN_NONE) { ... }
+ * @endcode
+ */
+#define ESP_BLOCKDEV_CMD_READ_PAGE_LPN             (ESP_BLOCKDEV_CMD_NAND_BASE + 10)
+
+/** @brief Sentinel value for @c oob_lpn fields: no LPN recorded (OOB bytes are 0xFF / erased). */
+#define ESP_BLOCKDEV_LPN_NONE  0xFFFFFFFFu
+
 /** @} */
 
 //=============================================================================
@@ -196,6 +266,42 @@ typedef struct {
     uint32_t src_page;                              /*!< IN: source page number */
     uint32_t dst_page;                              /*!< IN: destination page number */
 } esp_blockdev_cmd_arg_copy_page_t;
+
+/**
+ * @brief Argument structure for read-page-LPN command
+ *
+ * Used with @ref ESP_BLOCKDEV_CMD_READ_PAGE_LPN.
+ */
+typedef struct {
+    uint32_t page_num;                              /*!< IN: physical page number */
+    uint32_t oob_lpn;                               /*!< OUT: LPN read from OOB */
+} esp_blockdev_cmd_arg_read_page_lpn_t;
+
+/**
+ * @brief Argument structure for program-page-ext command
+ *
+ * Used with @ref ESP_BLOCKDEV_CMD_PROG_PAGE_EXT.
+ */
+typedef struct {
+    uint32_t        page_num;                       /*!< IN: physical page number */
+    const uint8_t  *data;                           /*!< IN: page_size bytes of main data */
+    uint16_t        oob_offset;                     /*!< IN: byte offset within OOB spare area */
+    uint16_t        oob_len;                        /*!< IN: bytes to write into OOB; 0 = none */
+    const uint8_t  *oob_data;                       /*!< IN: oob_len bytes, or NULL if oob_len == 0 */
+} esp_blockdev_cmd_arg_prog_page_ext_t;
+
+/**
+ * @brief Argument structure for copy-page-ext command
+ *
+ * Used with @ref ESP_BLOCKDEV_CMD_COPY_PAGE_EXT.
+ */
+typedef struct {
+    uint32_t        src_page;                       /*!< IN: source physical page */
+    uint32_t        dst_page;                       /*!< IN: destination physical page */
+    uint16_t        oob_offset;                     /*!< IN: byte offset within OOB spare area */
+    uint16_t        oob_len;                        /*!< IN: bytes to write into OOB; 0 = none */
+    const uint8_t  *oob_data;                       /*!< IN: oob_len bytes, or NULL if oob_len == 0 */
+} esp_blockdev_cmd_arg_copy_page_ext_t;
 
 //=============================================================================
 // BLOCK DEVICE CREATION FUNCTIONS

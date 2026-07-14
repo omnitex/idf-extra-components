@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "spi_nand_flash.h"
+#include "dhara/nand.h"
 #include "spi_nand_flash_test_helpers.h"
 #include "nand_linux_mmap_emul.h"
 #include "nand_private/nand_impl_wrap.h"
