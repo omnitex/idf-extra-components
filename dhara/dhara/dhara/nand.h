@@ -70,16 +70,29 @@ void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t b);
 int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b,
                      dhara_error_t *err);
 
+/* Program flags (bitfield). */
+#define DHARA_NAND_F_FORCE_PROG  0x01u
+
 /* Program the given page. The data pointer is a pointer to an entire
  * page ((1 << log2_page_size) bytes). The operation status should be
  * checked. If the operation fails, return -1 and set err to
  * E_BAD_BLOCK.
  *
+ * If the implementation declines to program this page (for example
+ * correctable ECC stress on a pre-read) but the eraseblock is not bad,
+ * return -1 and set err to E_PAGE_RELIEF. The journal will consume a
+ * filler metadata slot and advance without marking the block bad.
+ *
+ * When flags includes DHARA_NAND_F_FORCE_PROG, the implementation must
+ * NOT return E_PAGE_RELIEF — the program must be attempted regardless
+ * of correctable ECC stress. Uncorrectable ECC must still fail with
+ * E_ECC or E_BAD_BLOCK as appropriate.
+ *
  * Pages will be programmed sequentially within a block, and will not be
  * reprogrammed.
  */
 int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p,
-                    const uint8_t *data,
+                    const uint8_t *data, unsigned int flags,
                     dhara_error_t *err);
 
 /* Check that the given page is erased */
@@ -97,9 +110,15 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p,
 /* Read a page from one location and reprogram it in another location.
  * This might be done using the chip's internal buffers, but it must use
  * ECC.
+ *
+ * If the destination page must not be programmed (wear relief), return -1
+ * and set err to E_PAGE_RELIEF, same semantics as dhara_nand_prog().
+ *
+ * When flags includes DHARA_NAND_F_FORCE_PROG, the implementation must
+ * NOT return E_PAGE_RELIEF.
  */
 int dhara_nand_copy(const struct dhara_nand *n,
                     dhara_page_t src, dhara_page_t dst,
-                    dhara_error_t *err);
+                    unsigned int flags, dhara_error_t *err);
 
 #endif

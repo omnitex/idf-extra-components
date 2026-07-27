@@ -26,8 +26,12 @@ typedef enum {
     DHARA_E_JOURNAL_FULL,
     DHARA_E_NOT_FOUND,
     DHARA_E_MAP_FULL,
-    DHARA_E_CORRUPT_MAP,
-    DHARA_E_MAX
+	DHARA_E_CORRUPT_MAP,
+	/* Driver refused to program this physical page (e.g. ECC wear policy).
+	 * The journal retries on the next page without marking the block bad.
+	 */
+	DHARA_E_PAGE_RELIEF,
+	DHARA_E_MAX
 } dhara_error_t;
 
 /* Produce a human-readable error message. This function is kept in a

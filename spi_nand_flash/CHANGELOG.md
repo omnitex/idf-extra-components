@@ -9,6 +9,15 @@ Versioning policy: see [VERSIONING.md](VERSIONING.md). From **v1.0.0** onward th
 - feat: added support for Fudan Microelectronics (FM25S005BI3) NAND flash
 
 ## [1.0.3]
+### New Features
+- Forked Dhara: `DHARA_E_PAGE_RELIEF` — journal `enqueue` / `copy` consume a filler metadata slot and advance when `dhara_nand_prog` / `dhara_nand_copy` reports this error (no bad-block marking).
+- Optional `CONFIG_NAND_FLASH_PROG_PAGE_RELIEF`: `nand_prog` / `nand_copy` may return `ESP_ERR_FLASH_BASE + DHARA_E_PAGE_RELIEF` when the pre-read ECC level is at or above `CONFIG_NAND_FLASH_PROG_PAGE_RELIEF_MIN_ECC`.
+- `dhara_glue` maps that `esp_err_t` to `DHARA_E_PAGE_RELIEF` for the journal.
+- **Checkpoint-group-bounded relief**: page relief skips are now scoped to the remaining user-page indices of the current checkpoint group. The journal advances via `head++` within the group and forces a program on the last user index (`DHARA_NAND_F_FORCE_PROG`). Relief never crosses a checkpoint boundary.
+- **Force-program flag**: `dhara_nand_prog` / `dhara_nand_copy` accept a `flags` parameter. `DHARA_NAND_F_FORCE_PROG` instructs the driver to skip the ECC-threshold relief check and attempt the program regardless of correctable ECC stress. Uncorrectable ECC still fails.
+- **CP metadata flush always forced**: checkpoint page programs use `DHARA_NAND_F_FORCE_PROG` so `DHARA_E_PAGE_RELIEF` is never surfaced to the map layer from a metadata flush.
+- `nand_prog` / `nand_copy` internal API: new `bool force_no_relief` parameter. `dhara_glue` maps `DHARA_NAND_F_FORCE_PROG` to `force_no_relief=true`. Non-Dhara callers (wrap, BDL) pass `false`.
+
 ### Dependencies
 - **Dhara** is now consumed as the in-repo `espressif/dhara` component at **1.0.0** (vendored upstream snapshot; the git submodule under `dhara/` is removed). The manifest dependency range is **`1.*`** (was `0.1.*`), matching the new component version with the same `override_path: "../dhara"` layout.
 
