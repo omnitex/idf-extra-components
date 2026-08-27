@@ -17,3 +17,5 @@ pytest-args.txt
 build_info*.json
 # Local static-analysis tooling output (analyze_component.py)
 component-analysis-report.json
+**/joern-out/**
+joern-component-analysis/workspace/**
