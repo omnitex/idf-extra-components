@@ -134,19 +134,30 @@ static void write_and_verify_leb(esp_blockdev_handle_t vol_bdl, uint32_t lnum, u
     uint8_t *readback = malloc(page_size);
     if (pattern == NULL || readback == NULL) {
         ESP_LOGE(TAG, "LEB %" PRIu32 ": out of memory for %" PRIu32 "-byte buffers", lnum, page_size);
+        free(pattern);
+        free(readback);
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+        return;
     }
     memset(pattern, (uint8_t)(0xA0 + lnum), page_size);
     memset(readback, 0, page_size);
 
     uint64_t addr = (uint64_t)lnum * leb_size;
 
-    ESP_ERROR_CHECK(vol_bdl->ops->write(vol_bdl, pattern, addr, page_size));
-    ESP_ERROR_CHECK(vol_bdl->ops->read(vol_bdl, readback, page_size, addr, page_size));
+    /* Capture both return codes and free pattern/readback unconditionally before
+     * checking either one: ESP_ERROR_CHECK() aborts on failure, and this component
+     * runs on a device with no filesystem to reclaim the buffers afterwards. */
+    esp_err_t write_ret = vol_bdl->ops->write(vol_bdl, pattern, addr, page_size);
+    esp_err_t read_ret = (write_ret == ESP_OK)
+                          ? vol_bdl->ops->read(vol_bdl, readback, page_size, addr, page_size)
+                          : ESP_OK;
+    bool match = (write_ret == ESP_OK && read_ret == ESP_OK) && (memcmp(pattern, readback, page_size) == 0);
 
-    bool match = (memcmp(pattern, readback, page_size) == 0);
     free(pattern);
     free(readback);
+
+    ESP_ERROR_CHECK(write_ret);
+    ESP_ERROR_CHECK(read_ret);
 
     if (!match) {
         ESP_LOGE(TAG, "LEB %" PRIu32 ": write/read-back MISMATCH", lnum);
@@ -178,6 +189,13 @@ void app_main(void)
     if (leb_count < EXAMPLE_NUM_TEST_LEBS) {
         ESP_LOGE(TAG, "Chip too small for this demo: need >= %u usable LEBs, got %" PRIu32,
                  EXAMPLE_NUM_TEST_LEBS, leb_count);
+        /* Release what was already acquired before aborting: ESP_ERROR_CHECK() below
+         * does not return, but the demo should still leave the SPI bus and both BDL
+         * handles in a clean state up to the point of failure. */
+        vol_bdl->ops->release(vol_bdl);
+        nand_bdl->ops->release(nand_bdl);
+        spi_bus_remove_device(spi);
+        spi_bus_free(HOST_ID);
         ESP_ERROR_CHECK(ESP_ERR_INVALID_SIZE);
     }
 

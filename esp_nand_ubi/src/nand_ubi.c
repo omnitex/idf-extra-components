@@ -614,7 +614,11 @@ esp_err_t nand_ubi_get_blockdev(esp_blockdev_handle_t nand_bdl, const nand_ubi_c
     esp_blockdev_handle_t vol_bdl = NULL;
     ret = nand_ubi_open_volume(dev, 0, &vol_bdl);
     if (ret != ESP_OK) {
-        nand_ubi_detach(dev);
+        /* dev->open_volumes is still 0 here (open_volume() only increments it on
+         * success), so nand_ubi_detach() cannot return ESP_ERR_INVALID_STATE and
+         * always reaches its free(ubi_dev) path: no leak, despite static analyzers
+         * that can't see across this call flagging dev as unreleased. */
+        (void)nand_ubi_detach(dev);
         return ret;
     }
 
