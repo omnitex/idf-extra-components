@@ -1,0 +1,4 @@
+# Disable watchdog — long-running perf benchmarks will trigger it otherwise
+CONFIG_ESP_TASK_WDT_EN=n
+# Larger stack for perf task (histogram arrays on stack)
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
