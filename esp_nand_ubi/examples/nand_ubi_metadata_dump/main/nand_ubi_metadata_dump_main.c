@@ -183,8 +183,13 @@ static void print_table_header(void)
 static void print_peb_line(uint32_t pnum, peb_status_t status,
                            bool have_ec, uint64_t ec, uint32_t image_seq,
                            bool have_vid, uint32_t vol_id, uint32_t lnum, uint64_t sqnum, uint8_t copy_flag,
-                           const char *notes)
+                           const char *notes, bool *header_printed)
 {
+    if (!*header_printed) {
+        print_table_header();
+        *header_printed = true;
+    }
+
     char ec_buf[16];
     char seq_buf[16];
     char vol_buf[8];
@@ -225,35 +230,23 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
     esp_err_t ret = nand_bdl->ops->ioctl(nand_bdl, ESP_BLOCKDEV_CMD_IS_BAD_BLOCK, &bad_arg);
     if (ret != ESP_OK) {
         stats->io_err++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
         char notes[48];
         snprintf(notes, sizeof(notes), "IS_BAD ioctl 0x%x", ret);
-        print_peb_line(pnum, PEB_IO_ERR, false, 0, 0, false, 0, 0, 0, 0, notes);
+        print_peb_line(pnum, PEB_IO_ERR, false, 0, 0, false, 0, 0, 0, 0, notes, header_printed);
         return;
     }
     if (bad_arg.status) {
         stats->bad++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
-        print_peb_line(pnum, PEB_BAD, false, 0, 0, false, 0, 0, 0, 0, "factory bad");
+        print_peb_line(pnum, PEB_BAD, false, 0, 0, false, 0, 0, 0, 0, "factory bad", header_printed);
         return;
     }
 
     ret = nand_bdl->ops->read(nand_bdl, page_buf, page_size, (uint64_t)pnum * peb_size, page_size);
     if (ret != ESP_OK) {
         stats->io_err++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
         char notes[48];
         snprintf(notes, sizeof(notes), "EC read 0x%x", ret);
-        print_peb_line(pnum, PEB_IO_ERR, false, 0, 0, false, 0, 0, 0, 0, notes);
+        print_peb_line(pnum, PEB_IO_ERR, false, 0, 0, false, 0, 0, 0, 0, notes, header_printed);
         return;
     }
 
@@ -272,11 +265,7 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
 
     if (!nand_ubi_ec_hdr_valid(ec_hdr)) {
         stats->corrupt++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
-        print_peb_line(pnum, PEB_CORRUPT, false, 0, 0, false, 0, 0, 0, 0, "bad EC CRC");
+        print_peb_line(pnum, PEB_CORRUPT, false, 0, 0, false, 0, 0, 0, 0, "bad EC CRC", header_printed);
         return;
     }
 
@@ -292,13 +281,9 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
         stats->have_image_seq = true;
     } else if (image_seq != stats->image_seq) {
         stats->corrupt++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
         char notes[64];
         snprintf(notes, sizeof(notes), "stale image_seq (want 0x%08" PRIx32 ")", stats->image_seq);
-        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, notes);
+        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, notes, header_printed);
         return;
     }
 
@@ -306,14 +291,10 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
             data_offset % page_size != 0 || data_offset < vid_hdr_offset + page_size ||
             data_offset >= peb_size) {
         stats->corrupt++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
         char notes[64];
         snprintf(notes, sizeof(notes), "bad offsets vid=%" PRIu32 " data=%" PRIu32,
                  vid_hdr_offset, data_offset);
-        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, notes);
+        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, notes, header_printed);
         return;
     }
 
@@ -321,34 +302,22 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
                               (uint64_t)pnum * peb_size + vid_hdr_offset, page_size);
     if (ret != ESP_OK) {
         stats->io_err++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
         char notes[48];
         snprintf(notes, sizeof(notes), "VID read 0x%x", ret);
-        print_peb_line(pnum, PEB_IO_ERR, true, ec, image_seq, false, 0, 0, 0, 0, notes);
+        print_peb_line(pnum, PEB_IO_ERR, true, ec, image_seq, false, 0, 0, 0, 0, notes, header_printed);
         return;
     }
 
     if (page_is_blank(page_buf, page_size)) {
         stats->free_peb++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
-        print_peb_line(pnum, PEB_FREE, true, ec, image_seq, false, 0, 0, 0, 0, "EC only");
+        print_peb_line(pnum, PEB_FREE, true, ec, image_seq, false, 0, 0, 0, 0, "EC only", header_printed);
         return;
     }
 
     const nand_ubi_vid_hdr_t *vid_hdr = (const nand_ubi_vid_hdr_t *)page_buf;
     if (!nand_ubi_vid_hdr_valid(vid_hdr)) {
         stats->corrupt++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
-        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, "bad VID CRC");
+        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, false, 0, 0, 0, 0, "bad VID CRC", header_printed);
         return;
     }
 
@@ -359,13 +328,8 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
 
     if (lnum >= peb_count) {
         stats->corrupt++;
-        if (!*header_printed) {
-            print_table_header();
-            *header_printed = true;
-        }
-        char notes[48];
-        snprintf(notes, sizeof(notes), "lnum out of range");
-        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, true, vol_id, lnum, sqnum, copy_flag, notes);
+        print_peb_line(pnum, PEB_CORRUPT, true, ec, image_seq, true, vol_id, lnum, sqnum, copy_flag,
+                       "lnum out of range", header_printed);
         return;
     }
 
@@ -377,11 +341,7 @@ static void classify_and_print_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum
         stats->max_sqnum = sqnum;
     }
 
-    if (!*header_printed) {
-        print_table_header();
-        *header_printed = true;
-    }
-    print_peb_line(pnum, PEB_MAPPED, true, ec, image_seq, true, vol_id, lnum, sqnum, copy_flag, "");
+    print_peb_line(pnum, PEB_MAPPED, true, ec, image_seq, true, vol_id, lnum, sqnum, copy_flag, "", header_printed);
 }
 
 static void print_summary(const dump_stats_t *stats, uint32_t page_size, uint32_t peb_size, uint32_t peb_count)

@@ -116,6 +116,22 @@ inline void write_leb_data(esp_blockdev_handle_t nand_bdl, uint32_t pnum, uint32
     REQUIRE(nand_bdl->ops->write(nand_bdl, buf.data(), (uint64_t)pnum * peb_size + data_offset, write_len) == ESP_OK);
 }
 
+/* Erases PEB pnum and writes only the EC header, leaving the VID header page
+ * blank. Simulates a power loss between the two writes nand_ubi_vol_alloc_peb()
+ * performs when allocating a fresh PEB for a LEB write. */
+inline void format_ec_hdr_only(esp_blockdev_handle_t nand_bdl, uint32_t pnum,
+                               uint32_t page_size, uint32_t peb_size,
+                               uint32_t image_seq, uint32_t vid_hdr_offset, uint32_t data_offset)
+{
+    REQUIRE(nand_bdl->ops->erase(nand_bdl, (uint64_t)pnum * peb_size, peb_size) == ESP_OK);
+
+    std::vector<uint8_t> page(page_size, 0xFF);
+    nand_ubi_ec_hdr_t ec {};
+    fill_ec_hdr(&ec, image_seq, vid_hdr_offset, data_offset);
+    memcpy(page.data(), &ec, sizeof(ec));
+    REQUIRE(nand_bdl->ops->write(nand_bdl, page.data(), (uint64_t)pnum * peb_size, page_size) == ESP_OK);
+}
+
 /* Decodes the 2-bit UBI_PEB_* state for pnum out of eba.peb_state (documented packing:
  * 2 bits/PEB, 4 PEBs/byte, LSB-first - see the peb_state field comment in nand_ubi_eba.h).
  * Lets attach() tests distinguish BAD from ERASE_PENDING, which nand_ubi_eba_peb_is_free()

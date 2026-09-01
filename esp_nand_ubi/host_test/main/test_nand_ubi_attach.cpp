@@ -134,6 +134,28 @@ TEST_CASE("attach: corrupt EC header is scheduled for erase, not treated as free
     g.nand_bdl->ops->release(g.nand_bdl);
 }
 
+TEST_CASE("attach: valid EC header with blank VID header is scheduled for erase, not treated as free",
+          "[nand_ubi][attach]")
+{
+    /* Regression test: simulates an allocation interrupted between the EC-header
+     * write and the VID-header write in nand_ubi_vol_alloc_peb(). Page 0 is NOT
+     * physically erased in this state, so the PEB must not be left in the default
+     * FREE peb_state, which would let a later reuse write a fresh EC header onto
+     * an already-written page. */
+    test_geometry g = make_geometry();
+
+    format_ec_hdr_only(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset);
+
+    nand_ubi_device_t *dev = nullptr;
+    REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
+    REQUIRE(dev->leb_count == 0);
+    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(nand_ubi_eba_find_free_peb(&dev->eba, 1) == -1);
+
+    REQUIRE(nand_ubi_detach(dev) == ESP_OK);
+    g.nand_bdl->ops->release(g.nand_bdl);
+}
+
 TEST_CASE("attach: duplicate PEBs resolved by higher sqnum, loser scheduled for erase", "[nand_ubi][attach]")
 {
     test_geometry g = make_geometry();
