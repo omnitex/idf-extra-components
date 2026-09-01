@@ -30,15 +30,12 @@ static bool page_is_blank(const uint8_t *buf, size_t len)
 
 /* Verifies a copy_flag PEB's LEB data against vid_hdr->data_crc. Reads in page_size
  * multiples (nand_bdl->ops->read() rejects a partial-page tail on a multi-page span)
- * and hashes only the first data_size bytes, matching how data_crc was computed.
- * peb_size/page_size come from nand_bdl->geometry rather than as extra parameters:
- * attach() hasn't finished populating dev's copies of them at the point this is
- * called, and re-deriving avoids stacking more same-typed uint32_t parameters. */
-static bool verify_copy_data(esp_blockdev_handle_t nand_bdl, uint32_t pnum,
+ * and hashes only the first data_size bytes, matching how data_crc was computed. */
+static bool verify_copy_data(nand_ubi_device_t *dev, uint32_t pnum,
                               uint32_t data_offset, const nand_ubi_vid_hdr_t *vid_hdr)
 {
-    uint32_t peb_size = (uint32_t)nand_bdl->geometry.erase_size;
-    uint32_t page_size = (uint32_t)nand_bdl->geometry.read_size;
+    uint32_t peb_size = dev->peb_size;
+    uint32_t page_size = dev->page_size;
     uint32_t data_size = nand_ubi_be32(vid_hdr->data_size);
     uint32_t data_crc = nand_ubi_be32(vid_hdr->data_crc);
     uint32_t leb_size = peb_size - data_offset;
@@ -59,8 +56,8 @@ static bool verify_copy_data(esp_blockdev_handle_t nand_bdl, uint32_t pnum,
         return false;
     }
 
-    esp_err_t ret = nand_bdl->ops->read(nand_bdl, buf, read_len,
-                                         (uint64_t)pnum * peb_size + data_offset, read_len);
+    esp_err_t ret = dev->nand_bdl->ops->read(dev->nand_bdl, buf, read_len,
+                                              (uint64_t)pnum * peb_size + data_offset, read_len);
     bool ok = false;
     if (ret == ESP_OK) {
         ok = (nand_ubi_crc32(buf, data_size) == data_crc);
@@ -101,6 +98,11 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
     if (!dev) {
         return ESP_ERR_NO_MEM;
     }
+    /* Populated now (rather than after the scan loop) so verify_copy_data() below
+     * can read them from dev instead of re-deriving from nand_bdl->geometry. */
+    dev->nand_bdl = nand_bdl;
+    dev->peb_size = peb_size;
+    dev->page_size = page_size;
 
     /* leb_count is unknown until the scan below finds max_lnum, so eba[] is
      * over-allocated to peb_count (leb_count <= peb_count always). */
@@ -223,7 +225,7 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
 
         int32_t existing_pnum = nand_ubi_eba_get_pnum(&dev->eba, lnum);
         if (existing_pnum == UBI_LEB_UNMAPPED) {
-            if (vid_hdr->copy_flag && !verify_copy_data(nand_bdl, pnum, dev->data_offset, vid_hdr)) {
+            if (vid_hdr->copy_flag && !verify_copy_data(dev, pnum, dev->data_offset, vid_hdr)) {
                 ESP_LOGW(TAG, "pnum=%" PRIu32 " lnum=%" PRIu32 ": copy_flag data_crc mismatch, scheduling erase",
                          pnum, lnum);
                 nand_ubi_eba_peb_set_erase_pending(&dev->eba, pnum);
@@ -234,7 +236,7 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
             nand_ubi_eba_peb_set_used(&dev->eba, pnum);
         } else if (sqnum > sqnum_seen[lnum]) {
             uint32_t old_pnum = (uint32_t)existing_pnum;
-            if (vid_hdr->copy_flag && !verify_copy_data(nand_bdl, pnum, dev->data_offset, vid_hdr)) {
+            if (vid_hdr->copy_flag && !verify_copy_data(dev, pnum, dev->data_offset, vid_hdr)) {
                 ESP_LOGW(TAG, "pnum=%" PRIu32 " lnum=%" PRIu32 ": copy_flag data_crc mismatch, keeping pnum %" PRIu32,
                          pnum, lnum, old_pnum);
                 nand_ubi_eba_peb_set_erase_pending(&dev->eba, pnum);
@@ -262,10 +264,7 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
         dev->data_offset = 2u * page_size;
     }
 
-    dev->nand_bdl = nand_bdl;
     dev->peb_count = peb_count;
-    dev->peb_size = peb_size;
-    dev->page_size = page_size;
     dev->leb_size = dev->peb_size - dev->data_offset;
     dev->image_seq = image_seq;
     dev->leb_count = (uint32_t)(max_lnum + 1);

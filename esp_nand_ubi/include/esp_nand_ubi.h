@@ -39,14 +39,22 @@ extern "C" {
  * @brief Configuration passed at attach time.
  */
 typedef struct {
-    uint32_t reserved_pebs;   /**< Spare PEBs held back for the bad-block pool (default 4). */
+    uint32_t reserved_pebs;   /**< Spare PEBs held back for the bad-block pool
+                                   (see @ref NAND_UBI_CONFIG_DEFAULT). */
     bool     read_only;       /**< Attach without modifying flash (image inspection). */
 } nand_ubi_config_t;
 
 /**
  * @brief Default-initializer for @ref nand_ubi_config_t.
+ *
+ * @c reserved_pebs defaults to @c CONFIG_ESP_NAND_UBI_RESERVED_PEBS (Kconfig)
+ * when available, otherwise falls back to 4.
  */
+#ifdef CONFIG_ESP_NAND_UBI_RESERVED_PEBS
+#define NAND_UBI_CONFIG_DEFAULT() { .reserved_pebs = CONFIG_ESP_NAND_UBI_RESERVED_PEBS, .read_only = false }
+#else
 #define NAND_UBI_CONFIG_DEFAULT() { .reserved_pebs = 4, .read_only = false }
+#endif
 
 /**
  * @brief Opaque handle representing an attached UBI device (one physical NAND chip).
