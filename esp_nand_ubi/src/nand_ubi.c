@@ -184,7 +184,16 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
             goto fail;
         }
         if (page_is_blank(page_buf, page_size)) {
-            continue; /* EC header present but no VID header yet -> still FREE */
+            /* EC header was written but the VID header write never landed: an
+             * allocation was interrupted (e.g. power loss) between the two writes
+             * in nand_ubi_vol_alloc_peb(). Page 0 is NOT blank, so this PEB does
+             * not satisfy the "free PEBs are physically erased" invariant that
+             * nand_ubi_vol_alloc_peb() relies on to skip a read-before-write check.
+             * Schedule it for erase instead of leaving the default FREE state. */
+            ESP_LOGW(TAG, "pnum=%" PRIu32 ": EC header present but VID header blank "
+                     "(interrupted allocation), scheduling erase", pnum);
+            nand_ubi_eba_peb_set_erase_pending(&dev->eba, pnum);
+            continue;
         }
 
         const nand_ubi_vid_hdr_t *vid_hdr = (const nand_ubi_vid_hdr_t *)page_buf;
@@ -392,7 +401,10 @@ static esp_err_t nand_ubi_vol_read(esp_blockdev_handle_t handle, uint8_t *dst_bu
     if (dst_buf == NULL || dst_buf_size < data_read_len) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (src_addr + data_read_len > handle->geometry.disk_size) {
+    /* Split into two comparisons (rather than src_addr + data_read_len > disk_size)
+     * to avoid a uint64_t wraparound false-negative if a caller passes src_addr
+     * near UINT64_MAX. */
+    if (src_addr > handle->geometry.disk_size || data_read_len > handle->geometry.disk_size - src_addr) {
         return ESP_ERR_INVALID_SIZE;
     }
 
@@ -428,7 +440,7 @@ static esp_err_t nand_ubi_vol_write(esp_blockdev_handle_t handle, const uint8_t 
     if (src_buf == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (dst_addr + data_write_len > handle->geometry.disk_size) {
+    if (dst_addr > handle->geometry.disk_size || data_write_len > handle->geometry.disk_size - dst_addr) {
         return ESP_ERR_INVALID_SIZE;
     }
 
@@ -467,7 +479,7 @@ static esp_err_t nand_ubi_vol_erase(esp_blockdev_handle_t handle, uint64_t start
     if ((start_addr % leb_size) != 0 || erase_len == 0 || (erase_len % leb_size) != 0) {
         return ESP_ERR_INVALID_SIZE;
     }
-    if (start_addr + erase_len > handle->geometry.disk_size) {
+    if (start_addr > handle->geometry.disk_size || erase_len > handle->geometry.disk_size - start_addr) {
         return ESP_ERR_INVALID_SIZE;
     }
 

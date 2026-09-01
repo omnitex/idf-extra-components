@@ -83,6 +83,12 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t    nand_bdl,
  * @c vol_bdl->ops->release(vol_bdl). This does NOT release the underlying
  * @p nand_bdl passed to @c nand_ubi_attach().
  *
+ * @note Not safe to call concurrently with @c nand_ubi_open_volume() on the
+ *       same @p ubi_dev: the internal lock only serializes the open-volumes
+ *       counter check against the free, it does not extend protection across
+ *       the whole detach. The caller must ensure no new volume is opened on
+ *       this device once detach has been requested.
+ *
  * @param[in] ubi_dev  Device handle from @c nand_ubi_attach().
  * @return
  *      - ESP_OK on success
