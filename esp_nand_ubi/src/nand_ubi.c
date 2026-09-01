@@ -68,6 +68,19 @@ static bool verify_copy_data(nand_ubi_device_t *dev, uint32_t pnum,
     return ok;
 }
 
+/* lizard flags this function for cyclomatic complexity (43) and length (232 lines).
+ * Accepted as-is for now rather than decomposed: this is the single per-PEB scan that
+ * builds the initial EBA table, its ~15 early-continue branches are a flat sequence of
+ * independent validation steps (bad block / EC header / image_seq / header offsets /
+ * VID header / lnum range / sqnum ordering / copy_flag verification) each of which
+ * mutates dev->eba directly, and it is exercised by 10 dedicated test cases in
+ * host_test/main/test_nand_ubi_attach.cpp, including the interrupted-allocation
+ * recovery case fixed after an earlier review round. Splitting it into helper
+ * functions now - while attach() semantics are still being hardened - would mean
+ * threading peb_count/page_size/peb_size/dev->eba plus several loop-local flags
+ * across new call boundaries purely to satisfy the linter, at real risk of
+ * reintroducing the kind of subtle state-classification bug this function has
+ * already had. Revisit once Phase 1's on-flash format and recovery rules settle. */
 esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
                            const nand_ubi_config_t *config,
                            nand_ubi_device_t **out_ubi_dev)
