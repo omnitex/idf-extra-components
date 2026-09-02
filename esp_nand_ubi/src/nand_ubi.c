@@ -437,6 +437,8 @@ static esp_err_t nand_ubi_vol_read(esp_blockdev_handle_t handle, uint8_t *dst_bu
         ret = ESP_ERR_NOT_FOUND;
     } else {
         uint64_t phys_addr = (uint64_t)pnum * dev->peb_size + dev->data_offset + offset;
+        ESP_LOGD(TAG, "vol_read: lnum=%" PRIu32 " pnum=%" PRIi32 " offset=%" PRIu32
+                 " len=%zu phys_addr=0x%016" PRIx64, lnum, pnum, offset, data_read_len, phys_addr);
         ret = dev->nand_bdl->ops->read(dev->nand_bdl, dst_buf, dst_buf_size, phys_addr, data_read_len);
     }
     xSemaphoreGive(dev->lock);
@@ -467,11 +469,16 @@ static esp_err_t nand_ubi_vol_write(esp_blockdev_handle_t handle, const uint8_t 
     xSemaphoreTake(dev->lock, portMAX_DELAY);
     int32_t pnum = nand_ubi_eba_get_pnum(&dev->eba, lnum);
     esp_err_t ret = ESP_OK;
+    bool was_already_mapped = (pnum != UBI_LEB_UNMAPPED);
     if (pnum == UBI_LEB_UNMAPPED) {
         ret = nand_ubi_vol_alloc_peb(dev, lnum, &pnum);
     }
     if (ret == ESP_OK) {
         uint64_t phys_addr = (uint64_t)pnum * dev->peb_size + dev->data_offset + offset;
+        ESP_LOGD(TAG, "vol_write: lnum=%" PRIu32 " pnum=%" PRIi32 " offset=%" PRIu32
+                 " len=%zu phys_addr=0x%016" PRIx64 "%s",
+                 lnum, pnum, offset, data_write_len, phys_addr,
+                 was_already_mapped ? " (REWRITE of already-mapped LEB -- may hit an already-programmed page)" : "");
         ret = dev->nand_bdl->ops->write(dev->nand_bdl, src_buf, phys_addr, data_write_len);
     }
     xSemaphoreGive(dev->lock);
