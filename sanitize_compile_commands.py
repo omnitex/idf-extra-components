@@ -180,6 +180,10 @@ def detect_component_root(input_path: Path) -> Path | None:
       .../<component>/test_app/build/compile_commands.json
       .../<component>/host_test/build/compile_commands.json
       .../<component>/examples/<example>/build/compile_commands.json
+      .../examples/<category>/<example>/build/compile_commands.json
+        (standalone esp-idf example tree, e.g.
+        esp-idf/examples/storage/littlefs/build/ — no umbrella component,
+        the example directory itself is the root)
     Fallback: walk up looking for an idf_component.yml.
     """
     build_dir = input_path.resolve().parent
@@ -196,6 +200,12 @@ def detect_component_root(input_path: Path) -> Path | None:
     if app_dir.parent.name == "examples":
         candidate = app_dir.parent.parent
         return candidate if candidate.is_dir() else None
+
+    # examples/<category>/<example_name>/build (standalone esp-idf example,
+    # e.g. esp-idf/examples/storage/littlefs/build/): no umbrella component
+    # directory to climb to, so the example dir itself is the root.
+    if app_dir.parent.parent.name == "examples":
+        return app_dir if app_dir.is_dir() else None
 
     # Fallback: nearest ancestor that looks like a component
     for parent in [app_dir, *app_dir.parents]:
@@ -250,6 +260,7 @@ def resolve_include_paths(args, input_path: Path) -> list[Path] | None:
                   f"({input_path}). Expected one of:\n"
                   "  .../<component>/(test_app|host_test)/build/compile_commands.json\n"
                   "  .../<component>/examples/<example>/build/compile_commands.json\n"
+                  "  .../examples/<category>/<example>/build/compile_commands.json (standalone esp-idf example)\n"
                   "Pass --component / --include-path, or --all.",
                   file=sys.stderr)
             sys.exit(1)
