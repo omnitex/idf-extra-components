@@ -18,8 +18,6 @@
 #include "bytes.h"
 #include "map.h"
 
-#define DHARA_RADIX_DEPTH   (sizeof(dhara_sector_t) << 3)
-
 static inline dhara_sector_t d_bit(int depth)
 {
     return ((dhara_sector_t)1) << (DHARA_RADIX_DEPTH - depth - 1);
@@ -77,6 +75,11 @@ void dhara_map_init(struct dhara_map *m, const struct dhara_nand *n,
 
     dhara_journal_init(&m->journal, n, page_buf);
     m->gc_ratio = gc_ratio;
+
+#if DHARA_MAP_PATH_CACHE
+    m->prev_target = DHARA_SECTOR_NONE;
+    m->prev_root   = DHARA_PAGE_NONE;
+#endif
 }
 
 int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
@@ -87,6 +90,12 @@ int dhara_map_resume(struct dhara_map *m, dhara_error_t *err)
     }
 
     m->count = ck_get_count(dhara_journal_cookie(&m->journal));
+
+#if DHARA_MAP_PATH_CACHE
+    m->prev_target = DHARA_SECTOR_NONE;
+    m->prev_root   = DHARA_PAGE_NONE;
+#endif
+
     return 0;
 }
 
@@ -95,6 +104,10 @@ void dhara_map_clear(struct dhara_map *m)
     if (m->count) {
         m->count = 0;
         dhara_journal_clear(&m->journal);
+#if DHARA_MAP_PATH_CACHE
+        m->prev_target = DHARA_SECTOR_NONE;
+        m->prev_root   = DHARA_PAGE_NONE;
+#endif
     }
 }
 
@@ -131,16 +144,52 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
 
     if (new_meta) {
         meta_set_id(new_meta, target);
+#if DHARA_MAP_PATH_CACHE
+        m->prev_target = DHARA_SECTOR_NONE; /* write path; do not reuse read cache */
+#endif
     }
 
     if (p == DHARA_PAGE_NONE) {
         goto not_found;
     }
 
+#if DHARA_MAP_PATH_CACHE
+    /* Read-only fast path: reuse the last successful trace when the journal
+     * root is unchanged and target shares a prefix with prev_target. Walk
+     * depth while (target ^ prev_target) has no differing bit; then load
+     * meta at prev_path[depth - 1] once and resume the loop below. */
+    if (!new_meta &&
+            m->prev_target != DHARA_SECTOR_NONE &&
+            m->prev_root == p) {
+        const dhara_sector_t diff = target ^ m->prev_target;
+        while (depth < DHARA_RADIX_DEPTH && !(diff & d_bit(depth))) {
+            depth++;
+        }
+        if (depth > 0) {
+            p = m->prev_path[depth - 1];
+            if (p == DHARA_PAGE_NONE) {
+                goto not_found;
+            }
+            if (dhara_journal_read_meta(&m->journal, p, meta, err) < 0) {
+                m->prev_target = DHARA_SECTOR_NONE;
+                return -1;
+            }
+            goto resume;
+        }
+    }
+#endif
+
     if (dhara_journal_read_meta(&m->journal, p, meta, err) < 0) {
+#if DHARA_MAP_PATH_CACHE
+        m->prev_target = DHARA_SECTOR_NONE;
+#endif
         return -1;
     }
 
+#if DHARA_MAP_PATH_CACHE
+    /* Path cache entry: depth is first level where target != prev_target. */
+resume:
+#endif
     while (depth < DHARA_RADIX_DEPTH) {
         const dhara_sector_t id = meta_get_id(meta);
 
@@ -161,13 +210,25 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
 
             if (dhara_journal_read_meta(&m->journal, p,
                                         meta, err) < 0) {
+#if DHARA_MAP_PATH_CACHE
+                if (!new_meta) {
+                    m->prev_target = DHARA_SECTOR_NONE;
+                }
+#endif
                 return -1;
             }
         } else {
-            if (new_meta)
+            if (new_meta) {
                 meta_set_alt(new_meta, depth,
                              meta_get_alt(meta, depth));
+            }
         }
+
+#if DHARA_MAP_PATH_CACHE
+        if (!new_meta) {
+            m->prev_path[depth] = p; /* physical page at this radix level */
+        }
+#endif
 
         depth++;
     }
@@ -176,9 +237,21 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
         *loc = p;
     }
 
+#if DHARA_MAP_PATH_CACHE
+    if (!new_meta) {
+        m->prev_target = target;
+        m->prev_root   = dhara_journal_root(&m->journal);
+    }
+#endif
+
     return 0;
 
 not_found:
+#if DHARA_MAP_PATH_CACHE
+    if (!new_meta) {
+        m->prev_target = DHARA_SECTOR_NONE;
+    }
+#endif
     if (new_meta) {
         while (depth < DHARA_RADIX_DEPTH) {
             meta_set_alt(new_meta, depth++, DHARA_SECTOR_NONE);

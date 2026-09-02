@@ -2,6 +2,24 @@
 
 Versioning policy: see [VERSIONING.md](VERSIONING.md). From **v1.0.0** onward this component follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0]
+
+### New Features
+
+- **NAND page-register cache**: tracks whether the chip's internal page register already holds a specific page, allowing repeated reads of the same page to skip the expensive READ PAGE ADDRESS command (25–100 µs). The cache is invalidated on program, erase, and mark-bad operations. Applies to both ESP and Linux targets.
+
+- **Dhara FTL map path cache** (Kconfig: `CONFIG_NAND_DHARA_FTL_MAP_PATH_CACHE`, default off): when enabled, caches the last successful read-only radix-tree traversal in the Dhara map layer (136 bytes). Consecutive sector lookups that share a common radix-tree prefix skip the already-known levels, reducing FTL journal `read_meta` calls by up to 31 of 32 for sequential access patterns. Requires the updated `espressif/dhara` component at 1.1.0.
+
+### Fixes
+
+- **Verify-write correctness after program**: `nand_prog()` and `nand_mark_bad()` now re-read the page from the NAND array into the chip's cache register before verifying, instead of comparing against stale data left by PROGRAM EXECUTE.
+- **Verify-write correctness in `nand_copy()`**: when source and destination column addresses differ and verify-write is enabled, the source page is now always re-read from the NAND array before comparison.
+- **Log level**: `is_bad` and `is_free` diagnostic messages downgraded from `DEBUG` to `VERBOSE` to reduce log noise.
+
+### Dependencies
+
+- **Dhara** dependency updated to **1.1.\*** (from 1.0.0) for the path-cache feature.
+
 ## [1.4.2]
 - fix: use Internal Data Move same-parity handling for GigaDevice chips that require it (GD5F2GQ5, GD5F2GM7, GD5F4GQ6, GD5F4GM8, GD5F4GM7, GD5F8GM8), without treating them as hardware dual-plane
 
