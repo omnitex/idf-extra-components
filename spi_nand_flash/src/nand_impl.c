@@ -23,7 +23,7 @@ static esp_err_t detect_chip(spi_nand_flash_device_t *dev)
     uint8_t manufacturer_id = 0;
     esp_err_t ret = ESP_OK;
     ESP_RETURN_ON_ERROR(spi_nand_read_manufacturer_id(dev, &manufacturer_id), TAG, "%s, Failed to get the manufacturer ID %d", __func__, ret);
-    ESP_LOGD(TAG, "%s: manufacturer_id: %x\n", __func__, manufacturer_id);
+    ESP_LOGV(TAG, "%s: manufacturer_id: %x\n", __func__, manufacturer_id);
     dev->device_info.manufacturer_id = manufacturer_id;
 
     switch (manufacturer_id) {
@@ -57,7 +57,7 @@ static esp_err_t enable_quad_io_mode(spi_nand_flash_device_t *dev)
     }
 
     io_config |= (1 << dev->chip.quad_enable_bit_pos);
-    ESP_LOGD(TAG, "%s: quad config register value: 0x%x", __func__, io_config);
+    ESP_LOGV(TAG, "%s: quad config register value: 0x%x", __func__, io_config);
 
     if (io_config != 0x00) {
         ret = spi_nand_write_register(dev, REG_CONFIG, io_config);
@@ -235,7 +235,7 @@ esp_err_t nand_is_bad(spi_nand_flash_device_t *handle, uint32_t block, bool *is_
                       fail, TAG, "");
 
     memcpy(&markers, handle->read_buffer, sizeof(markers));
-    ESP_LOGD(TAG, "is_bad, block=%"PRIu32", page=%"PRIu32",indicator = %02x,%02x", block, first_block_page, markers[0], markers[1]);
+    ESP_LOGV(TAG, "is_bad, block=%"PRIu32", page=%"PRIu32",indicator = %02x,%02x", block, first_block_page, markers[0], markers[1]);
     *is_bad_status = (markers[0] != 0xFF || markers[1] != 0xFF);
     return ret;
 
@@ -252,7 +252,7 @@ esp_err_t nand_mark_bad(spi_nand_flash_device_t *handle, uint32_t block)
     // Markers layout: [bad_block_marker (bytes 0-1)][page_used_marker (bytes 2-3)]
     const uint8_t markers[4] = { 0x00, 0x00, 0xFF, 0xFF }; //// 0x0000 (bad block), 0xFFFF (free)
     uint8_t status;
-    ESP_LOGD(TAG, "mark_bad, block=%"PRIu32", page=%"PRIu32"", block, first_block_page);
+    ESP_LOGV(TAG, "mark_bad, block=%"PRIu32", page=%"PRIu32"", block, first_block_page);
 
     ESP_GOTO_ON_ERROR(read_page_and_wait(handle, first_block_page, NULL), fail, TAG, "");
     ESP_GOTO_ON_ERROR(spi_nand_write_enable(handle), fail, TAG, "");
@@ -288,7 +288,7 @@ fail:
 
 esp_err_t nand_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
-    ESP_LOGD(TAG, "erase_block, block=%"PRIu32",", block);
+    ESP_LOGV(TAG, "erase_block, block=%"PRIu32",", block);
     esp_err_t ret = ESP_OK;
     uint8_t status;
 
@@ -313,7 +313,7 @@ fail:
 
 static esp_err_t nand_erase_good_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
-    ESP_LOGD(TAG, "erase_block, block=%"PRIu32",", block);
+    ESP_LOGV(TAG, "erase_block, block=%"PRIu32",", block);
     esp_err_t ret = ESP_OK;
     bool is_bad = false;
     ret = nand_is_bad(handle, block, &is_bad);
@@ -322,7 +322,7 @@ static esp_err_t nand_erase_good_block(spi_nand_flash_device_t *handle, uint32_t
         return ret;
     }
     if (is_bad) {
-        ESP_LOGD(TAG, "skip erase of bad block=%"PRIu32"", block);
+        ESP_LOGV(TAG, "skip erase of bad block=%"PRIu32"", block);
         return ESP_OK;
     }
     ret = nand_erase_block(handle, block);
@@ -404,7 +404,7 @@ esp_err_t nand_is_free(spi_nand_flash_device_t *handle, uint32_t page, bool *is_
                                     column_addr, 4), fail, TAG, "");
 
     memcpy(&markers, handle->read_buffer, sizeof(markers));
-    ESP_LOGD(TAG, "is free, page=%"PRIu32", used_marker=%02x,%02x,", page, markers[2], markers[3]);
+    ESP_LOGV(TAG, "is free, page=%"PRIu32", used_marker=%02x,%02x,", page, markers[2], markers[3]);
     *is_free_status = (markers[2] == 0xFF && markers[3] == 0xFF);
     return ret;
 fail:
@@ -448,7 +448,7 @@ esp_err_t nand_read(spi_nand_flash_device_t *handle, uint32_t page, size_t offse
     ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, &status), fail, TAG, "");
 
     if (is_ecc_error(handle, status)) {
-        ESP_LOGD(TAG, "read ecc error, page=%"PRIu32"", page);
+        ESP_LOGV(TAG, "read ecc error, page=%"PRIu32"", page);
         return ESP_FAIL;
     }
 
@@ -478,7 +478,7 @@ static bool nand_copy_needs_ram_path(uint32_t flags,
 
 esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
 {
-    ESP_LOGD(TAG, "copy, src=%"PRIu32", dst=%"PRIu32"", src, dst);
+    ESP_LOGV(TAG, "copy, src=%"PRIu32", dst=%"PRIu32"", src, dst);
     esp_err_t ret = ESP_OK;
 #if CONFIG_NAND_FLASH_VERIFY_WRITE
     uint8_t *temp_buf = NULL;
@@ -488,7 +488,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
     ESP_GOTO_ON_ERROR(read_page_and_wait(handle, src, &status), fail, TAG, "");
 
     if (is_ecc_error(handle, status)) {
-        ESP_LOGD(TAG, "copy, ecc error");
+        ESP_LOGV(TAG, "copy, ecc error");
         return ESP_FAIL;
     }
 
@@ -520,7 +520,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
         ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
 
         if ((status & STAT_PROGRAM_FAILED) != 0) {
-            ESP_LOGD(TAG, "copy, prog failed");
+            ESP_LOGV(TAG, "copy, prog failed");
             return ESP_ERR_NOT_FINISHED;
         }
         free(copy_buf);
@@ -528,7 +528,7 @@ esp_err_t nand_copy(spi_nand_flash_device_t *handle, uint32_t src, uint32_t dst)
 
     ESP_GOTO_ON_ERROR(program_execute_and_wait(handle, dst, &status), fail, TAG, "");
     if ((status & STAT_PROGRAM_FAILED) != 0) {
-        ESP_LOGD(TAG, "copy, prog failed");
+        ESP_LOGV(TAG, "copy, prog failed");
         return ESP_ERR_NOT_FINISHED;
     }
 
@@ -580,7 +580,7 @@ esp_err_t nand_get_ecc_status(spi_nand_flash_device_t *handle, uint32_t page)
     ESP_GOTO_ON_ERROR(read_page_and_wait(handle, page, &status), fail, TAG, "");
 
     if (is_ecc_error(handle, status)) {
-        ESP_LOGD(TAG, "read ecc error, page=%"PRIu32"", page);
+        ESP_LOGV(TAG, "read ecc error, page=%"PRIu32"", page);
     }
     return ret;
 
