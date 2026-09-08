@@ -6,7 +6,7 @@
 
 **Architecture:** `nand_flash_get_blockdev()` (raw physical) → `nand_ubi_attach()` + `nand_ubi_open_volume()` (logical LEBs per volume) → LittleFS / FAT. The UBI layer scans per-PEB on-flash EC+VID headers at attach, rebuilds a `lnum→pnum` EBA table in RAM, and exposes a flat LEB address space per volume to the filesystem above. Position-independence is guaranteed because LEB numbers (not physical PEB numbers) are the only addresses the filesystem ever sees. `esp_partition` is not involved with NAND — UBI volumes are the partitioning scheme for NAND.
 
-**Tech Stack:** C99, ESP-IDF ≥ 6.0, `esp_blockdev` BDL interface, `esp_nand_blockdev.h` NAND ioctl extensions, FreeRTOS (Phase 3 WL task), Python 3 (host tool). Component lives in `~/esp/forks/idf-extra-components/esp_nand_ubi/`.
+**Tech Stack:** C99, ESP-IDF ≥ 6.0, `esp_blockdev` BDL interface, `esp_nand_blockdev.h` NAND ioctl extensions, FreeRTOS (Phase 4 WL task), Python 3 (host tool). Component lives in `~/esp/forks/idf-extra-components/esp_nand_ubi/`.
 
 ---
 
@@ -16,14 +16,14 @@ These close the open questions from `esp-nand-ubi-viability.md` §7:
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
-| Single vs multi-volume | **UBI is the partitioning scheme for NAND; `esp_partition` not involved** | Phase 1: single volume (whole chip = one LEB space). Phase 3: multi-volume, each volume is its own BDL handle — UBI volumes replace `esp_partition` entries for NAND |
+| Single vs multi-volume | **UBI is the partitioning scheme for NAND; `esp_partition` not involved** | Phase 1: single volume (whole chip = one LEB space). Phase 4: multi-volume, each volume is its own BDL handle — UBI volumes replace `esp_partition` entries for NAND |
 | `vol_id` in VID header | **Yes, always 0x00000000** | Keeps byte-level Linux `ubinize` compatibility |
 | Layout volume / vtbl | **Omit in Phase 1** | Only needed for multi-volume; deferred |
 | Header placement | **In-band (first 2 pages of each PEB)** | No OOB API complexity; portable across all NAND types |
 | `is_bad` ioctl | **Use existing `ESP_BLOCKDEV_CMD_IS_BAD_BLOCK`** | Already implemented in `esp_nand_blockdev.h` — no new ioctl needed |
 | Linux `ubinize` compat | **Yes — keep UBI magic numbers** | Reuse `mtd-utils ubinize` on host; also write a standalone `esp_ubinize.py` |
-| WL | **Phase 1: passive only (lowest-EC free PEB)** | Phase 3: background FreeRTOS task |
-| Fastmap | **Omit in Phase 1** | Full scan ~1–2 s for 2048 blocks; acceptable for a PoC; Phase 3 optional |
+| WL | **Phase 1: passive only (lowest-EC free PEB)** | Phase 4: background FreeRTOS task |
+| Fastmap | **Omit in Phase 1** | Full scan ~1–2 s for 2048 blocks; acceptable for a PoC; Phase 4 optional |
 
 ---
 
@@ -38,7 +38,7 @@ The viability doc estimated 128 KB for a `peb_buf`. That was assuming a permanen
 - **Attach scan**: reads only 2 pages per PEB (EC header at page 0, VID header at page 1). A single page-sized allocation (~2 KB typical) is sufficient and is freed immediately after attach.
 - **Normal read/write**: translate LEB → PEB address, forward the call directly to `nand_bdl`. No copy buffer needed — the caller's buffer is used in-place.
 - **Normal erase**: erase the physical PEB, write 64-byte EC header (update erase counter), add PEB to free pool. No full-block buffer needed.
-- **WL moves (Phase 3 only)**: allocate one PEB-sized buffer, copy, free. Triggered only by the background WL task.
+- **WL moves (Phase 4 only)**: allocate one PEB-sized buffer, copy, free. Triggered only by the background WL task.
 
 ### RAM resident while mounted
 
@@ -47,7 +47,7 @@ The viability doc estimated 128 KB for a `peb_buf`. That was assuming a permanen
 | `nand_ubi_device_t` (device control) | ~280 B | `malloc()` → internal SRAM |
 | EBA table `eba[leb_count]` | ≤ 4 KB | `heap_caps_malloc_prefer(SPIRAM, …)` |
 | PEB state bitmap `peb_state[ceil(peb_count/8)]` | 128 B | same |
-| EC table `ec[peb_count]` (Phase 3) | 4 KB | same; Kconfig-gated |
+| EC table `ec[peb_count]` (Phase 4) | 4 KB | same; Kconfig-gated |
 | `nand_ubi_vol_ctx_t` per open volume | ~40 B | `malloc()` → internal SRAM |
 | **Total (no PSRAM, no WL)** | **~4.5 KB** | internal SRAM |
 | **Total (PSRAM, no WL)** | **~4.5 KB PSRAM + 400 B SRAM** | |
@@ -88,7 +88,7 @@ nand_ubi_open_volume(ubi_dev, 0, &vol_bdl)          [whole chip = one volume]
 LittleFS / FatFS via vol_bdl
 ```
 
-**Use case 2 — NAND holds multiple independent regions (Phase 3 multi-volume)**
+**Use case 2 — NAND holds multiple independent regions (Phase 4 multi-volume)**
 
 ```
 SPI NAND hardware
@@ -101,7 +101,7 @@ nand_ubi_attach(nand_bdl, &cfg, &ubi_dev)           [scan once]
     └── nand_ubi_open_volume(ubi_dev, 2, &fs_bdl)    vol "fs"    — LittleFS, autoresize
 ```
 
-UBI volumes replace `esp_partition` entries for NAND. Each volume is an independent `esp_blockdev_handle_t`. The vtbl (Phase 3) is stored in LEBs with VID headers — fully position-independent, no fixed physical offsets.
+UBI volumes replace `esp_partition` entries for NAND. Each volume is an independent `esp_blockdev_handle_t`. The vtbl (Phase 4) is stored in LEBs with VID headers — fully position-independent, no fixed physical offsets.
 
 **Do not insert `spi_nand_flash_wl_get_blockdev()` (Dhara) in this chain.** The `esp-nand-ubi-vs-dhara.md` analysis covers why: double FTL, incompatible geometry contracts, double write amplification.
 
@@ -184,13 +184,13 @@ esp_err_t nand_ubi_detach(nand_ubi_device_t *ubi_dev);
  * @brief Open one volume and return a BDL handle scoped to it.
  *
  * Phase 1: only vol_id=0 is valid (whole chip = one volume, no vtbl).
- * Phase 3: any vol_id present in the vtbl.
+ * Phase 4: any vol_id present in the vtbl.
  *
  * The returned handle must be released via vol_bdl->ops->release(vol_bdl)
  * before nand_ubi_detach() is called.
  *
  * @param ubi_dev      Device handle from nand_ubi_attach().
- * @param vol_id       Volume ID (0 in Phase 1; any vtbl vol_id in Phase 3).
+ * @param vol_id       Volume ID (0 in Phase 1; any vtbl vol_id in Phase 4).
  * @param out_vol_bdl  Output: BDL handle for this volume.
  * @return ESP_OK or ESP_ERR_NOT_FOUND if vol_id does not exist.
  */
@@ -344,7 +344,7 @@ config ESP_NAND_UBI_RESERVED_PEBS
     default 4
 
 config ESP_NAND_UBI_WL_ENABLE
-    bool "Enable background wear-leveling FreeRTOS task (Phase 3)"
+    bool "Enable background wear-leveling FreeRTOS task (Phase 4)"
     depends on ESP_NAND_UBI_ENABLE
     default n
 
@@ -461,7 +461,7 @@ Output format: sequential PEB-sized chunks, each containing:
       uint64_t  global_sqnum;      // monotonically increasing; max(sqnum seen) at attach
       nand_ubi_eba_t eba;          // owns eba[] and peb_state[] arrays
       SemaphoreHandle_t lock;
-      /* Phase 3: uint32_t vol_count; nand_ubi_vol_t *volumes[]; */
+      /* Phase 4: uint32_t vol_count; nand_ubi_vol_t *volumes[]; */
   };
 
   /* Volume-level: one per open volume, wraps device + vol_id into a BDL */
@@ -536,9 +536,76 @@ Output format: sequential PEB-sized chunks, each containing:
 
 ---
 
-### Phase 2 — Tooling
+### Phase 2 — LittleFS-on-UBI Hardware PoC
 
-**Task 8: `esp_ubinize.py`**
+**Deliverable**: `esp_vfs_littlefs_register()` mounted directly on `nand_ubi_get_blockdev()`'s
+output, running on real SPI NAND hardware — format, write, close, remount, read back. No Dhara
+in the chain; UBI is the only FTL between LittleFS and the chip.
+
+**Context**: `joltwallet/littlefs >= 1.21.0` already supports mounting on an arbitrary
+`esp_blockdev_handle_t` (`esp_vfs_littlefs_conf_t.blockdev`, `esp_littlefs_blockdev_info()`,
+`esp_vfs_littlefs_unregister_blockdev()`) — no adapter/shim needs to be written in this
+component. A sibling, not-yet-merged PR
+([`RathiSonika/idf-extra-components#14`](https://github.com/RathiSonika/idf-extra-components/pull/14))
+adds a comparable `spi_nand_flash_littlefs` component, but it mounts LittleFS on the **Dhara
+wear-leveling BDL** (`spi_nand_flash_init_with_layers()`), not on UBI — exactly the double-FTL
+stack this component's own README warns against. That PR is useful as a wiring reference (same
+`esp_vfs_littlefs_register()` call shape, and it surfaces the `CONFIG_LITTLEFS_CACHE_SIZE >=
+page_size` mount requirement below) but is not code this phase reuses directly.
+
+**Task 8: `idf_component.yml` dependency**
+- Add `joltwallet/littlefs: ">=1.21.0"` to `esp_nand_ubi/examples/littlefs_on_ubi/main/idf_component.yml`
+  (component-level dependency only in the example, not in `esp_nand_ubi/idf_component.yml` itself —
+  mirrors how `spi_nand_flash_littlefs` scopes the dependency to its own component rather than
+  forcing it on every `esp_nand_ubi` consumer)
+
+**Task 9: `examples/littlefs_on_ubi` hardware example**
+- Mirror `examples/nand_ubi_example`'s structure (CMakeLists.txt, README.md, sdkconfig.defaults,
+  `main/`)
+- `main/nand_ubi_littlefs_example_main.c`:
+  1. `nand_flash_get_blockdev()` → raw NAND BDL
+  2. `nand_ubi_get_blockdev(nand_bdl, &cfg, &vol_bdl)` → UBI volume BDL
+  3. `esp_vfs_littlefs_register({.base_path = "/nand", .blockdev = vol_bdl, .format_if_mount_failed = true})`
+  4. Write a file, close, `esp_littlefs_blockdev_info()`, reopen and read back, verify contents match
+  5. `esp_vfs_littlefs_unregister_blockdev(vol_bdl)` (releases `vol_bdl`, which also detaches the
+     UBI device per `nand_ubi_get_blockdev()`'s ownership contract) → `nand_bdl->ops->release()`
+- `sdkconfig.defaults` must set:
+  ```
+  CONFIG_NAND_FLASH_ENABLE_BDL=y
+  CONFIG_ESP_NAND_UBI_ENABLE=y
+  CONFIG_LITTLEFS_CACHE_SIZE=4096   # must be >= NAND page size or mount fails
+  CONFIG_LITTLEFS_BLOCK_CYCLES=-1  # see design decision below
+  ```
+- Verify: on physical ESP32 + external SPI NAND, `idf.py flash monitor` shows successful mount,
+  write, remount, and byte-identical read-back
+
+**Design decision: `block_cycles = -1` (disable LittleFS's own metadata wear-leveling)**
+UBI has no wear-leveling implemented yet (Phase 1 is passive/lowest-EC-free-PEB only; real WL is
+Phase 4/Task 10 below). Since there is currently nothing to double up against, disabling
+littlefs's `block_cycles` now is simply the correct choice for this phase — not a placeholder.
+**Revisit this when Phase 4's background WL task lands**: at that point UBI will be actively
+moving PEBs by erase count, and littlefs's own block-cycling would compound wear-leveling
+decisions made independently by two layers. The Phase 4 task list should include re-evaluating
+whether `block_cycles` stays disabled or gets tuned once real UBI WL exists.
+
+**Known limitation — not fixed in this phase**: joltwallet's `littlefs_bdl.c` adapter maps every
+`ESP_ERR_*` return from the BDL to generic `LFS_ERR_IO`, never `LFS_ERR_CORRUPT`. LittleFS's
+bad-block eviction (copy-on-write reallocation away from a failing block) only triggers on
+`LFS_ERR_CORRUPT`. Practically: if a PEB goes bad *during* a mounted session (not caught by UBI's
+attach-time `IS_BAD_BLOCK` scan), littlefs will not evict it — it will just see an IO error.
+UBI's attach-time bad-block hiding still covers the PoC's success criterion (mount works, data
+round-trips), but production hardening needs one of:
+  - a local patch to `littlefs_bdl.c` propagating a distinguishable "bad block" signal, or
+  - an upstream PR to `joltwallet/esp_littlefs` adding an `LFS_ERR_CORRUPT` mapping path, or
+  - UBI itself detecting the failure internally and silently remapping the LEB before littlefs
+    ever sees the error (would need write-path changes in `nand_ubi.c`)
+This is tracked here and in `esp_nand_ubi/README.md`; not scheduled into a phase yet.
+
+---
+
+### Phase 3 — Tooling
+
+**Task 10: `esp_ubinize.py`**
 - Location: `esp_nand_ubi/tools/esp_ubinize.py`
 - Arguments: `--peb-size`, `--page-size`, `--image-seq` (random default), `--vol-type`, `--autoresize`, `input_image`, `output_ubi`
 - Algorithm:
@@ -548,7 +615,7 @@ Output format: sequential PEB-sized chunks, each containing:
 - Output size: `ceil(len(input) / leb_size) × peb_size` bytes
 - Validation: read back output, parse headers, verify all CRCs
 
-**Task 9: UBI-aware flasher extension**
+**Task 11: UBI-aware flasher extension**
 - Standalone Python script `tools/ubi_flash.py` (or `esptool` extension if it gains NAND support):
   - Accepts `.ubi` file and target NAND geometry
   - Iterates non-bad physical PEBs on target (via `esptool` or direct SPI NAND flash commands)
@@ -557,9 +624,9 @@ Output format: sequential PEB-sized chunks, each containing:
 
 ---
 
-### Phase 3 — Optional Production Polish (post-PoC validation)
+### Phase 4 — Optional Production Polish (post-PoC validation)
 
-**Task 10: Background WL FreeRTOS task** (gated on `CONFIG_ESP_NAND_UBI_WL_ENABLE`)
+**Task 12: Background WL FreeRTOS task** (gated on `CONFIG_ESP_NAND_UBI_WL_ENABLE`)
 - Add `ec_table[peb_count]` (uint32_t array, PSRAM-preferred) to `nand_ubi_ctx_t`
 - EC values loaded during attach from EC headers
 - WL task: every N erases, find `pnum_hot = max(ec[used])`, `pnum_cold = min(ec[free])`
@@ -568,25 +635,25 @@ Output format: sequential PEB-sized chunks, each containing:
 - Task priority: `tskIDLE_PRIORITY + 1`; yields after each move
 - Stack size: 4 KB
 
-**Task 11: Simplified fastmap** (Kconfig-gated)
+**Task 13: Simplified fastmap** (Kconfig-gated)
 - Reserve PEB 0 for a fastmap: flat array of `{uint32_t lnum, uint32_t pnum}` pairs + CRC32 + generation counter
 - Written on clean detach; invalidated (erased) on unexpected reset detected at next attach
 - If fastmap CRC valid at attach: skip full scan, use fastmap directly
 - Falls back to full scan on CRC failure or absence
 
-**Task 12: Multi-volume support**
+**Task 14: Multi-volume support**
 - The API (`nand_ubi_attach` / `nand_ubi_open_volume`) already supports this at the call site — no API changes needed
-- Add `vol_id` filtering to the attach scan loop (Phase 1 accepts all `vol_id` values from VID headers but bins them all into the Phase 1 single-volume EBA; Phase 3 separates them)
+- Add `vol_id` filtering to the attach scan loop (Phase 1 accepts all `vol_id` values from VID headers but bins them all into the Phase 1 single-volume EBA; Phase 4 separates them)
 - Add per-volume EBA lookup: `nand_ubi_device_t` grows a `vol_count` field and a small array of `{vol_id, leb_count, eba_offset}` entries
 - Implement vtbl: layout volume `vol_id = 0x7FFFEFFF`, LEBs 0+1 (mirrored), contains `ubi_vtbl_record[128]`; load on attach, validate CRC per record
 - `nand_ubi_open_volume(vol_id=N)` looks up vtbl entry, returns BDL scoped to that volume's LEB range
-- `esp_ubinize.py` Phase 3 extension: `--vol-id`, `--vol-name`, multi-volume ini config (matches Linux `ubinize.ini` format)
+- `esp_ubinize.py` Phase 4 extension: `--vol-id`, `--vol-name`, multi-volume ini config (matches Linux `ubinize.ini` format)
 
 ---
 
 ## Open Questions for Review
 
-1. **PoC target**: is it sufficient for Phase 1 to demonstrate host-test attach + read/write, or do you want a real ESP32-S3 + physical NAND chip as the PoC success criterion? (Affects whether we need Task 9 before calling Phase 1 done.)
+1. ~~**PoC target**: is it sufficient for Phase 1 to demonstrate host-test attach + read/write, or do you want a real ESP32-S3 + physical NAND chip as the PoC success criterion?~~ **Resolved**: Phase 1 is done (host tests + two hardware examples). Task 11 (UBI-aware flasher) remains open, deferred to whenever multi-PEB image flashing is actually needed.
 
 2. **`data_offset` choice**: `data_offset = 2 × page_size` means 2 pages are consumed per PEB for headers, leaving `peb_size - 2×page_size` for LEB data. For a 128 KB PEB / 2 KB page: LEB_SIZE = 124 KB. This is 3% overhead. Is that acceptable, or should we try to pack EC+VID into a single page (both headers fit in 128 bytes, well within 2 KB)?  
    - Option A: 2 pages (safe, separate pages for each header, matches Linux UBI)  

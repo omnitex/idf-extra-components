@@ -93,13 +93,26 @@ alternative for users without `mtd-utils`.
 
 | Example | Description | Hardware |
 |---------|-------------|----------|
-| `examples/nand_ubi_example` | Attach + erase + write/read-back verification + logical-erase-returns-`ESP_ERR_NOT_FOUND`, directly on physical SPI NAND flash. Does not mount a filesystem (no FatFS/LittleFS adapter exists yet for `esp_blockdev_t`). | Physical ESP32 + external SPI NAND chip |
+| `examples/nand_ubi_example` | Attach + erase + write/read-back verification + logical-erase-returns-`ESP_ERR_NOT_FOUND`, directly on physical SPI NAND flash. Does not mount a filesystem. | Physical ESP32 + external SPI NAND chip |
 | `examples/nand_ubi_metadata_dump` | Read-only scan of every PEB’s EC/VID headers; progressive table of MAPPED/FREE/CORRUPT/BAD/IO_ERR plus end-of-scan summary. Does not call `nand_ubi_attach()` or write flash. | Physical ESP32 + external SPI NAND chip |
+| `examples/littlefs_on_ubi` (Phase 2) | Mounts `joltwallet/littlefs` directly on `nand_ubi_get_blockdev()`'s volume BDL — no Dhara, no adapter/shim needed (`esp_littlefs` already speaks `esp_blockdev_t`). Write/close/remount/read-back round-trip. | Physical ESP32 + external SPI NAND chip |
 
 See each example's `README.md` for wiring and expected console output.
+
+## Known limitations
+
+- **No mid-session bad-block eviction signal to LittleFS**: `joltwallet/littlefs`'s BDL adapter
+  (`littlefs_bdl.c`) maps every `ESP_ERR_*` to generic `LFS_ERR_IO`, never `LFS_ERR_CORRUPT`.
+  LittleFS only evicts/reallocates a block on `LFS_ERR_CORRUPT`. UBI's attach-time
+  `IS_BAD_BLOCK` scan hides factory-bad blocks fine, but a PEB that fails *during* a mounted
+  session (write/ECC failure after attach) will surface as a plain IO error, not trigger
+  littlefs's block-eviction path. Fixing this needs either a local patch to `littlefs_bdl.c`,
+  an upstream `joltwallet/esp_littlefs` change, or UBI itself silently remapping the LEB on
+  write failure before returning to the caller. Not yet scheduled into a phase — see
+  `docs/plans/2026-07-09-esp-nand-ubi-mvp.md` Phase 2.
 
 ## Status
 
 Phase 1 (minimum viable layer): attach scan, EBA table, per-volume read/write/erase,
-passive bad-block hiding. Wear-leveling, fastmap, and multi-volume support are planned
-for later phases.
+passive bad-block hiding. Phase 2 (LittleFS-on-UBI hardware PoC) in progress. Real
+wear-leveling, fastmap, and multi-volume support are planned for later phases.
