@@ -34,6 +34,7 @@
 #include "spi_nand_flash.h"
 #include "esp_nand_blockdev.h"
 #include "esp_nand_ubi.h"
+#include "nand_ubi_ram_stats.h"
 
 static const char *TAG = "example";
 
@@ -168,9 +169,12 @@ static void write_and_verify_leb(esp_blockdev_handle_t vol_bdl, uint32_t lnum, u
 
 void app_main(void)
 {
+    nand_ubi_log_ram(TAG, "before init");
+
     spi_device_handle_t spi;
     esp_blockdev_handle_t nand_bdl = NULL;
     ESP_ERROR_CHECK(init_spi_and_nand(&spi, &nand_bdl));
+    nand_ubi_log_ram(TAG, "after raw NAND BDL init");
 
     ESP_LOGI(TAG, "Raw NAND: page_size=%" PRIu32 " peb_size=%" PRIu32 " disk_size=%" PRIu64,
              (uint32_t)nand_bdl->geometry.read_size, (uint32_t)nand_bdl->geometry.erase_size,
@@ -180,6 +184,11 @@ void app_main(void)
     nand_ubi_config_t ubi_cfg = NAND_UBI_CONFIG_DEFAULT();
     esp_blockdev_handle_t vol_bdl = NULL;
     ESP_ERROR_CHECK(nand_ubi_get_blockdev(nand_bdl, &ubi_cfg, &vol_bdl));
+    /* The "min" column here is the one that matters: nand_ubi_attach()'s
+     * temporary page_buf and sqnum_seen[] scan buffers are already freed by
+     * the time this line runs, so "free now" alone would hide their peak
+     * cost. "min" captures the low point reached during the scan itself. */
+    nand_ubi_log_ram(TAG, "after UBI attach (scan done)");
 
     uint32_t leb_size = (uint32_t)vol_bdl->geometry.erase_size;
     uint32_t page_size = (uint32_t)vol_bdl->geometry.write_size;
@@ -211,6 +220,7 @@ void app_main(void)
     for (uint32_t lnum = 0; lnum < EXAMPLE_NUM_TEST_LEBS; lnum++) {
         write_and_verify_leb(vol_bdl, lnum, leb_size, page_size);
     }
+    nand_ubi_log_ram(TAG, "after write/read loop");
 
     ESP_LOGI(TAG, "Erasing LEB 0 again to demonstrate logical-erase semantics");
     ESP_ERROR_CHECK(vol_bdl->ops->erase(vol_bdl, 0, leb_size));
@@ -235,6 +245,9 @@ void app_main(void)
     ESP_ERROR_CHECK(nand_bdl->ops->release(nand_bdl));
     spi_bus_remove_device(spi);
     spi_bus_free(HOST_ID);
+    /* Should be back near the "before init" baseline; a persistent gap here
+     * would indicate a leak in the release/detach path. */
+    nand_ubi_log_ram(TAG, "after release (should ~= baseline)");
 
     ESP_LOGI(TAG, "NAND UBI example finished successfully");
 }

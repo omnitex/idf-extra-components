@@ -18,10 +18,11 @@
  *     -> nand_ubi_get_blockdev()          UBI volume BDL        [esp_nand_ubi]
  *     -> esp_vfs_littlefs_register()      POSIX file API        [joltwallet/littlefs]
  *
- * See this example's README.md for the block_cycles=-1 decision (no UBI
- * wear-leveling exists yet, so there's nothing for LittleFS's own metadata
- * block-cycling to double up against) and the known LFS_ERR_CORRUPT mapping
- * gap in joltwallet's littlefs_bdl.c adapter (also documented in
+ * See this example's README.md for the block_cycles decision (left at
+ * joltwallet's default -- it only relocates LittleFS's metadata pair, and is
+ * currently the only active wear-spreading mechanism in this stack since
+ * esp_nand_ubi has no wear-leveling yet) and the known LFS_ERR_CORRUPT
+ * mapping gap in joltwallet's littlefs_bdl.c adapter (also documented in
  * esp_nand_ubi/README.md).
  */
 
@@ -41,6 +42,7 @@
 #include "esp_nand_blockdev.h"
 #include "esp_nand_ubi.h"
 #include "esp_littlefs.h"
+#include "nand_ubi_ram_stats.h"
 
 static const char *TAG = "example";
 
@@ -132,9 +134,12 @@ static void deinit_spi_bus(spi_device_handle_t spi)
 
 void app_main(void)
 {
+    nand_ubi_log_ram(TAG, "before init");
+
     spi_device_handle_t spi;
     esp_blockdev_handle_t nand_bdl = NULL;
     ESP_ERROR_CHECK(init_spi_and_nand(&spi, &nand_bdl));
+    nand_ubi_log_ram(TAG, "after raw NAND BDL init");
 
     ESP_LOGI(TAG, "Raw NAND: page_size=%" PRIu32 " peb_size=%" PRIu32 " disk_size=%" PRIu64,
              (uint32_t)nand_bdl->geometry.read_size, (uint32_t)nand_bdl->geometry.erase_size,
@@ -144,6 +149,10 @@ void app_main(void)
     nand_ubi_config_t ubi_cfg = NAND_UBI_CONFIG_DEFAULT();
     esp_blockdev_handle_t vol_bdl = NULL;
     ESP_ERROR_CHECK(nand_ubi_get_blockdev(nand_bdl, &ubi_cfg, &vol_bdl));
+    /* "min" here captures nand_ubi_attach()'s temporary page_buf/sqnum_seen[]
+     * scan buffers, already freed by the time this line runs -- "free now"
+     * alone would hide their peak cost. */
+    nand_ubi_log_ram(TAG, "after UBI attach (scan done)");
 
     ESP_LOGI(TAG, "UBI volume ready: leb_size=%" PRIu64 " disk_size=%" PRIu64,
              vol_bdl->geometry.erase_size, vol_bdl->geometry.disk_size);
@@ -174,6 +183,11 @@ void app_main(void)
         deinit_spi_bus(spi);
         return;
     }
+    /* This delta on top of the previous checkpoint is LittleFS's own
+     * mount-time cost (cache_size + lookahead_size buffers) stacked on top
+     * of whatever UBI already holds resident -- the number that matters for
+     * "can this stack fit on a no-PSRAM target." */
+    nand_ubi_log_ram(TAG, "after LittleFS mount");
 
     size_t total = 0, used = 0;
     ESP_ERROR_CHECK(esp_littlefs_blockdev_info(vol_bdl, &total, &used));
@@ -223,6 +237,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_littlefs_blockdev_info(vol_bdl, &total, &used));
     ESP_LOGI(TAG, "LittleFS: %u kB total, %u kB used", (unsigned)(total / 1024), (unsigned)(used / 1024));
+    nand_ubi_log_ram(TAG, "after write/read round-trip");
 
     /* Unregister unmounts LittleFS and releases vol_bdl via ops->release,
      * which also detaches the UBI device. nand_bdl is released separately:
@@ -230,6 +245,9 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_vfs_littlefs_unregister_blockdev(vol_bdl));
     ESP_ERROR_CHECK(nand_bdl->ops->release(nand_bdl));
     deinit_spi_bus(spi);
+    /* Should be back near the "before init" baseline; a persistent gap here
+     * would indicate a leak in the unmount/release/detach path. */
+    nand_ubi_log_ram(TAG, "after unmount+release (should ~= baseline)");
 
     ESP_LOGI(TAG, "LittleFS-on-UBI example finished successfully");
 }
