@@ -612,6 +612,10 @@ This is tracked here and in `esp_nand_ubi/README.md`; not scheduled into a phase
 
 ### Phase 3 — Tooling
 
+> **Implementation order note**: Task 14 (Phase 4, multi-volume) does not depend on Tasks 10/11
+> and can be implemented and fully host-tested first — see the note at the top of Task 14 for
+> why, and the recommended reordering.
+
 **Task 10: `esp_ubinize.py`**
 - Location: `esp_nand_ubi/tools/esp_ubinize.py`
 - Arguments: `--peb-size`, `--page-size`, `--image-seq` (random default), `--vol-type`, `--autoresize`, `input_image`, `output_ubi`
@@ -621,6 +625,42 @@ This is tracked here and in `esp_nand_ubi/README.md`; not scheduled into a phase
   3. Write: EC header (64B) + padding to page_size + VID header (64B) + padding to data_offset + LEB data
 - Output size: `ceil(len(input) / leb_size) × peb_size` bytes
 - Validation: read back output, parse headers, verify all CRCs
+
+**This is stage 2 of a two-stage pipeline — `esp_ubinize.py` does not build the filesystem
+image itself.** `input_image` must already exist as a raw filesystem blob sized to exactly fit
+one volume's LEB space, produced by a **separate, new stage-1 step**:
+
+- **Stage 1 (new, not `esp_ubinize.py`)**: invoke `mklittlefs` directly —
+  `mklittlefs -c <src_dir> -b <LEB_SIZE> -p <page_size> -s <leb_count × LEB_SIZE> <raw_image.bin>`
+  — to pack a local directory tree into a raw littlefs image exactly `leb_count × LEB_SIZE` bytes.
+  `mklittlefs` itself has **no concept of `esp_partition`**; ESP-IDF's own
+  `littlefs_create_partition_image` CMake helper (used by
+  [`examples/storage/littlefs`](https://github.com/espressif/esp-idf/tree/master/examples/storage/littlefs))
+  is just a thin wrapper that reads the project's partition table to derive `-b`/`-s` for a
+  fixed-offset NOR partition. UBI volumes have no partition-table entry and no fixed offset, so
+  the equivalent wrapper here computes `-b`/`-s` from LEB geometry instead — a small new CMake or
+  shell helper, not part of `esp_ubinize.py`'s own responsibility.
+- **Stage 2 (`esp_ubinize.py`, this task)**: takes that raw littlefs blob as `input_image` and
+  re-chunks it into PEB-shaped pieces with EC/VID headers, as speced above.
+
+**Where actual position-independence comes from**: not from the image file (which contains no
+physical addresses at all), but from Task 11's flasher — it walks *that specific chip's* good
+PEBs at flash time and writes the image's PEB-chunks into them in order, skipping whatever that
+chip's factory bad-block map happens to contain. The same `.ubi` file is valid across chips with
+completely different bad-block distributions because the mapping from image-chunk to physical
+PEB is decided at flash time, per chip, not baked into the file.
+
+**Design point to settle before implementing this task**: `leb_count` for a pre-built factory
+image must be chosen conservatively — below the worst-case usable-PEB count for the target chip
+model (accounting for the datasheet's *maximum* guaranteed factory-bad-block count, not the
+typical/best case actually seen on a bring-up unit), since the image's size is fixed at build
+time but a shipped chip might have more bad blocks than whatever chip this was built against.
+Needs a documented margin (Kconfig option or `esp_ubinize.py` flag) before this task lands.
+
+**Multi-volume extension** (only relevant once Task 14 exists): `esp_ubinize.py` gains a
+multi-volume mode baking the vtbl LEBs into the output alongside each volume's data section,
+taking a Linux-`ubinize.ini`-style config (`--vol-id`, `--vol-name`, per-volume input image path)
+instead of a single `input_image` argument.
 
 **Task 11: UBI-aware flasher extension**
 - Standalone Python script `tools/ubi_flash.py` (or `esptool` extension if it gains NAND support):
@@ -649,12 +689,55 @@ This is tracked here and in `esp_nand_ubi/README.md`; not scheduled into a phase
 - Falls back to full scan on CRC failure or absence
 
 **Task 14: Multi-volume support**
-- The API (`nand_ubi_attach` / `nand_ubi_open_volume`) already supports this at the call site — no API changes needed
-- Add `vol_id` filtering to the attach scan loop (Phase 1 accepts all `vol_id` values from VID headers but bins them all into the Phase 1 single-volume EBA; Phase 4 separates them)
-- Add per-volume EBA lookup: `nand_ubi_device_t` grows a `vol_count` field and a small array of `{vol_id, leb_count, eba_offset}` entries
-- Implement vtbl: layout volume `vol_id = 0x7FFFEFFF`, LEBs 0+1 (mirrored), contains `ubi_vtbl_record[128]`; load on attach, validate CRC per record
-- `nand_ubi_open_volume(vol_id=N)` looks up vtbl entry, returns BDL scoped to that volume's LEB range
-- `esp_ubinize.py` Phase 4 extension: `--vol-id`, `--vol-name`, multi-volume ini config (matches Linux `ubinize.ini` format)
+
+> **Recommended implementation order**: this task does not depend on Task 10 (`esp_ubinize.py`)
+> or Task 11 (flasher) at all — it's entirely about the device attaching, creating, and
+> exposing multiple logical volumes on flash it already owns; ubinize/flashing is about
+> pre-provisioning a blank chip from a host before first boot, a separate concern. Everything
+> below is host-testable via the existing `nand_linux_mmap_emul.h` harness with zero new
+> tooling: attach a blank chip, create two volumes, write distinct patterns to each, detach,
+> reattach (full rescan), confirm both volumes' vtbl entries/leb_counts/data survive the
+> round-trip, confirm volume A's writes never land on volume B's PEBs. Given that, **Task 14
+> should be implemented before Task 10**, not after — Task 10's eventual multi-volume extension
+> needs the vtbl format Task 14 establishes, and Task 14 needs nothing from Task 10.
+
+- The read path (`nand_ubi_open_volume()` on an existing vtbl) already supports this at the
+  call site — no API changes needed there. **Gap**: nothing currently lets anything *write* a
+  vtbl in the first place on a blank chip. Without `esp_ubinize.py` (Task 10) providing a
+  pre-built multi-volume image, Task 14 needs its own origination path, or it's untestable
+  until Task 10 exists — which would invert the recommended ordering above. New API:
+  - `nand_ubi_create_volume(ubi_dev, name, vol_type, leb_count, out_vol_id)` — reserves
+    `leb_count` LEBs from the shared free-PEB pool, assigns the next free `vol_id`, writes the
+    vtbl record (+ mirror on the second vtbl LEB), updates the in-RAM
+    `{vol_id, leb_count, eba_offset}` table. This is the explicit, named-volume equivalent of
+    what `nand_ubi_get_blockdev()` already does implicitly for vol_id=0 (lazy on-flash
+    formatting on first write).
+  - Free-pool accounting: `nand_ubi_create_volume()` must check
+    `sum(existing leb_counts) + requested leb_count + reserved_pebs + 2 (vtbl LEBs) <= peb_count`,
+    returning `ESP_ERR_NO_MEM`/`ESP_ERR_INVALID_SIZE` otherwise. Phase 1 never needed this check
+    since the single volume implicitly claimed "whatever's left."
+- Add `vol_id` filtering to the attach scan loop (Phase 1 accepts all `vol_id` values from VID
+  headers but bins them all into the Phase 1 single-volume EBA; Phase 4 separates them)
+- **vtbl on-flash format** (new struct in `nand_ubi_media.h`): `ubi_vtbl_record` —
+  `reserved_pebs`, `alignment`, `vol_type` (dynamic/static), `name_len`, `name[]`, `crc`,
+  matching Linux UBI's vtbl record layout byte-for-byte (keeps the compatibility promise from
+  the Resolved Design Decisions table above). Layout volume `vol_id = 0x7FFFEFFF`, LEBs 0+1
+  (mirrored for reliability, matching Linux UBI convention), `ubi_vtbl_record[128]`; parsed on
+  attach *before* the main PEB scan (so each volume's `leb_count` is known ahead of time rather
+  than inferred from `max_lnum` per volume, as Phase 1 does for the single implicit volume);
+  validate CRC per record, both mirrors checked, newer/valid one wins on mismatch.
+- **EBA restructuring**: Phase 1's `eba[]`/`peb_state[]` are flat, single-volume-sized arrays.
+  Chosen approach: one shared global array (not per-volume separate allocations, to avoid RAM
+  fragmentation) with the `{vol_id, leb_count, eba_offset}` index table slicing into it — the
+  attach scan routes each PEB into the correct volume's EBA slice based on the VID header's
+  actual `vol_id` field (previously ignored/asserted-zero in Phase 1).
+- Add per-volume EBA lookup: `nand_ubi_device_t` grows a `vol_count` field and the
+  `{vol_id, leb_count, eba_offset}` array described above
+- `nand_ubi_open_volume(vol_id=N)` looks up the vtbl entry, returns a BDL scoped to that
+  volume's LEB range
+- `esp_ubinize.py` Phase 3 multi-volume extension: see Task 10 above (`--vol-id`, `--vol-name`,
+  multi-volume ini config matching Linux `ubinize.ini` format) — depends on this task's vtbl
+  format, not the other way around
 
 ---
 
