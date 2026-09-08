@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -68,6 +69,21 @@ inline void fill_vid_hdr(nand_ubi_vid_hdr_t *h, uint32_t vol_id, uint32_t lnum, 
     h->hdr_crc = to_be32(nand_ubi_crc32(h, UBI_VID_HDR_SIZE_CRC));
 }
 
+inline void fill_vtbl_record(nand_ubi_vtbl_record_t *record, const char *name,
+                             uint8_t vol_type, uint32_t reserved_pebs)
+{
+    memset(record, 0, sizeof(*record));
+    size_t name_len = name == nullptr ? 0 : strlen(name);
+    record->reserved_pebs = to_be32(reserved_pebs);
+    record->alignment = to_be32(1);
+    record->vol_type = vol_type;
+    record->name_len = __builtin_bswap16((uint16_t)name_len);
+    if (name_len > 0) {
+        memcpy(record->name, name, name_len);
+    }
+    record->crc = to_be32(nand_ubi_crc32(record, UBI_VTBL_RECORD_SIZE_CRC));
+}
+
 /* Fresh emulated NAND backed by its own temp file (flash_file_name=""), so parallel
  * TEST_CASEs never share storage. Geometry matches the sibling spi_nand_flash host
  * tests: 2 KiB pages, 64 pages/block -> 128 KiB blocks, matching the plan's worked example. */
@@ -87,7 +103,8 @@ inline void format_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum,
                        uint32_t page_size, uint32_t peb_size,
                        uint32_t image_seq, uint32_t vid_hdr_offset, uint32_t data_offset,
                        uint32_t lnum, uint64_t sqnum,
-                       uint8_t copy_flag = 0, uint32_t data_size = 0, uint32_t data_crc = 0)
+                       uint8_t copy_flag = 0, uint32_t data_size = 0, uint32_t data_crc = 0,
+                       uint32_t vol_id = 0)
 {
     REQUIRE(nand_bdl->ops->erase(nand_bdl, (uint64_t)pnum * peb_size, peb_size) == ESP_OK);
 
@@ -99,9 +116,46 @@ inline void format_peb(esp_blockdev_handle_t nand_bdl, uint32_t pnum,
 
     std::fill(page.begin(), page.end(), 0xFFu);
     nand_ubi_vid_hdr_t vid {};
-    fill_vid_hdr(&vid, 0, lnum, sqnum, copy_flag, data_size, data_crc);
+    fill_vid_hdr(&vid, vol_id, lnum, sqnum, copy_flag, data_size, data_crc);
     memcpy(page.data(), &vid, sizeof(vid));
     REQUIRE(nand_bdl->ops->write(nand_bdl, page.data(), (uint64_t)pnum * peb_size + vid_hdr_offset, page_size) == ESP_OK);
+}
+
+inline void format_volume_table(esp_blockdev_handle_t nand_bdl, uint32_t page_size,
+                                uint32_t peb_size, uint32_t image_seq,
+                                uint32_t vid_hdr_offset, uint32_t data_offset,
+                                const std::vector<uint32_t> &leb_counts)
+{
+    uint32_t leb_size = peb_size - data_offset;
+    uint32_t slots = std::min<uint32_t>(UBI_MAX_VOLUMES,
+                                        leb_size / sizeof(nand_ubi_vtbl_record_t));
+    uint32_t table_bytes = slots * sizeof(nand_ubi_vtbl_record_t);
+    uint32_t write_len = ((table_bytes + page_size - 1) / page_size) * page_size;
+    std::vector<uint8_t> table(write_len, 0xFF);
+    auto *records = reinterpret_cast<nand_ubi_vtbl_record_t *>(table.data());
+    for (uint32_t i = 0; i < leb_counts.size(); i++) {
+        fill_vtbl_record(&records[i], nullptr, UBI_VID_DYNAMIC, leb_counts[i]);
+    }
+
+    for (uint32_t pnum = 0; pnum < UBI_LAYOUT_VOLUME_EBS; pnum++) {
+        REQUIRE(nand_bdl->ops->erase(nand_bdl, (uint64_t)pnum * peb_size, peb_size) == ESP_OK);
+        std::vector<uint8_t> page(page_size, 0xFF);
+        nand_ubi_ec_hdr_t ec {};
+        fill_ec_hdr(&ec, image_seq, vid_hdr_offset, data_offset);
+        memcpy(page.data(), &ec, sizeof(ec));
+        REQUIRE(nand_bdl->ops->write(nand_bdl, page.data(), (uint64_t)pnum * peb_size, page_size) == ESP_OK);
+
+        std::fill(page.begin(), page.end(), 0xFFu);
+        nand_ubi_vid_hdr_t vid {};
+        fill_vid_hdr(&vid, UBI_LAYOUT_VOL_ID, pnum, pnum + 1);
+        vid.compat = UBI_COMPAT_REJECT;
+        vid.hdr_crc = to_be32(nand_ubi_crc32(&vid, UBI_VID_HDR_SIZE_CRC));
+        memcpy(page.data(), &vid, sizeof(vid));
+        REQUIRE(nand_bdl->ops->write(nand_bdl, page.data(),
+                                     (uint64_t)pnum * peb_size + vid_hdr_offset, page_size) == ESP_OK);
+        REQUIRE(nand_bdl->ops->write(nand_bdl, table.data(),
+                                     (uint64_t)pnum * peb_size + data_offset, write_len) == ESP_OK);
+    }
 }
 
 /* Writes LEB data starting at a PEB's data_offset (padded to a page-size multiple,

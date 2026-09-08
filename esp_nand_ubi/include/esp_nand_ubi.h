@@ -30,6 +30,7 @@
 #include <stdbool.h>
 #include "esp_err.h"
 #include "esp_blockdev.h"
+#include "esp_nand_ubi_media.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,16 +109,32 @@ esp_err_t nand_ubi_detach(nand_ubi_device_t *ubi_dev);
 /* ── volume-level ──────────────────────────────────────────────────────── */
 
 /**
+ * @brief Create and persist a volume on an attached UBI device.
+ *
+ * @param[in]  ubi_dev     Device handle from @c nand_ubi_attach().
+ * @param[in]  name        Optional NUL-terminated name, up to @c UBI_VOL_NAME_MAX bytes.
+ * @param[in]  vol_type    @c UBI_VID_DYNAMIC or @c UBI_VID_STATIC.
+ * @param[in]  leb_count   Number of logical erase blocks to reserve.
+ * @param[out] out_vol_id  Assigned monotonically increasing volume ID.
+ * @return ESP_OK, ESP_ERR_INVALID_ARG, ESP_ERR_INVALID_SIZE, ESP_ERR_NO_MEM,
+ *         ESP_ERR_NOT_SUPPORTED for a read-only attach, or an I/O error.
+ */
+esp_err_t nand_ubi_create_volume(nand_ubi_device_t *ubi_dev,
+                                 const char *name,
+                                 uint8_t vol_type,
+                                 uint32_t leb_count,
+                                 uint32_t *out_vol_id);
+
+/**
  * @brief Open one volume and return a BDL handle scoped to it.
  *
- * Phase 1: only @p vol_id = 0 is valid (whole chip = one volume, no volume table).
- * Phase 3: any @p vol_id present in the volume table.
+ * Any @p vol_id present in the on-flash volume table may be opened.
  *
  * The returned handle must be released via @c vol_bdl->ops->release(vol_bdl)
  * before @c nand_ubi_detach() is called.
  *
  * @param[in]  ubi_dev      Device handle from @c nand_ubi_attach().
- * @param[in]  vol_id       Volume ID (0 in Phase 1).
+ * @param[in]  vol_id       Volume ID stored in the volume table.
  * @param[out] out_vol_bdl  Output: BDL handle for this volume.
  * @return
  *      - ESP_OK on success
@@ -132,9 +149,10 @@ esp_err_t nand_ubi_open_volume(nand_ubi_device_t     *ubi_dev,
 /* ── convenience wrapper (single-volume common case) ───────────────────── */
 
 /**
- * @brief attach + open_volume(0) in one call.
+ * @brief Attach and open the default volume in one call.
  *
- * Equivalent to @c nand_ubi_attach() followed by @c nand_ubi_open_volume(dev, 0, ...).
+ * If the device has no volumes, creates volume 0 using all capacity not reserved
+ * for the layout volume or bad-block pool. Otherwise opens the lowest volume ID.
  * The @ref nand_ubi_device_t lifecycle is hidden inside the returned BDL; calling
  * @c vol_bdl->ops->release(vol_bdl) also detaches the device.
  *

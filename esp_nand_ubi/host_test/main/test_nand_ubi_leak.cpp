@@ -67,8 +67,10 @@ TEST_CASE("leak: repeated attach/detach on a formatted chip (with a bad block) f
 
         uint32_t bad_pnum = 2;
         REQUIRE(nand_bdl->ops->ioctl(nand_bdl, ESP_BLOCKDEV_CMD_MARK_BAD_BLOCK, &bad_pnum) == ESP_OK);
-        format_peb(nand_bdl, 0, page_size, peb_size, kImageSeq, vid_hdr_offset, data_offset, 0, 1);
-        format_peb(nand_bdl, 1, page_size, peb_size, kImageSeq, vid_hdr_offset, data_offset, 1, 2);
+        format_volume_table(nand_bdl, page_size, peb_size, kImageSeq,
+                            vid_hdr_offset, data_offset, {2});
+        format_peb(nand_bdl, 3, page_size, peb_size, kImageSeq, vid_hdr_offset, data_offset, 0, 1);
+        format_peb(nand_bdl, 4, page_size, peb_size, kImageSeq, vid_hdr_offset, data_offset, 1, 2);
 
         nand_ubi_device_t *dev = nullptr;
         REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev) == ESP_OK);
@@ -83,10 +85,12 @@ TEST_CASE("leak: repeated open_volume/release on the same device frees everythin
     esp_blockdev_handle_t nand_bdl = make_test_nand(kFileBytes);
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev) == ESP_OK);
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev, nullptr, UBI_VID_DYNAMIC, 1, &vol_id) == ESP_OK);
 
     for (int i = 0; i < kIterations; i++) {
         esp_blockdev_handle_t vol_bdl = nullptr;
-        REQUIRE(nand_ubi_open_volume(dev, 0, &vol_bdl) == ESP_OK);
+        REQUIRE(nand_ubi_open_volume(dev, vol_id, &vol_bdl) == ESP_OK);
         REQUIRE(vol_bdl->ops->release(vol_bdl) == ESP_OK);
     }
 
@@ -112,8 +116,14 @@ TEST_CASE("leak: write/erase cycles across every lnum free every allocated PEB h
     esp_blockdev_handle_t nand_bdl = make_test_nand(kFileBytes);
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev) == ESP_OK);
+    uint32_t peb_count = (uint32_t)(nand_bdl->geometry.disk_size / nand_bdl->geometry.erase_size);
+    nand_ubi_config_t cfg = NAND_UBI_CONFIG_DEFAULT();
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev, nullptr, UBI_VID_DYNAMIC,
+                                   peb_count - cfg.reserved_pebs - UBI_LAYOUT_VOLUME_EBS,
+                                   &vol_id) == ESP_OK);
     esp_blockdev_handle_t vol_bdl = nullptr;
-    REQUIRE(nand_ubi_open_volume(dev, 0, &vol_bdl) == ESP_OK);
+    REQUIRE(nand_ubi_open_volume(dev, vol_id, &vol_bdl) == ESP_OK);
 
     uint32_t leb_count = (uint32_t)(vol_bdl->geometry.disk_size / dev->leb_size);
     std::vector<uint8_t> buf(dev->page_size, 0x5A);

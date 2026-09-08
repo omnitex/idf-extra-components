@@ -20,7 +20,7 @@ SPI NAND hardware
 nand_flash_get_blockdev(&spi_cfg, &nand_bdl)        [spi_nand_flash]
     |
 nand_ubi_attach(nand_bdl, &cfg, &ubi_dev)           [esp_nand_ubi — scan once]
-nand_ubi_open_volume(ubi_dev, 0, &vol_bdl)          [whole chip = one volume]
+nand_ubi_open_volume(ubi_dev, vol_id, &vol_bdl)     [one BDL per created volume]
     |   geometry: disk_size = leb_count x LEB_SIZE, erase_size = LEB_SIZE
     |   bad blocks invisible; no physical addresses above this point
 LittleFS / FatFS via vol_bdl
@@ -39,7 +39,9 @@ LittleFS / FatFS via vol_bdl
 
 ## Usage
 
-Single-volume common case (whole NAND is one filesystem):
+Single-volume common case (whole NAND is one filesystem — `nand_ubi_get_blockdev()`
+auto-creates a volume spanning full available capacity the first time it's called on
+a device with no volumes yet, so this is a one-shot call on a factory-blank chip):
 
 ```c
 #include "esp_nand_ubi.h"
@@ -58,18 +60,25 @@ vol_bdl->ops->release(vol_bdl);   /* also detaches the UBI device */
 nand_bdl->ops->release(nand_bdl);
 ```
 
-Multi-step (explicit device and volume lifecycle):
+Multi-volume (explicit device lifecycle, one or more named volumes):
 
 ```c
 nand_ubi_device_t *ubi_dev = NULL;
 ESP_ERROR_CHECK(nand_ubi_attach(nand_bdl, &cfg, &ubi_dev));
 
-esp_blockdev_handle_t vol_bdl = NULL;
-ESP_ERROR_CHECK(nand_ubi_open_volume(ubi_dev, 0, &vol_bdl));
+/* Only needed once per volume, ever: the volume table (vtbl) persists on flash,
+ * so a later nand_ubi_attach() on the same chip already sees it — no need to
+ * re-create volumes on every boot. */
+uint32_t app_vol_id = 0, data_vol_id = 0;
+ESP_ERROR_CHECK(nand_ubi_create_volume(ubi_dev, "app", UBI_VID_DYNAMIC, 64, &app_vol_id));
+ESP_ERROR_CHECK(nand_ubi_create_volume(ubi_dev, "data", UBI_VID_DYNAMIC, 200, &data_vol_id));
 
-/* ... use vol_bdl ... */
+esp_blockdev_handle_t app_vol_bdl = NULL;
+ESP_ERROR_CHECK(nand_ubi_open_volume(ubi_dev, app_vol_id, &app_vol_bdl));
 
-vol_bdl->ops->release(vol_bdl);
+/* ... use app_vol_bdl ... */
+
+app_vol_bdl->ops->release(app_vol_bdl);
 ESP_ERROR_CHECK(nand_ubi_detach(ubi_dev));
 nand_bdl->ops->release(nand_bdl);
 ```
@@ -81,12 +90,20 @@ byte-compatible with Linux UBI EC/VID headers:
 
 ```
 PEB offset 0            EC header  (magic "UBI#")  image_seq, ec, offsets, CRC
-vid_hdr_offset          VID header (magic "UBI!")  vol_id=0, lnum, sqnum, CRC
+vid_hdr_offset          VID header (magic "UBI!")  vol_id, lnum, sqnum, CRC
 data_offset             LEB data   (LEB_SIZE = PEB_SIZE - data_offset)
 ```
 
+PEBs 0 and 1 are always reserved for two mirrored copies of the volume table
+(`vol_id = 0x7FFFEFFF`, Linux UBI's `UBI_LAYOUT_VOLUME_ID`), holding one
+172-byte `ubi_vtbl_record` per created volume (name, type, LEB count, CRC) —
+also byte-compatible with Linux UBI's layout-volume format. Every other PEB's
+VID header carries the real `vol_id` it belongs to; `nand_ubi_attach()` parses
+the volume table first, then routes each subsequent PEB into the correct
+volume's slice of the shared LEB->PEB table.
+
 With `data_offset = 2 x page_size`, images built with `ubinize` from `mtd-utils`
-are compatible with this layer. The `esp_ubinize.py` host tool (Phase 2) is a simpler
+are compatible with this layer. The `esp_ubinize.py` host tool (Phase 3) is a simpler
 alternative for users without `mtd-utils`.
 
 ## Examples
@@ -114,5 +131,7 @@ See each example's `README.md` for wiring and expected console output.
 ## Status
 
 Phase 1 (minimum viable layer): attach scan, EBA table, per-volume read/write/erase,
-passive bad-block hiding. Phase 2 (LittleFS-on-UBI hardware PoC) in progress. Real
-wear-leveling, fastmap, and multi-volume support are planned for later phases.
+passive bad-block hiding. Phase 2 (LittleFS-on-UBI hardware PoC): example in progress.
+Multi-volume support (`nand_ubi_create_volume()`, on-flash volume table) is implemented
+and host-tested. Real wear-leveling and fastmap are planned for later phases; see
+`docs/plans/2026-07-09-esp-nand-ubi-mvp.md` for the full phase breakdown.

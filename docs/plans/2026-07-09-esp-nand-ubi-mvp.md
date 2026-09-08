@@ -688,7 +688,7 @@ instead of a single `input_image` argument.
 - If fastmap CRC valid at attach: skip full scan, use fastmap directly
 - Falls back to full scan on CRC failure or absence
 
-**Task 14: Multi-volume support**
+**Task 14: Multi-volume support** ✅ DONE
 
 > **Recommended implementation order**: this task does not depend on Task 10 (`esp_ubinize.py`)
 > or Task 11 (flasher) at all — it's entirely about the device attaching, creating, and
@@ -726,6 +726,8 @@ instead of a single `input_image` argument.
   attach *before* the main PEB scan (so each volume's `leb_count` is known ahead of time rather
   than inferred from `max_lnum` per volume, as Phase 1 does for the single implicit volume);
   validate CRC per record, both mirrors checked, newer/valid one wins on mismatch.
+  The implementation stores `min(128, floor(leb_size / 172))` records in each mirror;
+  this is 128 records for the component's standard 126,976-byte LEB geometry.
 - **EBA restructuring**: Phase 1's `eba[]`/`peb_state[]` are flat, single-volume-sized arrays.
   Chosen approach: one shared global array (not per-volume separate allocations, to avoid RAM
   fragmentation) with the `{vol_id, leb_count, eba_offset}` index table slicing into it — the
@@ -738,6 +740,23 @@ instead of a single `input_image` argument.
 - `esp_ubinize.py` Phase 3 multi-volume extension: see Task 10 above (`--vol-id`, `--vol-name`,
   multi-volume ini config matching Linux `ubinize.ini` format) — depends on this task's vtbl
   format, not the other way around
+- **Design note**: the layout (vtbl) volume is stored at fixed PEBs 0 and 1 (not dynamically
+  discovered via a scan), a simpler variant than Linux UBI's approach of finding the layout
+  volume anywhere by scanning for `vol_id`. This is a deliberate scope reduction for the PoC,
+  not yet wear-leveled independently of the rest of the free-PEB pool — revisit alongside
+  Task 12 (background WL) if PEBs 0/1 need to move over the component's lifetime.
+- **Backward compatibility**: `nand_ubi_open_volume()` and `nand_ubi_get_blockdev()` now always
+  require the vtbl (no more Phase 1 implicit-vol_id-0-without-a-vtbl fallback) — closer to real
+  Linux UBI, which also has no implicit volume. `nand_ubi_get_blockdev()` auto-creates volume 0
+  spanning full available capacity on a device with zero volumes, so the single-volume
+  convenience path still works unchanged from the caller's perspective. Existing Phase 1 host
+  tests that pre-formatted raw PEBs without a vtbl were updated to call the new
+  `format_volume_table()` test helper (or `nand_ubi_create_volume()`) first; see updated
+  comments in `test_nand_ubi_volume.cpp`/`test_nand_ubi_rw.cpp` for the specific assumptions
+  that changed and why.
+- **Verified**: `idf.py --preview set-target linux && idf.py build` succeeds cleanly; the full
+  host-test suite (including the new `test_nand_ubi_multivolume.cpp`, and updated Phase 1 tests)
+  passes under AddressSanitizer/LeakSanitizer — 1729 assertions across 64 test cases, 0 failures.
 
 ---
 

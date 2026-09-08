@@ -43,9 +43,11 @@ test_geometry make_geometry()
 TEST_CASE("attach: format + attach produces a correct EBA table", "[nand_ubi][attach]")
 {
     test_geometry g = make_geometry();
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {3});
 
     for (uint32_t pnum = 0; pnum < 3; pnum++) {
-        format_peb(g.nand_bdl, pnum, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+        format_peb(g.nand_bdl, pnum + 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                    /*lnum=*/pnum, /*sqnum=*/pnum + 1);
     }
 
@@ -63,8 +65,8 @@ TEST_CASE("attach: format + attach produces a correct EBA table", "[nand_ubi][at
     REQUIRE(dev->global_sqnum == 3);
 
     for (uint32_t lnum = 0; lnum < 3; lnum++) {
-        REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, lnum) == (int32_t)lnum);
-        REQUIRE(peb_state_of(dev->eba, lnum) == UBI_PEB_USED);
+        REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, lnum) == (int32_t)lnum + 2);
+        REQUIRE(peb_state_of(dev->eba, lnum + 2) == UBI_PEB_USED);
     }
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
@@ -96,8 +98,10 @@ TEST_CASE("attach: factory bad blocks are excluded from the EBA", "[nand_ubi][at
 
     /* Format three good PEBs around the bad one; LEB numbering must stay contiguous
      * and none of them may resolve to the bad physical block. */
-    format_peb(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 0, 1);
-    format_peb(g.nand_bdl, 1, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 1, 2);
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {3});
+    format_peb(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 0, 1);
+    format_peb(g.nand_bdl, 3, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 1, 2);
     format_peb(g.nand_bdl, 6, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 2, 3);
 
     nand_ubi_device_t *dev = nullptr;
@@ -109,8 +113,8 @@ TEST_CASE("attach: factory bad blocks are excluded from the EBA", "[nand_ubi][at
         int32_t pnum = nand_ubi_eba_get_pnum(&dev->eba, lnum);
         REQUIRE(pnum != (int32_t)bad_pnum);
     }
-    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 0);
-    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 1) == 1);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 2);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 1) == 3);
     REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 2) == 6);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
@@ -121,14 +125,14 @@ TEST_CASE("attach: corrupt EC header is scheduled for erase, not treated as free
 {
     test_geometry g = make_geometry();
 
-    REQUIRE(g.nand_bdl->ops->erase(g.nand_bdl, 0, g.peb_size) == ESP_OK);
+    REQUIRE(g.nand_bdl->ops->erase(g.nand_bdl, (uint64_t)2 * g.peb_size, g.peb_size) == ESP_OK);
     std::vector<uint8_t> garbage(g.page_size, 0xA5);
-    REQUIRE(g.nand_bdl->ops->write(g.nand_bdl, garbage.data(), 0, g.page_size) == ESP_OK);
+    REQUIRE(g.nand_bdl->ops->write(g.nand_bdl, garbage.data(), (uint64_t)2 * g.peb_size, g.page_size) == ESP_OK);
 
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
     REQUIRE(dev->leb_count == 0);
-    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_ERASE_PENDING);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);
@@ -144,13 +148,13 @@ TEST_CASE("attach: valid EC header with blank VID header is scheduled for erase,
      * an already-written page. */
     test_geometry g = make_geometry();
 
-    format_ec_hdr_only(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset);
+    format_ec_hdr_only(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset);
 
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
     REQUIRE(dev->leb_count == 0);
-    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_ERASE_PENDING);
-    REQUIRE(nand_ubi_eba_find_free_peb(&dev->eba, 1) == -1);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(nand_ubi_eba_find_free_peb(&dev->eba, 3) == -1);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);
@@ -159,11 +163,13 @@ TEST_CASE("attach: valid EC header with blank VID header is scheduled for erase,
 TEST_CASE("attach: duplicate PEBs resolved by higher sqnum, loser scheduled for erase", "[nand_ubi][attach]")
 {
     test_geometry g = make_geometry();
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {1});
 
     /* Simulated interrupted power-cut mid-write: two PEBs both claim lnum=0. */
-    format_peb(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/5);
-    format_peb(g.nand_bdl, 1, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 3, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/9);
 
     nand_ubi_device_t *dev = nullptr;
@@ -171,9 +177,9 @@ TEST_CASE("attach: duplicate PEBs resolved by higher sqnum, loser scheduled for 
 
     REQUIRE(dev->leb_count == 1);
     REQUIRE(dev->global_sqnum == 9);
-    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 1);
-    REQUIRE(peb_state_of(dev->eba, 1) == UBI_PEB_USED);
-    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 3);
+    REQUIRE(peb_state_of(dev->eba, 3) == UBI_PEB_USED);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_ERASE_PENDING);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);
@@ -182,22 +188,24 @@ TEST_CASE("attach: duplicate PEBs resolved by higher sqnum, loser scheduled for 
 TEST_CASE("attach: copy_flag with matching data_crc accepts the newer copy", "[nand_ubi][attach]")
 {
     test_geometry g = make_geometry();
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {1});
 
     std::vector<uint8_t> leb_data(64, 0x42);
     uint32_t data_crc = nand_ubi_crc32(leb_data.data(), (uint32_t)leb_data.size());
 
-    format_peb(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/5);
-    format_peb(g.nand_bdl, 1, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 3, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/9, /*copy_flag=*/1, (uint32_t)leb_data.size(), data_crc);
-    write_leb_data(g.nand_bdl, 1, g.peb_size, g.data_offset, g.page_size, leb_data.data(), (uint32_t)leb_data.size());
+    write_leb_data(g.nand_bdl, 3, g.peb_size, g.data_offset, g.page_size, leb_data.data(), (uint32_t)leb_data.size());
 
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
 
-    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 1);
-    REQUIRE(peb_state_of(dev->eba, 1) == UBI_PEB_USED);
-    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 3);
+    REQUIRE(peb_state_of(dev->eba, 3) == UBI_PEB_USED);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_ERASE_PENDING);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);
@@ -206,23 +214,25 @@ TEST_CASE("attach: copy_flag with matching data_crc accepts the newer copy", "[n
 TEST_CASE("attach: copy_flag with mismatched data_crc falls back to the older copy", "[nand_ubi][attach]")
 {
     test_geometry g = make_geometry();
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {1});
 
     std::vector<uint8_t> leb_data(64, 0x42);
     uint32_t bogus_crc = nand_ubi_crc32(leb_data.data(), (uint32_t)leb_data.size()) ^ 0xFFFFFFFFu;
 
-    format_peb(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/5);
-    format_peb(g.nand_bdl, 1, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+    format_peb(g.nand_bdl, 3, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                /*lnum=*/0, /*sqnum=*/9, /*copy_flag=*/1, (uint32_t)leb_data.size(), bogus_crc);
-    write_leb_data(g.nand_bdl, 1, g.peb_size, g.data_offset, g.page_size, leb_data.data(), (uint32_t)leb_data.size());
+    write_leb_data(g.nand_bdl, 3, g.peb_size, g.data_offset, g.page_size, leb_data.data(), (uint32_t)leb_data.size());
 
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
 
     /* pnum 1's data_crc doesn't match -> pnum 0 (the older, valid copy) must win. */
-    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 0);
-    REQUIRE(peb_state_of(dev->eba, 0) == UBI_PEB_USED);
-    REQUIRE(peb_state_of(dev->eba, 1) == UBI_PEB_ERASE_PENDING);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev->eba, 0) == 2);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_USED);
+    REQUIRE(peb_state_of(dev->eba, 3) == UBI_PEB_ERASE_PENDING);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);

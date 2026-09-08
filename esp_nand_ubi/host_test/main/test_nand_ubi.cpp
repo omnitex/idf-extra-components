@@ -28,6 +28,7 @@ TEST_CASE("on-flash header structs have the exact UBI layout", "[nand_ubi][media
 {
     REQUIRE(sizeof(nand_ubi_ec_hdr_t) == 64);
     REQUIRE(sizeof(nand_ubi_vid_hdr_t) == 64);
+    REQUIRE(sizeof(nand_ubi_vtbl_record_t) == 172);
     REQUIRE(offsetof(nand_ubi_ec_hdr_t, ec) == 8);
     REQUIRE(offsetof(nand_ubi_ec_hdr_t, image_seq) == 24);
     REQUIRE(offsetof(nand_ubi_ec_hdr_t, hdr_crc) == 60);
@@ -35,6 +36,11 @@ TEST_CASE("on-flash header structs have the exact UBI layout", "[nand_ubi][media
     REQUIRE(offsetof(nand_ubi_vid_hdr_t, lnum) == 12);
     REQUIRE(offsetof(nand_ubi_vid_hdr_t, sqnum) == 40);
     REQUIRE(offsetof(nand_ubi_vid_hdr_t, hdr_crc) == 60);
+    REQUIRE(offsetof(nand_ubi_vtbl_record_t, vol_type) == 12);
+    REQUIRE(offsetof(nand_ubi_vtbl_record_t, name_len) == 14);
+    REQUIRE(offsetof(nand_ubi_vtbl_record_t, name) == 16);
+    REQUIRE(offsetof(nand_ubi_vtbl_record_t, flags) == 144);
+    REQUIRE(offsetof(nand_ubi_vtbl_record_t, crc) == 168);
 }
 
 TEST_CASE("nand_ubi_crc32 matches the Linux UBI CRC", "[nand_ubi][crc]")
@@ -105,6 +111,23 @@ TEST_CASE("VID header with corrupted CRC is rejected", "[nand_ubi][validate]")
     fill_vid_hdr(&h, 0, 7, 42);
     h.lnum = to_be32(8);
     REQUIRE_FALSE(nand_ubi_vid_hdr_valid(&h));
+}
+
+TEST_CASE("valid volume-table record is accepted", "[nand_ubi][validate]")
+{
+    nand_ubi_vtbl_record_t record;
+    fill_vtbl_record(&record, "data", UBI_VID_DYNAMIC, 7);
+    REQUIRE(nand_ubi_vtbl_record_valid(&record));
+
+    record.reserved_pebs = to_be32(8);
+    REQUIRE_FALSE(nand_ubi_vtbl_record_valid(&record));
+}
+
+TEST_CASE("CRC-valid empty Linux volume-table record is accepted", "[nand_ubi][validate]")
+{
+    nand_ubi_vtbl_record_t record {};
+    record.crc = to_be32(nand_ubi_crc32(&record, UBI_VTBL_RECORD_SIZE_CRC));
+    REQUIRE(nand_ubi_vtbl_record_valid(&record));
 }
 
 TEST_CASE("EBA alloc and free", "[nand_ubi][eba]")

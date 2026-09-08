@@ -42,8 +42,10 @@ test_geometry make_geometry()
  * primary fixture. Shared here so volume-open tests don't need to re-derive it. */
 nand_ubi_device_t *attach_with_3_lebs(const test_geometry &g)
 {
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {3});
     for (uint32_t pnum = 0; pnum < 3; pnum++) {
-        format_peb(g.nand_bdl, pnum, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
+        format_peb(g.nand_bdl, pnum + 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
                    /*lnum=*/pnum, /*sqnum=*/pnum + 1);
     }
     nand_ubi_device_t *dev = nullptr;
@@ -53,7 +55,7 @@ nand_ubi_device_t *attach_with_3_lebs(const test_geometry &g)
 
 } // namespace
 
-TEST_CASE("open_volume: vol_id 0 geometry matches leb_capacity/leb_size", "[nand_ubi][volume]")
+TEST_CASE("open_volume: vol_id 0 geometry matches its vtbl LEB count", "[nand_ubi][volume]")
 {
     test_geometry g = make_geometry();
     nand_ubi_device_t *dev = attach_with_3_lebs(g);
@@ -62,10 +64,9 @@ TEST_CASE("open_volume: vol_id 0 geometry matches leb_capacity/leb_size", "[nand
     REQUIRE(nand_ubi_open_volume(dev, 0, &vol_bdl) == ESP_OK);
     REQUIRE(vol_bdl != nullptr);
 
-    /* disk_size is bounded by capacity (peb_count - reserved_pebs), not the scan-derived
-     * leb_count: a blank chip must still expose its full writable space (see Task 6). */
-    REQUIRE(vol_bdl->geometry.disk_size == (uint64_t)dev->leb_capacity * dev->leb_size);
-    REQUIRE(dev->leb_capacity > dev->leb_count);
+    /* Task 14 replaces Phase 1's implicit whole-device geometry with the explicit
+     * LEB count persisted in the volume table. */
+    REQUIRE(vol_bdl->geometry.disk_size == 3u * dev->leb_size);
     REQUIRE(vol_bdl->geometry.read_size == g.nand_bdl->geometry.read_size);
     REQUIRE(vol_bdl->geometry.write_size == g.nand_bdl->geometry.write_size);
     REQUIRE(vol_bdl->geometry.erase_size == dev->leb_size);
@@ -78,7 +79,9 @@ TEST_CASE("open_volume: vol_id 0 geometry matches leb_capacity/leb_size", "[nand
 TEST_CASE("open_volume: device_flags propagate physical properties, read_only from config", "[nand_ubi][volume]")
 {
     test_geometry g = make_geometry();
-    format_peb(g.nand_bdl, 0, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 0, 1);
+    format_volume_table(g.nand_bdl, g.page_size, g.peb_size, kImageSeq,
+                        g.vid_hdr_offset, g.data_offset, {1});
+    format_peb(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset, 0, 1);
 
     nand_ubi_config_t cfg = NAND_UBI_CONFIG_DEFAULT();
     cfg.read_only = true;
@@ -97,7 +100,7 @@ TEST_CASE("open_volume: device_flags propagate physical properties, read_only fr
     g.nand_bdl->ops->release(g.nand_bdl);
 }
 
-TEST_CASE("open_volume: vol_id != 0 returns ESP_ERR_NOT_FOUND in Phase 1", "[nand_ubi][volume]")
+TEST_CASE("open_volume: absent vol_id returns ESP_ERR_NOT_FOUND", "[nand_ubi][volume]")
 {
     test_geometry g = make_geometry();
     nand_ubi_device_t *dev = attach_with_3_lebs(g);
@@ -165,9 +168,11 @@ TEST_CASE("volume ioctl passes through to the raw NAND BDL", "[nand_ubi][volume]
 
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev, "ioctl", UBI_VID_DYNAMIC, 1, &vol_id) == ESP_OK);
 
     esp_blockdev_handle_t vol_bdl = nullptr;
-    REQUIRE(nand_ubi_open_volume(dev, 0, &vol_bdl) == ESP_OK);
+    REQUIRE(nand_ubi_open_volume(dev, vol_id, &vol_bdl) == ESP_OK);
 
     esp_blockdev_cmd_arg_status_t arg = { .num = bad_pnum, .status = false };
     REQUIRE(vol_bdl->ops->ioctl(vol_bdl, ESP_BLOCKDEV_CMD_IS_BAD_BLOCK, &arg) == ESP_OK);
@@ -195,10 +200,6 @@ TEST_CASE("volume sync passes through to the raw NAND BDL", "[nand_ubi][volume]"
 TEST_CASE("get_blockdev: attach + open_volume(0) in one call", "[nand_ubi][volume]")
 {
     test_geometry g = make_geometry();
-    for (uint32_t pnum = 0; pnum < 2; pnum++) {
-        format_peb(g.nand_bdl, pnum, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset,
-                   pnum, pnum + 1);
-    }
 
     nand_ubi_config_t cfg = NAND_UBI_CONFIG_DEFAULT();
     esp_blockdev_handle_t vol_bdl = nullptr;
@@ -206,7 +207,7 @@ TEST_CASE("get_blockdev: attach + open_volume(0) in one call", "[nand_ubi][volum
     REQUIRE(vol_bdl != nullptr);
 
     uint32_t peb_count = (uint32_t)(g.nand_bdl->geometry.disk_size / g.peb_size);
-    uint32_t expected_capacity = peb_count - cfg.reserved_pebs;
+    uint32_t expected_capacity = peb_count - cfg.reserved_pebs - UBI_LAYOUT_VOLUME_EBS;
     uint32_t leb_size = g.peb_size - g.data_offset;
     REQUIRE(vol_bdl->geometry.disk_size == (uint64_t)expected_capacity * leb_size);
 

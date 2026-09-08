@@ -2,6 +2,7 @@ set(src "test_app_main.cpp"
         "test_nand_ubi.cpp"
         "test_nand_ubi_attach.cpp"
         "test_nand_ubi_volume.cpp"
+        "test_nand_ubi_multivolume.cpp"
         "test_nand_ubi_rw.cpp"
         "test_nand_ubi_leak.cpp")
 

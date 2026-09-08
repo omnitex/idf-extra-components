@@ -35,3 +35,19 @@ bool nand_ubi_vid_hdr_valid(const nand_ubi_vid_hdr_t *h)
     }
     return nand_ubi_be32(h->hdr_crc) == nand_ubi_crc32(h, UBI_VID_HDR_SIZE_CRC);
 }
+
+bool nand_ubi_vtbl_record_valid(const nand_ubi_vtbl_record_t *record)
+{
+    if (nand_ubi_be32(record->crc) != nand_ubi_crc32(record, UBI_VTBL_RECORD_SIZE_CRC)) {
+        return false;
+    }
+    if (nand_ubi_be32(record->reserved_pebs) == 0) {
+        return true;
+    }
+    uint16_t name_len = nand_ubi_be16(record->name_len);
+    if (name_len > UBI_VOL_NAME_MAX ||
+            (record->vol_type != UBI_VID_DYNAMIC && record->vol_type != UBI_VID_STATIC)) {
+        return false;
+    }
+    return true;
+}

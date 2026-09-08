@@ -32,6 +32,12 @@ extern "C" {
 
 #define UBI_VID_DYNAMIC    1
 #define UBI_VID_STATIC     2
+#define UBI_COMPAT_REJECT  5
+
+#define UBI_LAYOUT_VOL_ID       0x7FFFEFFFu
+#define UBI_LAYOUT_VOLUME_EBS   2u
+#define UBI_VOL_NAME_MAX        127u
+#define UBI_MAX_VOLUMES         128u
 
 #define UBI_LEB_UNMAPPED   ((int32_t)(-1))
 #define UBI_FREE_LEB       ((uint64_t)(~0ULL))
@@ -80,8 +86,29 @@ typedef struct __attribute__((packed)) {
     uint32_t hdr_crc;           /*!< off 60: CRC over bytes [0,60) (big-endian). */
 } nand_ubi_vid_hdr_t;
 
+/**
+ * @brief On-flash UBI volume-table record (172 bytes).
+ *
+ * Layout matches @c struct ubi_vtbl_record from Linux exactly. A volume table
+ * contains as many records as fit in one LEB, capped at @ref UBI_MAX_VOLUMES;
+ * the same table is stored in both layout-volume LEBs.
+ */
+typedef struct __attribute__((packed)) {
+    uint32_t reserved_pebs;                 /*!< off 0: reserved LEB count (big-endian). */
+    uint32_t alignment;                     /*!< off 4: volume alignment (big-endian). */
+    uint32_t data_pad;                      /*!< off 8: trailing padding (big-endian). */
+    uint8_t  vol_type;                      /*!< off 12: UBI_VID_DYNAMIC or UBI_VID_STATIC. */
+    uint8_t  upd_marker;                    /*!< off 13: update-in-progress marker. */
+    uint16_t name_len;                      /*!< off 14: volume-name length (big-endian). */
+    uint8_t  name[UBI_VOL_NAME_MAX + 1u];   /*!< off 16: 127 bytes plus terminating NUL. */
+    uint8_t  flags;                         /*!< off 144: volume flags. */
+    uint8_t  padding[23];                   /*!< off 145: reserved, zeroes. */
+    uint32_t crc;                           /*!< off 168: CRC over bytes [0,168) (big-endian). */
+} nand_ubi_vtbl_record_t;
+
 _Static_assert(sizeof(nand_ubi_ec_hdr_t) == 64, "EC header must be exactly 64 bytes");
 _Static_assert(sizeof(nand_ubi_vid_hdr_t) == 64, "VID header must be exactly 64 bytes");
+_Static_assert(sizeof(nand_ubi_vtbl_record_t) == 172, "volume-table record must be exactly 172 bytes");
 _Static_assert(offsetof(nand_ubi_ec_hdr_t, ec) == 8, "EC header ec field misaligned");
 _Static_assert(offsetof(nand_ubi_ec_hdr_t, image_seq) == 24, "EC header image_seq field misaligned");
 _Static_assert(offsetof(nand_ubi_ec_hdr_t, hdr_crc) == 60, "EC header hdr_crc field misaligned");
@@ -89,10 +116,16 @@ _Static_assert(offsetof(nand_ubi_vid_hdr_t, vol_id) == 8, "VID header vol_id fie
 _Static_assert(offsetof(nand_ubi_vid_hdr_t, lnum) == 12, "VID header lnum field misaligned");
 _Static_assert(offsetof(nand_ubi_vid_hdr_t, sqnum) == 40, "VID header sqnum field misaligned");
 _Static_assert(offsetof(nand_ubi_vid_hdr_t, hdr_crc) == 60, "VID header hdr_crc field misaligned");
+_Static_assert(offsetof(nand_ubi_vtbl_record_t, vol_type) == 12, "vtbl vol_type field misaligned");
+_Static_assert(offsetof(nand_ubi_vtbl_record_t, name_len) == 14, "vtbl name_len field misaligned");
+_Static_assert(offsetof(nand_ubi_vtbl_record_t, name) == 16, "vtbl name field misaligned");
+_Static_assert(offsetof(nand_ubi_vtbl_record_t, flags) == 144, "vtbl flags field misaligned");
+_Static_assert(offsetof(nand_ubi_vtbl_record_t, crc) == 168, "vtbl crc field misaligned");
 
 /** @brief Number of header bytes covered by @c hdr_crc (all fields but the trailing CRC). */
 #define UBI_EC_HDR_SIZE_CRC   ((uint32_t)offsetof(nand_ubi_ec_hdr_t, hdr_crc))
 #define UBI_VID_HDR_SIZE_CRC  ((uint32_t)offsetof(nand_ubi_vid_hdr_t, hdr_crc))
+#define UBI_VTBL_RECORD_SIZE_CRC ((uint32_t)offsetof(nand_ubi_vtbl_record_t, crc))
 
 /**
  * @brief Convert a 32-bit value between big-endian (on-flash) and host order.
@@ -109,6 +142,16 @@ static inline uint32_t nand_ubi_be32(uint32_t v)
     return v;
 #else
     return __builtin_bswap32(v);
+#endif
+}
+
+/** @brief Convert a 16-bit value between big-endian and host order. */
+static inline uint16_t nand_ubi_be16(uint16_t v)
+{
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    return v;
+#else
+    return __builtin_bswap16(v);
 #endif
 }
 
@@ -160,6 +203,9 @@ bool nand_ubi_ec_hdr_valid(const nand_ubi_ec_hdr_t *h);
  * @return true if the header is structurally valid.
  */
 bool nand_ubi_vid_hdr_valid(const nand_ubi_vid_hdr_t *h);
+
+/** @brief Validate the CRC and required fields of one volume-table record. */
+bool nand_ubi_vtbl_record_valid(const nand_ubi_vtbl_record_t *record);
 
 #ifdef __cplusplus
 }

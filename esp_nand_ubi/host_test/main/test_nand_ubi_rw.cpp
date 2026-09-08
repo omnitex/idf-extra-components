@@ -20,8 +20,8 @@ using namespace nand_ubi_test;
 
 namespace {
 
-/* A blank (unformatted) chip, attached with defaults: leb_count == 0, but leb_capacity
- * covers peb_count - reserved_pebs, so lnum 0.. is writable per the Task 6 capacity fix. */
+/* A blank chip followed by explicit creation of volume 0. Task 14 supersedes the
+ * Phase 1 behavior that allowed opening an implicit volume before it had a vtbl. */
 struct blank_fixture {
     esp_blockdev_handle_t nand_bdl;
     nand_ubi_device_t *dev;
@@ -34,7 +34,13 @@ blank_fixture make_blank_fixture(uint32_t file_bytes = 50u * 1024u * 1024u)
     f.nand_bdl = make_test_nand(file_bytes);
     REQUIRE(nand_ubi_attach(f.nand_bdl, nullptr, &f.dev) == ESP_OK);
     REQUIRE(f.dev->leb_count == 0);
-    REQUIRE(nand_ubi_open_volume(f.dev, 0, &f.vol_bdl) == ESP_OK);
+    uint32_t peb_count = (uint32_t)(f.nand_bdl->geometry.disk_size / f.nand_bdl->geometry.erase_size);
+    nand_ubi_config_t cfg = NAND_UBI_CONFIG_DEFAULT();
+    uint32_t leb_count = peb_count - cfg.reserved_pebs - UBI_LAYOUT_VOLUME_EBS;
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(f.dev, nullptr, UBI_VID_DYNAMIC, leb_count, &vol_id) == ESP_OK);
+    REQUIRE(vol_id == 0);
+    REQUIRE(nand_ubi_open_volume(f.dev, vol_id, &f.vol_bdl) == ESP_OK);
     return f;
 }
 
@@ -85,6 +91,16 @@ TEST_CASE("write: second write to an already-mapped lnum reuses the same pnum", 
 TEST_CASE("write: read_only volume rejects writes and erases", "[nand_ubi][rw]")
 {
     esp_blockdev_handle_t nand_bdl = make_test_nand();
+    nand_ubi_device_t *format_dev = nullptr;
+    REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &format_dev) == ESP_OK);
+    uint32_t peb_count = (uint32_t)(nand_bdl->geometry.disk_size / nand_bdl->geometry.erase_size);
+    nand_ubi_config_t defaults = NAND_UBI_CONFIG_DEFAULT();
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(format_dev, nullptr, UBI_VID_DYNAMIC,
+                                   peb_count - defaults.reserved_pebs - UBI_LAYOUT_VOLUME_EBS,
+                                   &vol_id) == ESP_OK);
+    REQUIRE(nand_ubi_detach(format_dev) == ESP_OK);
+
     nand_ubi_config_t cfg = NAND_UBI_CONFIG_DEFAULT();
     cfg.read_only = true;
     esp_blockdev_handle_t vol_bdl = nullptr;
@@ -208,7 +224,8 @@ TEST_CASE("erase: a single call spanning multiple LEBs frees all of them", "[nan
 
 TEST_CASE("write: returns ESP_ERR_NO_MEM once the physical free pool is exhausted", "[nand_ubi][rw]")
 {
-    /* A handful of PEBs; mark all but 2 bad so only 2 physical PEBs are ever free,
+    /* A handful of PEBs; leave the 2 layout PEBs plus 2 user PEBs good so only
+     * 2 physical PEBs are available to user volumes,
      * while reserved_pebs=0 keeps nominal capacity at every lnum so the capacity
      * bounds check (which fires first in write()) does not mask the free-pool
      * exhaustion path this test targets. peb_count is read back from nand_bdl's own
@@ -217,7 +234,7 @@ TEST_CASE("write: returns ESP_ERR_NO_MEM once the physical free pool is exhauste
     esp_blockdev_handle_t nand_bdl = make_test_nand(8u * 131072u);
     uint32_t peb_count = (uint32_t)(nand_bdl->geometry.disk_size / nand_bdl->geometry.erase_size);
     REQUIRE(peb_count >= 3);
-    for (uint32_t pnum = 2; pnum < peb_count; pnum++) {
+    for (uint32_t pnum = 4; pnum < peb_count; pnum++) {
         REQUIRE(nand_bdl->ops->ioctl(nand_bdl, ESP_BLOCKDEV_CMD_MARK_BAD_BLOCK, &pnum) == ESP_OK);
     }
 
@@ -225,10 +242,13 @@ TEST_CASE("write: returns ESP_ERR_NO_MEM once the physical free pool is exhauste
     cfg.reserved_pebs = 0;
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(nand_bdl, &cfg, &dev) == ESP_OK);
-    REQUIRE(dev->leb_capacity == peb_count);
+    REQUIRE(dev->leb_capacity == peb_count - UBI_LAYOUT_VOLUME_EBS);
 
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev, nullptr, UBI_VID_DYNAMIC,
+                                   peb_count - UBI_LAYOUT_VOLUME_EBS, &vol_id) == ESP_OK);
     esp_blockdev_handle_t vol_bdl = nullptr;
-    REQUIRE(nand_ubi_open_volume(dev, 0, &vol_bdl) == ESP_OK);
+    REQUIRE(nand_ubi_open_volume(dev, vol_id, &vol_bdl) == ESP_OK);
 
     std::vector<uint8_t> buf(dev->page_size, 0);
     REQUIRE(vol_bdl->ops->write(vol_bdl, buf.data(), 0 * dev->leb_size, buf.size()) == ESP_OK);
@@ -246,8 +266,10 @@ TEST_CASE("round-trip: data written through the UBI layer survives detach + reat
 
     nand_ubi_device_t *dev1 = nullptr;
     REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev1) == ESP_OK);
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev1, nullptr, UBI_VID_DYNAMIC, 1, &vol_id) == ESP_OK);
     esp_blockdev_handle_t vol_bdl1 = nullptr;
-    REQUIRE(nand_ubi_open_volume(dev1, 0, &vol_bdl1) == ESP_OK);
+    REQUIRE(nand_ubi_open_volume(dev1, vol_id, &vol_bdl1) == ESP_OK);
 
     std::vector<uint8_t> src(nand_bdl->geometry.write_size, 0x5A);
     REQUIRE(vol_bdl1->ops->write(vol_bdl1, src.data(), 0, src.size()) == ESP_OK);

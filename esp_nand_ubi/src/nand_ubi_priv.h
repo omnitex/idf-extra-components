@@ -13,6 +13,7 @@
 
 #include "esp_blockdev.h"
 #include "esp_nand_ubi.h"
+#include "esp_nand_ubi_media.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nand_ubi_eba.h"
@@ -37,6 +38,12 @@ static inline void *ubi_alloc(size_t size)
     return malloc(size);
 }
 
+typedef struct {
+    uint32_t vol_id;
+    uint32_t leb_count;
+    uint32_t eba_offset;
+} nand_ubi_volume_info_t;
+
 /**
  * @brief Device-level state: one instance per attached physical NAND chip.
  *
@@ -52,14 +59,15 @@ struct nand_ubi_device {
     uint32_t vid_hdr_offset;
     uint32_t data_offset;
     uint32_t leb_size;                 /**< = peb_size - data_offset. */
-    uint32_t leb_count;                /**< = max_lnum + 1, known only after the attach scan; <= peb_count.
-                                             Diagnostic only; NOT the write()-path bounds ceiling
-                                             (see leb_capacity). */
-    uint32_t leb_capacity;             /**< max(leb_count, peb_count - reserved_pebs): the volume's fixed,
-                                             addressable LEB space, computed once at attach() time. This -
-                                             not leb_count - backs geometry.disk_size and the write() bounds
-                                             check, so a blank chip (leb_count == 0) is still fully
-                                             writable up to its physical capacity. */
+    uint32_t leb_count;                /**< Sum of all user-volume LEB reservations. */
+    uint32_t leb_capacity;             /**< Global EBA capacity after the two layout PEBs. */
+    uint32_t reserved_pebs;
+
+    nand_ubi_volume_info_t *volumes;   /**< Volume index, in vtbl slot order. */
+    nand_ubi_vtbl_record_t *vtbl;      /**< Selected mirrored vtbl image (allocated once vtbl_slots
+                                             is known; holds vtbl_slots records regardless of vol_count). */
+    uint32_t vol_count;                /**< Number of valid user-volume records. */
+    uint32_t vtbl_slots;               /**< min(UBI_MAX_VOLUMES, leb_size / sizeof(nand_ubi_vtbl_record_t)). */
 
     uint32_t image_seq;
     uint64_t global_sqnum;             /**< Highest VID sqnum observed at attach; next write uses +1. */
@@ -84,9 +92,9 @@ struct nand_ubi_device {
  */
 typedef struct {
     nand_ubi_device_t *dev;            /**< Owning device; not owned by the volume. */
-    uint32_t           vol_id;          /**< Volume ID (always 0 in Phase 1). */
-    uint32_t           leb_count;       /**< Snapshot of dev->leb_capacity at open time: the volume's
-                                             addressable LEB count, matching geometry.disk_size / leb_size. */
+    uint32_t           vol_id;          /**< Volume ID from the volume table. */
+    uint32_t           leb_count;       /**< Volume's addressable LEB count. */
+    uint32_t           eba_offset;      /**< Start of this volume's contiguous slice in dev->eba. */
     bool               owns_device;     /**< true when opened via nand_ubi_get_blockdev(): release()
                                              also calls nand_ubi_detach() on dev. */
 } nand_ubi_vol_ctx_t;
