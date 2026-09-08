@@ -27,12 +27,25 @@ already speaks `esp_blockdev_t` natively via `esp_vfs_littlefs_conf_t.blockdev`.
 
 ## Design decisions
 
-- **`CONFIG_LITTLEFS_BLOCK_CYCLES=-1`** (disables LittleFS's own metadata
-  wear-leveling): `esp_nand_ubi` has no wear-leveling implemented yet (Phase 1
-  is passive/lowest-EC-free-PEB allocation only). With nothing yet for
-  LittleFS's block-cycling to double up against, disabling it now is simply
-  correct — not a placeholder. Revisit once `esp_nand_ubi`'s Phase 4
-  background WL task lands (see `docs/plans/2026-07-09-esp-nand-ubi-mvp.md`).
+- **`CONFIG_LITTLEFS_BLOCK_CYCLES` left at joltwallet's default (512)**, not
+  disabled. It's tempting to think "UBI isn't wear-leveling yet, so let
+  LittleFS's own wear-leveling carry the load, and disable it later once UBI
+  gets real WL" — but `block_cycles` isn't general wear-leveling. It only
+  controls when LittleFS force-relocates its **metadata pair** (superblock +
+  root directory, rewritten on every directory-affecting operation) to a
+  different physical block (`lfs_dir_needsrelocation()` in upstream
+  `lfs.c`). Regular file data blocks are already spread across the free-block
+  pool by LittleFS's own allocator, independent of `block_cycles`, independent
+  of UBI. `esp_nand_ubi` Phase 1 has *no* active wear-leveling at all — its
+  free-PEB allocator (`nand_ubi_eba_find_free_peb()`) is a plain first-fit
+  linear scan, not even EC-based. Disabling `block_cycles` now would remove
+  the only mechanism currently spreading wear on the hottest LEB in the
+  filesystem (the metadata pair), with nothing underneath to compensate.
+  Since `block_cycles` only touches the small, fixed metadata-pair footprint
+  — not the general PEB pool — it's unlikely to meaningfully conflict with
+  `esp_nand_ubi`'s Phase 4 background WL once that lands (see
+  `docs/plans/2026-07-09-esp-nand-ubi-mvp.md`). Revisit only if hardware
+  profiling shows the two mechanisms fighting over specific PEBs.
 - **`CONFIG_LITTLEFS_CACHE_SIZE=4096`**: `joltwallet/littlefs` requires a
   per-file cache size >= the NAND page size, or mount fails with
   `No valid cache_size <= ... for block=...`. 4096 bytes covers every SPI NAND
@@ -76,8 +89,10 @@ This is a known gap, not fixed by this example — see
 CONFIG_NAND_FLASH_ENABLE_BDL=y
 CONFIG_ESP_NAND_UBI_ENABLE=y
 CONFIG_LITTLEFS_CACHE_SIZE=4096
-CONFIG_LITTLEFS_BLOCK_CYCLES=-1
 ```
+
+`CONFIG_LITTLEFS_BLOCK_CYCLES` is intentionally **not** set here, so it stays
+at joltwallet's Kconfig default (512) — see Design decisions above.
 
 `CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED` (menuconfig -> "LittleFS on UBI Example
 Configuration") is on by default so the first run on a factory-blank chip

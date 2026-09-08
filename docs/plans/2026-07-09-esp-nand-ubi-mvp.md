@@ -574,19 +574,26 @@ page_size` mount requirement below) but is not code this phase reuses directly.
   CONFIG_NAND_FLASH_ENABLE_BDL=y
   CONFIG_ESP_NAND_UBI_ENABLE=y
   CONFIG_LITTLEFS_CACHE_SIZE=4096   # must be >= NAND page size or mount fails
-  CONFIG_LITTLEFS_BLOCK_CYCLES=-1  # see design decision below
   ```
+  `CONFIG_LITTLEFS_BLOCK_CYCLES` is intentionally left unset (joltwallet default: 512) —
+  see design decision below.
 - Verify: on physical ESP32 + external SPI NAND, `idf.py flash monitor` shows successful mount,
   write, remount, and byte-identical read-back
 
-**Design decision: `block_cycles = -1` (disable LittleFS's own metadata wear-leveling)**
-UBI has no wear-leveling implemented yet (Phase 1 is passive/lowest-EC-free-PEB only; real WL is
-Phase 4/Task 10 below). Since there is currently nothing to double up against, disabling
-littlefs's `block_cycles` now is simply the correct choice for this phase — not a placeholder.
-**Revisit this when Phase 4's background WL task lands**: at that point UBI will be actively
-moving PEBs by erase count, and littlefs's own block-cycling would compound wear-leveling
-decisions made independently by two layers. The Phase 4 task list should include re-evaluating
-whether `block_cycles` stays disabled or gets tuned once real UBI WL exists.
+**Design decision: leave `block_cycles` at its default (512), do not disable it**
+`block_cycles` is not general wear-leveling — it only controls when littlefs force-relocates
+its **metadata pair** (superblock + root directory, rewritten on every directory-affecting
+operation) to a different physical block (`lfs_dir_needsrelocation()` in upstream `lfs.c`).
+Regular file data blocks are already spread across the free-block pool by littlefs's own
+allocator, independent of `block_cycles` and independent of UBI. `esp_nand_ubi` Phase 1 has *no*
+active wear-leveling at all — `nand_ubi_eba_find_free_peb()` is a plain first-fit linear scan,
+not even EC-based. Disabling `block_cycles` now would remove the only mechanism currently
+spreading wear on the filesystem's hottest LEB (the metadata pair), with nothing underneath to
+compensate — the opposite of what this phase needs. Because `block_cycles` only touches the
+small, fixed metadata-pair footprint (not the general PEB pool), it is unlikely to meaningfully
+conflict with `esp_nand_ubi`'s Phase 4 background WL once that lands — the two operate on
+different address ranges. **Revisit only if hardware profiling on real chips shows the two
+mechanisms fighting over specific PEBs**, not as a default assumption.
 
 **Known limitation — not fixed in this phase**: joltwallet's `littlefs_bdl.c` adapter maps every
 `ESP_ERR_*` return from the BDL to generic `LFS_ERR_IO`, never `LFS_ERR_CORRUPT`. LittleFS's
