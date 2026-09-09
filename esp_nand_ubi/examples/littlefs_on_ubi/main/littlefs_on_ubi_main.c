@@ -35,6 +35,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "driver/spi_master.h"
 #include "soc/spi_pins.h"
 
@@ -134,6 +135,17 @@ static void deinit_spi_bus(spi_device_handle_t spi)
 
 void app_main(void)
 {
+    /* CONFIG_LITTLEFS_WDT_RESET (see sdkconfig.defaults) makes littlefs_bdl.c
+     * call esp_task_wdt_reset() after every block-device op it forwards to
+     * vol_bdl, so a long mount/format/write sequence doesn't trip the task
+     * watchdog. That call only succeeds for a task that is subscribed to the
+     * TWDT though: CONFIG_ESP_TASK_WDT_INIT auto-subscribes the idle tasks,
+     * not app_main, so without this every reset call fails with "task not
+     * found" and spams the log. Every exit path below unsubscribes again with
+     * esp_task_wdt_delete(NULL) before app_main returns and this task goes
+     * away. */
+    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+
     nand_ubi_log_ram(TAG, "before init");
 
     spi_device_handle_t spi;
@@ -181,6 +193,7 @@ void app_main(void)
         vol_bdl->ops->release(vol_bdl);
         nand_bdl->ops->release(nand_bdl);
         deinit_spi_bus(spi);
+        ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
         return;
     }
     /* This delta on top of the previous checkpoint is LittleFS's own
@@ -200,6 +213,7 @@ void app_main(void)
         esp_vfs_littlefs_unregister_blockdev(vol_bdl);
         nand_bdl->ops->release(nand_bdl);
         deinit_spi_bus(spi);
+        ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
         return;
     }
     fprintf(f, "Written using ESP-IDF %s over esp_nand_ubi\n", esp_get_idf_version());
@@ -217,6 +231,7 @@ void app_main(void)
         esp_vfs_littlefs_unregister_blockdev(vol_bdl);
         nand_bdl->ops->release(nand_bdl);
         deinit_spi_bus(spi);
+        ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
         return;
     }
     char line[128];
@@ -226,6 +241,7 @@ void app_main(void)
         esp_vfs_littlefs_unregister_blockdev(vol_bdl);
         nand_bdl->ops->release(nand_bdl);
         deinit_spi_bus(spi);
+        esp_task_wdt_delete(NULL);
         ESP_ERROR_CHECK(ESP_FAIL);
     }
     fclose(f);
@@ -249,5 +265,6 @@ void app_main(void)
      * would indicate a leak in the unmount/release/detach path. */
     nand_ubi_log_ram(TAG, "after unmount+release (should ~= baseline)");
 
+    ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
     ESP_LOGI(TAG, "LittleFS-on-UBI example finished successfully");
 }
