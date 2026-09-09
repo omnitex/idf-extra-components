@@ -197,8 +197,8 @@ static void note_ec(dump_stats_t *stats, uint64_t ec)
 
 static void print_table_header(void)
 {
-    printf("PEB   STATUS   EC       image_seq   vol  lnum  sqnum      copy  notes\n");
-    printf("----  -------  -------  ----------  ---  ----  ---------  ----  -----\n");
+    printf("PEB   STATUS   EC       image_seq   vol                lnum  sqnum      copy  notes\n");
+    printf("----  -------  -------  ----------  -----------------  ----  ---------  ----  -----\n");
 }
 
 static void print_peb_line(uint32_t pnum, peb_status_t status, const peb_row_t *row,
@@ -213,10 +213,13 @@ static void print_peb_line(uint32_t pnum, peb_status_t status, const peb_row_t *
      * actual type, not just what fits today's Phase-1 single-volume, small-chip
      * values: ec/sqnum are uint64_t (up to 20 digits), vol_id/lnum are uint32_t
      * (up to 10 digits) -- a size that "happens to work" for small test chips would
-     * silently truncate on a chip with millions of LEBs or a long-lived erase count. */
+     * silently truncate on a chip with millions of LEBs or a long-lived erase count.
+     * vol_buf is sized for "UBI_LAYOUT_VOL_ID" (17 chars) rather than vol_id's raw
+     * decimal width, since that symbolic name is what actually gets printed for the
+     * two volume-table PEBs (see below). */
     char ec_buf[24];
     char seq_buf[16];
-    char vol_buf[16];
+    char vol_buf[24];
     char lnum_buf[16];
     char sq_buf[24];
     char copy_buf[8];
@@ -230,7 +233,17 @@ static void print_peb_line(uint32_t pnum, peb_status_t status, const peb_row_t *
     }
 
     if (row->have_vid) {
-        snprintf(vol_buf, sizeof(vol_buf), "%" PRIu32, row->vol_id);
+        /* PEBs 0/1 (the volume-table mirrors) always carry vol_id ==
+         * UBI_LAYOUT_VOL_ID (0x7FFFEFFF, Linux UBI's UBI_LAYOUT_VOLUME_ID) --
+         * a large, deliberately reserved constant, not corruption or an
+         * overflowed volume number. Printing the symbolic name instead of
+         * the raw decimal makes that obvious at a glance instead of forcing
+         * the reader to recognize "2147479551" as a magic value. */
+        if (row->vol_id == UBI_LAYOUT_VOL_ID) {
+            snprintf(vol_buf, sizeof(vol_buf), "UBI_LAYOUT_VOL_ID");
+        } else {
+            snprintf(vol_buf, sizeof(vol_buf), "%" PRIu32, row->vol_id);
+        }
         snprintf(lnum_buf, sizeof(lnum_buf), "%" PRIu32, row->lnum);
         snprintf(sq_buf, sizeof(sq_buf), "%" PRIu64, row->sqnum);
         snprintf(copy_buf, sizeof(copy_buf), "%" PRIu8, row->copy_flag);
@@ -241,7 +254,7 @@ static void print_peb_line(uint32_t pnum, peb_status_t status, const peb_row_t *
         snprintf(copy_buf, sizeof(copy_buf), "-");
     }
 
-    printf("%-5" PRIu32 " %-7s  %-7s  %-10s  %-3s  %-4s  %-9s  %-4s  %s\n",
+    printf("%-5" PRIu32 " %-7s  %-7s  %-10s  %-17s  %-4s  %-9s  %-4s  %s\n",
            pnum, status_str(status), ec_buf, seq_buf, vol_buf, lnum_buf, sq_buf, copy_buf,
            notes != NULL ? notes : "");
 }
