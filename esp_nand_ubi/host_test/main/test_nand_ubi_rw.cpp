@@ -226,6 +226,56 @@ TEST_CASE("erase: a single call spanning multiple LEBs frees all of them", "[nan
     release_fixture(f);
 }
 
+/* Regression test for the *current, intentional* Phase-1 gap: erase-counter tracking.
+ * Real Linux UBI bumps and persists a PEB's EC every time it is physically erased, and
+ * uses low-EC PEBs preferentially so wear spreads evenly (that's "wear leveling"). This
+ * component's on-flash EC header field exists and round-trips correctly (readable via
+ * examples/nand_ubi_metadata_dump), but fill_ec_header() (src/nand_ubi.c) hardcodes
+ * ec=0 on every write and nand_ubi_eba_find_free_peb() does an EC-blind linear scan --
+ * there is no code path anywhere that reads an old EC and increments it.
+ *
+ * This test erases and rewrites the same LEB several times and asserts the underlying
+ * PEB's on-flash EC stays 0 across every cycle. It exists so that the day EC tracking
+ * lands (Phase 4 background WL, see docs/plans/2026-07-09-esp-nand-ubi-mvp.md), this
+ * test fails loudly and gets flipped into a real assertion (ec == cycle count) instead
+ * of silently going stale as a passive gap nobody notices regressed. */
+TEST_CASE("erase: EC is NOT incremented across repeated erase/rewrite cycles (Phase 1 has no WL yet)",
+          "[nand_ubi][rw][ec]")
+{
+    blank_fixture f = make_blank_fixture();
+
+    std::vector<uint8_t> src(f.dev->page_size, 0x55);
+    constexpr int kCycles = 5;
+    int32_t first_pnum = -1;
+
+    for (int cycle = 0; cycle < kCycles; cycle++) {
+        REQUIRE(f.vol_bdl->ops->write(f.vol_bdl, src.data(), 0, src.size()) == ESP_OK);
+
+        int32_t pnum = nand_ubi_eba_get_pnum(&f.dev->eba, 0);
+        REQUIRE(pnum != UBI_LEB_UNMAPPED);
+        if (cycle == 0) {
+            first_pnum = pnum;
+        } else {
+            /* find_free_peb()'s linear scan keeps handing back the same lowest-numbered
+             * free PEB once nothing else churns the pool, so this is expected to hold in
+             * this single-LEB test -- not a hard guarantee of the API. */
+            REQUIRE(pnum == first_pnum);
+        }
+
+        std::vector<uint8_t> ec_page(f.dev->page_size, 0);
+        REQUIRE(f.nand_bdl->ops->read(f.nand_bdl, ec_page.data(), ec_page.size(),
+                                       (uint64_t)pnum * f.dev->peb_size, ec_page.size()) == ESP_OK);
+        const nand_ubi_ec_hdr_t *ec_hdr = reinterpret_cast<const nand_ubi_ec_hdr_t *>(ec_page.data());
+        REQUIRE(nand_ubi_ec_hdr_valid(ec_hdr));
+        REQUIRE(nand_ubi_be64(ec_hdr->ec) == 0); /* <-- the gap this test documents */
+
+        REQUIRE(f.vol_bdl->ops->erase(f.vol_bdl, 0, f.dev->leb_size) == ESP_OK);
+    }
+
+    release_fixture(f);
+}
+
+
 TEST_CASE("write: returns ESP_ERR_NO_MEM once the physical free pool is exhausted", "[nand_ubi][rw]")
 {
     /* A handful of PEBs; leave the 2 layout PEBs plus 2 user PEBs good so only
