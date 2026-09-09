@@ -136,12 +136,16 @@ TEST_CASE("write: rejects writes beyond the volume's capacity", "[nand_ubi][rw]"
     release_fixture(f);
 }
 
-TEST_CASE("read: unmapped lnum returns ESP_ERR_NOT_FOUND", "[nand_ubi][rw]")
+TEST_CASE("read: unmapped lnum reads back as ESP_OK 0xFF-filled data", "[nand_ubi][rw]")
 {
     blank_fixture f = make_blank_fixture();
 
-    uint8_t buf[16] = {0};
-    REQUIRE(f.vol_bdl->ops->read(f.vol_bdl, buf, sizeof(buf), 0, sizeof(buf)) == ESP_ERR_NOT_FOUND);
+    uint8_t buf[16];
+    memset(buf, 0, sizeof(buf));
+    REQUIRE(f.vol_bdl->ops->read(f.vol_bdl, buf, sizeof(buf), 0, sizeof(buf)) == ESP_OK);
+    for (size_t i = 0; i < sizeof(buf); i++) {
+        REQUIRE(buf[i] == 0xFF);
+    }
 
     release_fixture(f);
 }

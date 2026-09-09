@@ -459,6 +459,13 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
     bool have_image_seq = false;
 
     for (uint32_t pnum = 0; pnum < peb_count; pnum++) {
+        /* The attach scan is a long, fully synchronous run of SPI transactions (up to
+         * peb_count PEBs x several ops each) on the calling task. Periodically yield so
+         * the idle task gets scheduled and feeds the interrupt watchdog -- without this,
+         * large chips can starve CPU0 long enough to trip CONFIG_ESP_INT_WDT_TIMEOUT_MS. */
+        if ((pnum & 0x1FU) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
         esp_blockdev_cmd_arg_status_t bad_arg = { .num = pnum, .status = false };
         ret = nand_bdl->ops->ioctl(nand_bdl, ESP_BLOCKDEV_CMD_IS_BAD_BLOCK, &bad_arg);
         if (ret != ESP_OK) {
@@ -485,6 +492,14 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
 
         const nand_ubi_ec_hdr_t *ec_hdr = (const nand_ubi_ec_hdr_t *)page_buf;
         if (!nand_ubi_ec_hdr_valid(ec_hdr)) {
+            /* NOTE: "scheduling erase" is currently just a state-bitmap marker
+             * (UBI_PEB_ERASE_PENDING). Nothing drains it: nand_ubi_eba_find_free_peb()
+             * only returns UBI_PEB_FREE PEBs, so a PEB marked here stays unusable until
+             * something (not yet implemented) actually erases it and flips it back to
+             * FREE. Decide later whether to (a) erase these synchronously at the end of
+             * attach(), (b) let the future background-WL worker reclaim them, or (c)
+             * have find_free_peb()/vol_alloc_peb() erase-on-demand when the FREE pool is
+             * empty but ERASE_PENDING PEBs exist. See docs/plans/2026-07-09-esp-nand-ubi-mvp.md. */
             ESP_LOGW(TAG, "pnum=%" PRIu32 ": corrupt EC header, scheduling erase", pnum);
             nand_ubi_eba_peb_set_erase_pending(&dev->eba, pnum);
             continue;
@@ -738,7 +753,15 @@ static esp_err_t nand_ubi_vol_read(esp_blockdev_handle_t handle, uint8_t *dst_bu
     int32_t pnum = nand_ubi_eba_get_pnum(&dev->eba, eba_index);
     esp_err_t ret;
     if (pnum == UBI_LEB_UNMAPPED) {
-        ret = ESP_ERR_NOT_FOUND;
+        /* An unmapped LEB has never been written, i.e. it reads exactly like a blank
+         * (erased) NAND block would: all 0xFF. Filesystems (LittleFS in particular)
+         * probe blocks by reading them before ever writing, and expect the erased-flash
+         * convention (0xFF fill, ESP_OK) rather than a hard I/O error, so we must not
+         * surface ESP_ERR_NOT_FOUND here -- that used to break the very first mount of
+         * a freshly-created volume (LEB 0/1 unmapped => LittleFS treated it as a real
+         * read fault instead of "no filesystem here yet"). */
+        memset(dst_buf, 0xFF, data_read_len);
+        ret = ESP_OK;
     } else {
         uint64_t phys_addr = (uint64_t)pnum * dev->peb_size + dev->data_offset + offset;
         ESP_LOGD(TAG, "vol_read: lnum=%" PRIu32 " pnum=%" PRIi32 " offset=%" PRIu32
@@ -812,6 +835,12 @@ static esp_err_t nand_ubi_vol_erase(esp_blockdev_handle_t handle, uint64_t start
     xSemaphoreTake(dev->lock, portMAX_DELAY);
     esp_err_t ret = ESP_OK;
     for (uint32_t lnum = start_lnum; lnum < start_lnum + leb_span; lnum++) {
+        /* Same rationale as the attach scan: a long span of synchronous per-PEB erases
+         * (each potentially several ms on real SPI NAND) can otherwise starve the idle
+         * task long enough to trip the interrupt watchdog. */
+        if ((lnum & 0x1FU) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
         uint32_t eba_index = vol_ctx->eba_offset + lnum;
         int32_t pnum = nand_ubi_eba_get_pnum(&dev->eba, eba_index);
         if (pnum == UBI_LEB_UNMAPPED) {

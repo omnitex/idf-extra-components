@@ -106,11 +106,23 @@ With `data_offset = 2 x page_size`, images built with `ubinize` from `mtd-utils`
 are compatible with this layer. The `esp_ubinize.py` host tool (Phase 3) is a simpler
 alternative for users without `mtd-utils`.
 
+### Read contract for unmapped LEBs
+
+A LEB that has never been written (no PEB mapping yet -- e.g. every LEB of a
+freshly-created volume, or a LEB right after `erase()`) reads back as if it were a
+blank, erased NAND block: the read fills the destination buffer with `0xFF` and
+returns `ESP_OK`. It does **not** return `ESP_ERR_NOT_FOUND`. This matches what a
+filesystem expects when it probes a block before ever writing to it (erased flash
+== all `0xFF`), and is required for `LittleFS`/`FatFS` to mount cleanly on a
+brand-new volume: without this convention, the very first superblock read on an
+empty volume looked like a hard I/O fault instead of "nothing here yet", which
+made `format_if_mount_failed` fail before it ever got a chance to write anything.
+
 ## Examples
 
 | Example | Description | Hardware |
 |---------|-------------|----------|
-| `examples/nand_ubi_example` | Attach + erase + write/read-back verification + logical-erase-returns-`ESP_ERR_NOT_FOUND`, directly on physical SPI NAND flash. Does not mount a filesystem. | Physical ESP32 + external SPI NAND chip |
+| `examples/nand_ubi_example` | Attach + erase + write/read-back verification + logical-erase-returns-0xFF-filled-data, directly on physical SPI NAND flash. Does not mount a filesystem. | Physical ESP32 + external SPI NAND chip |
 | `examples/nand_ubi_metadata_dump` | Read-only scan of every PEB’s EC/VID headers; progressive table of MAPPED/FREE/CORRUPT/BAD/IO_ERR plus end-of-scan summary. Does not call `nand_ubi_attach()` or write flash. | Physical ESP32 + external SPI NAND chip |
 | `examples/littlefs_on_ubi` (Phase 2) | Mounts `joltwallet/littlefs` directly on `nand_ubi_get_blockdev()`'s volume BDL — no Dhara, no adapter/shim needed (`esp_littlefs` already speaks `esp_blockdev_t`). Write/close/remount/read-back round-trip. | Physical ESP32 + external SPI NAND chip |
 

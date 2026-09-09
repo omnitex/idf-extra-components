@@ -9,7 +9,7 @@
  *
  * Demonstrates the esp_nand_ubi block-device layer directly on physical SPI NAND
  * flash: attach (scans/rebuilds the LEB->PEB table), erase, write, read-back
- * verification, and the logical-erase-returns-ESP_ERR_NOT_FOUND contract.
+ * verification, and the logical-erase-returns-0xFF-filled-data contract.
  *
  * This does NOT mount a filesystem. There is currently no FatFS/LittleFS adapter
  * for the esp_blockdev_t interface that esp_nand_ubi produces -- see this
@@ -117,6 +117,18 @@ static esp_err_t init_spi_and_nand(spi_device_handle_t *out_spi, esp_blockdev_ha
     *out_spi = spi;
     *out_nand_bdl = nand_bdl;
     return ESP_OK;
+}
+
+/* True if every byte in buf equals 0xFF, i.e. the erased-NAND convention that
+ * nand_ubi_vol_read() now returns for unmapped LEBs. */
+static bool page_is_blank(const uint8_t *buf, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] != 0xFF) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /* Writes a per-LEB recognizable byte pattern and reads it back for verification.
@@ -229,12 +241,14 @@ void app_main(void)
     if (post_erase_buf == NULL) {
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
+    memset(post_erase_buf, 0, page_size);
     esp_err_t post_erase_ret = vol_bdl->ops->read(vol_bdl, post_erase_buf, page_size, 0, page_size);
+    bool post_erase_blank = post_erase_ret == ESP_OK && page_is_blank(post_erase_buf, page_size);
     free(post_erase_buf);
-    if (post_erase_ret == ESP_ERR_NOT_FOUND) {
-        ESP_LOGI(TAG, "LEB 0 read after erase correctly returned ESP_ERR_NOT_FOUND (unmapped)");
+    if (post_erase_blank) {
+        ESP_LOGI(TAG, "LEB 0 read after erase correctly returned ESP_OK with 0xFF-filled data (unmapped)");
     } else {
-        ESP_LOGE(TAG, "LEB 0 read after erase returned unexpected 0x%x", post_erase_ret);
+        ESP_LOGE(TAG, "LEB 0 read after erase returned unexpected ret=0x%x blank=%d", post_erase_ret, post_erase_blank);
         ESP_ERROR_CHECK(ESP_FAIL);
     }
 

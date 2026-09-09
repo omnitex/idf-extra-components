@@ -3,6 +3,11 @@ CONFIG_ESP_NAND_UBI_ENABLE=y
 # joltwallet/littlefs requires a per-file cache >= the NAND page size, or
 # mount fails with "No valid cache_size <= ... for block=...".
 CONFIG_LITTLEFS_CACHE_SIZE=4096
+# Feed the task watchdog from inside littlefs_bdl.c's read/write/erase/sync
+# calls. Without this, a long attach scan or a format that erases many PEBs
+# back-to-back can starve CPU0's idle task long enough to trip the interrupt
+# watchdog (observed as "Guru Meditation Error: ... Interrupt wdt timeout").
+CONFIG_LITTLEFS_WDT_RESET=y
 # CONFIG_LITTLEFS_BLOCK_CYCLES intentionally left at joltwallet's default
 # (512): esp_nand_ubi has no wear-leveling yet (Phase 1's free-PEB allocator
 # is a plain first-fit scan, not even EC-based), so littlefs's own metadata-

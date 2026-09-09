@@ -16,6 +16,7 @@
 #include "esp_nand_ubi_media.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "nand_ubi_eba.h"
 
 #if CONFIG_SPIRAM
