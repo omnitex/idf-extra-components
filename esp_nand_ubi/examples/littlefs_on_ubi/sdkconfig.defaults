@@ -9,8 +9,10 @@ CONFIG_LITTLEFS_CACHE_SIZE=4096
 # watchdog (observed as "Guru Meditation Error: ... Interrupt wdt timeout").
 CONFIG_LITTLEFS_WDT_RESET=y
 # CONFIG_LITTLEFS_BLOCK_CYCLES intentionally left at joltwallet's default
-# (512): esp_nand_ubi has no wear-leveling yet (Phase 1's free-PEB allocator
-# is a plain first-fit scan, not even EC-based), so littlefs's own metadata-
+# (512): esp_nand_ubi tracks each PEB's erase count (persisted in its EC
+# header on every erase) but does not yet act on it -- Phase 1's free-PEB
+# allocator (nand_ubi_eba_find_free_peb()) is still a plain first-fit linear
+# scan, EC-blind. So littlefs's own metadata-
 # pair relocation is the only active wear-spreading mechanism in this whole
 # stack right now. Disabling it would pin the hottest LEB (littlefs's
 # superblock/root metadata, rewritten on every directory change) to whatever

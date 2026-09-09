@@ -226,20 +226,15 @@ TEST_CASE("erase: a single call spanning multiple LEBs frees all of them", "[nan
     release_fixture(f);
 }
 
-/* Regression test for the *current, intentional* Phase-1 gap: erase-counter tracking.
- * Real Linux UBI bumps and persists a PEB's EC every time it is physically erased, and
- * uses low-EC PEBs preferentially so wear spreads evenly (that's "wear leveling"). This
- * component's on-flash EC header field exists and round-trips correctly (readable via
- * examples/nand_ubi_metadata_dump), but fill_ec_header() (src/nand_ubi.c) hardcodes
- * ec=0 on every write and nand_ubi_eba_find_free_peb() does an EC-blind linear scan --
- * there is no code path anywhere that reads an old EC and increments it.
- *
- * This test erases and rewrites the same LEB several times and asserts the underlying
- * PEB's on-flash EC stays 0 across every cycle. It exists so that the day EC tracking
- * lands (Phase 4 background WL, see docs/plans/2026-07-09-esp-nand-ubi-mvp.md), this
- * test fails loudly and gets flipped into a real assertion (ec == cycle count) instead
- * of silently going stale as a passive gap nobody notices regressed. */
-TEST_CASE("erase: EC is NOT incremented across repeated erase/rewrite cycles (Phase 1 has no WL yet)",
+/* Real Linux UBI bumps and persists a PEB's EC every time it is physically erased,
+ * and (separately, not yet implemented here -- see docs/plans/2026-07-09-esp-nand-ubi-mvp.md
+ * Task 12) uses low-EC PEBs preferentially so wear spreads evenly. This test covers only
+ * the EC-bookkeeping half: nand_ubi_vol_erase() reads the outgoing EC before the physical
+ * erase destroys it, then writes a fresh header with ec_old+1 immediately after erasing
+ * (src/nand_ubi.c), and nand_ubi_vol_alloc_peb() must not clobber that header with ec=0
+ * when reusing an already-erased PEB. Allocation still doesn't pick PEBs by EC (Task 12) --
+ * this only asserts the counter itself is honest across repeated erase/rewrite cycles. */
+TEST_CASE("erase: EC is incremented and persisted across repeated erase/rewrite cycles",
           "[nand_ubi][rw][ec]")
 {
     blank_fixture f = make_blank_fixture();
@@ -267,10 +262,22 @@ TEST_CASE("erase: EC is NOT incremented across repeated erase/rewrite cycles (Ph
                                        (uint64_t)pnum * f.dev->peb_size, ec_page.size()) == ESP_OK);
         const nand_ubi_ec_hdr_t *ec_hdr = reinterpret_cast<const nand_ubi_ec_hdr_t *>(ec_page.data());
         REQUIRE(nand_ubi_ec_hdr_valid(ec_hdr));
-        REQUIRE(nand_ubi_be64(ec_hdr->ec) == 0); /* <-- the gap this test documents */
+        /* Before cycle 0's erase, this PEB has never been erased under this scheme (it
+         * came straight from attach()'s virgin-PEB path), so its EC starts at 0; each
+         * subsequent write happens on a PEB that was erased exactly `cycle` times so far. */
+        REQUIRE(nand_ubi_be64(ec_hdr->ec) == (uint64_t)cycle);
 
         REQUIRE(f.vol_bdl->ops->erase(f.vol_bdl, 0, f.dev->leb_size) == ESP_OK);
     }
+
+    /* And the final erase itself persisted ec=kCycles on the now-free PEB, without
+     * anything needing to allocate it again first. */
+    std::vector<uint8_t> ec_page(f.dev->page_size, 0);
+    REQUIRE(f.nand_bdl->ops->read(f.nand_bdl, ec_page.data(), ec_page.size(),
+                                   (uint64_t)first_pnum * f.dev->peb_size, ec_page.size()) == ESP_OK);
+    const nand_ubi_ec_hdr_t *ec_hdr = reinterpret_cast<const nand_ubi_ec_hdr_t *>(ec_page.data());
+    REQUIRE(nand_ubi_ec_hdr_valid(ec_hdr));
+    REQUIRE(nand_ubi_be64(ec_hdr->ec) == (uint64_t)kCycles);
 
     release_fixture(f);
 }
@@ -344,6 +351,72 @@ TEST_CASE("round-trip: data written through the UBI layer survives detach + reat
     std::vector<uint8_t> dst(src.size(), 0);
     REQUIRE(vol_bdl2->ops->read(vol_bdl2, dst.data(), dst.size(), 0, dst.size()) == ESP_OK);
     REQUIRE(dst == src);
+
+    REQUIRE(vol_bdl2->ops->release(vol_bdl2) == ESP_OK);
+    REQUIRE(nand_ubi_detach(dev2) == ESP_OK);
+    nand_bdl->ops->release(nand_bdl);
+}
+
+/* Companion to the round-trip test above, covering a case that test doesn't: a PEB that
+ * has been erased (and therefore carries a non-zero, freshly-persisted EC per
+ * nand_ubi_vol_erase()) but is not currently mapped to any LEB when attach() runs. Its
+ * valid-EC-header/blank-VID-header shape must be recognized as an ordinary free PEB (see
+ * the attach() comment in src/nand_ubi.c next to page_is_blank()'s VID-header check), not
+ * misclassified as an interrupted allocation and shunted into UBI_PEB_ERASE_PENDING --
+ * which would otherwise permanently shrink the free pool by one PEB on every reattach
+ * that happens to follow an erase. */
+TEST_CASE("erase: a freed PEB's persisted EC survives detach + reattach and the PEB stays usable",
+          "[nand_ubi][rw][ec]")
+{
+    esp_blockdev_handle_t nand_bdl = make_test_nand();
+
+    nand_ubi_device_t *dev1 = nullptr;
+    REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev1) == ESP_OK);
+    uint32_t vol_id = UINT32_MAX;
+    REQUIRE(nand_ubi_create_volume(dev1, nullptr, UBI_VID_DYNAMIC, 1, &vol_id) == ESP_OK);
+    esp_blockdev_handle_t vol_bdl1 = nullptr;
+    REQUIRE(nand_ubi_open_volume(dev1, vol_id, &vol_bdl1) == ESP_OK);
+
+    std::vector<uint8_t> src(nand_bdl->geometry.write_size, 0x77);
+    REQUIRE(vol_bdl1->ops->write(vol_bdl1, src.data(), 0, src.size()) == ESP_OK);
+    int32_t pnum = nand_ubi_eba_get_pnum(&dev1->eba, 0);
+    REQUIRE(pnum != UBI_LEB_UNMAPPED);
+
+    /* Erase (not another write): the PEB goes back to the free pool, unmapped from any
+     * LEB, but per nand_ubi_vol_erase() it now carries a fresh EC header with ec=1. */
+    REQUIRE(vol_bdl1->ops->erase(vol_bdl1, 0, dev1->leb_size) == ESP_OK);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev1->eba, 0) == UBI_LEB_UNMAPPED);
+
+    REQUIRE(vol_bdl1->ops->release(vol_bdl1) == ESP_OK);
+    REQUIRE(nand_ubi_detach(dev1) == ESP_OK);
+
+    nand_ubi_device_t *dev2 = nullptr;
+    REQUIRE(nand_ubi_attach(nand_bdl, nullptr, &dev2) == ESP_OK);
+    REQUIRE(dev2->leb_count == 1); /* volume 0's capacity as created, unaffected by the erase */
+    REQUIRE(nand_ubi_eba_get_pnum(&dev2->eba, 0) == UBI_LEB_UNMAPPED); /* but LEB 0 itself is unmapped */
+
+    /* The raw on-flash EC survived the round-trip untouched by attach() itself. */
+    std::vector<uint8_t> ec_page(dev2->page_size, 0);
+    REQUIRE(nand_bdl->ops->read(nand_bdl, ec_page.data(), ec_page.size(),
+                                 (uint64_t)pnum * dev2->peb_size, ec_page.size()) == ESP_OK);
+    const nand_ubi_ec_hdr_t *ec_hdr = reinterpret_cast<const nand_ubi_ec_hdr_t *>(ec_page.data());
+    REQUIRE(nand_ubi_ec_hdr_valid(ec_hdr));
+    REQUIRE(nand_ubi_be64(ec_hdr->ec) == 1);
+
+    /* And the PEB is usable again -- attach() classified it as FREE, not
+     * ERASE_PENDING, so a fresh write can claim it (and, per nand_ubi_vol_alloc_peb(),
+     * must preserve rather than reset its ec=1 history). Volume 0 already exists in
+     * the on-flash vtbl from dev1's session, so reopen it rather than creating a
+     * second volume. */
+    esp_blockdev_handle_t vol_bdl2 = nullptr;
+    REQUIRE(nand_ubi_open_volume(dev2, vol_id, &vol_bdl2) == ESP_OK);
+    REQUIRE(vol_bdl2->ops->write(vol_bdl2, src.data(), 0, src.size()) == ESP_OK);
+    REQUIRE(nand_ubi_eba_get_pnum(&dev2->eba, 0) == pnum);
+
+    REQUIRE(nand_bdl->ops->read(nand_bdl, ec_page.data(), ec_page.size(),
+                                 (uint64_t)pnum * dev2->peb_size, ec_page.size()) == ESP_OK);
+    REQUIRE(nand_ubi_ec_hdr_valid(ec_hdr));
+    REQUIRE(nand_ubi_be64(ec_hdr->ec) == 1); /* preserved, not reset to 0 by alloc_peb() */
 
     REQUIRE(vol_bdl2->ops->release(vol_bdl2) == ESP_OK);
     REQUIRE(nand_ubi_detach(dev2) == ESP_OK);

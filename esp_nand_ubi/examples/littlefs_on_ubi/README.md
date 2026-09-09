@@ -36,11 +36,12 @@ already speaks `esp_blockdev_t` natively via `esp_vfs_littlefs_conf_t.blockdev`.
   different physical block (`lfs_dir_needsrelocation()` in upstream
   `lfs.c`). Regular file data blocks are already spread across the free-block
   pool by LittleFS's own allocator, independent of `block_cycles`, independent
-  of UBI. `esp_nand_ubi` Phase 1 has *no* active wear-leveling at all — its
-  free-PEB allocator (`nand_ubi_eba_find_free_peb()`) is a plain first-fit
-  linear scan, not even EC-based. Disabling `block_cycles` now would remove
-  the only mechanism currently spreading wear on the hottest LEB in the
-  filesystem (the metadata pair), with nothing underneath to compensate.
+  of UBI. `esp_nand_ubi` now tracks each PEB's erase count -- persisted in its
+  EC header on every erase, surviving detach/reattach -- but doesn't yet act
+  on it: its free-PEB allocator (`nand_ubi_eba_find_free_peb()`) is still a
+  plain first-fit linear scan, EC-blind. Disabling `block_cycles` now would
+  remove the only mechanism currently spreading wear on the hottest LEB in
+  the filesystem (the metadata pair), with nothing underneath to compensate.
   Since `block_cycles` only touches the small, fixed metadata-pair footprint
   — not the general PEB pool — it's unlikely to meaningfully conflict with
   `esp_nand_ubi`'s Phase 4 background WL once that lands (see

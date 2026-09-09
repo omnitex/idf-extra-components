@@ -187,12 +187,12 @@ static esp_err_t load_volume_table(nand_ubi_device_t *dev)
     return ESP_OK;
 }
 
-static void fill_ec_header(nand_ubi_device_t *dev, nand_ubi_ec_hdr_t *ec_hdr)
+static void fill_ec_header(nand_ubi_device_t *dev, nand_ubi_ec_hdr_t *ec_hdr, uint64_t ec)
 {
     memset(ec_hdr, 0, sizeof(*ec_hdr));
     ec_hdr->magic = nand_ubi_be32(UBI_EC_HDR_MAGIC);
     ec_hdr->version = UBI_VERSION;
-    ec_hdr->ec = nand_ubi_be64(0);
+    ec_hdr->ec = nand_ubi_be64(ec);
     ec_hdr->vid_hdr_offset = nand_ubi_be32(dev->vid_hdr_offset);
     ec_hdr->data_offset = nand_ubi_be32(dev->data_offset);
     ec_hdr->image_seq = nand_ubi_be32(dev->image_seq);
@@ -229,7 +229,12 @@ static esp_err_t write_vtbl_copy(nand_ubi_device_t *dev, uint32_t pnum)
     }
 
     memset(page, 0xFF, dev->page_size);
-    fill_ec_header(dev, (nand_ubi_ec_hdr_t *)page);
+    /* PEBs 0/1 (volume-table mirrors) are rewritten wholesale by
+     * nand_ubi_create_volume(), not through nand_ubi_vol_erase()/vol_alloc_peb() --
+     * they are not part of any user volume's LEB space. EC tracking for them is out
+     * of scope here (see README "Known limitations"); ec=0 preserves today's
+     * behavior for this path unchanged. */
+    fill_ec_header(dev, (nand_ubi_ec_hdr_t *)page, 0);
     ret = dev->nand_bdl->ops->write(dev->nand_bdl, page,
                                      (uint64_t)pnum * dev->peb_size, dev->page_size);
     if (ret == ESP_OK) {
@@ -539,15 +544,17 @@ esp_err_t nand_ubi_attach(esp_blockdev_handle_t nand_bdl,
             goto fail;
         }
         if (page_is_blank(page_buf, page_size)) {
-            /* EC header was written but the VID header write never landed: an
-             * allocation was interrupted (e.g. power loss) between the two writes
-             * in nand_ubi_vol_alloc_peb(). Page 0 is NOT blank, so this PEB does
-             * not satisfy the "free PEBs are physically erased" invariant that
-             * nand_ubi_vol_alloc_peb() relies on to skip a read-before-write check.
-             * Schedule it for erase instead of leaving the default FREE state. */
-            ESP_LOGW(TAG, "pnum=%" PRIu32 ": EC header present but VID header blank "
-                     "(interrupted allocation), scheduling erase", pnum);
-            nand_ubi_eba_peb_set_erase_pending(&dev->eba, pnum);
+            /* A valid EC header with a blank VID header is the normal on-flash shape
+             * of a free PEB under this component's post-erase EC persistence
+             * (nand_ubi_vol_erase() writes a fresh EC header immediately after
+             * erasing, matching Linux UBI's own free-PEB representation), not
+             * evidence of an allocation interrupted mid-write. Genuinely leftover
+             * junk in the data area past a blank VID header is harmless: nothing
+             * maps any LEB to this PEB until nand_ubi_vol_alloc_peb() claims it, and
+             * that path already reads-before-writing this exact header rather than
+             * assuming a physically blank page 0. Leave peb_state at its default
+             * FREE (do NOT schedule an erase -- this PEB was, in fact, already
+             * erased). */
             continue;
         }
 
@@ -676,13 +683,15 @@ esp_err_t nand_ubi_detach(nand_ubi_device_t *ubi_dev)
 /* Allocates a free PEB for lnum, writes fresh EC+VID headers onto it, and records the
  * lnum->pnum mapping. Caller must hold dev->lock.
  *
- * A PEB only ever re-enters the free pool already physically erased (attach()'s scan
- * marks blank PEBs free; nand_ubi_vol_erase() below only marks a PEB free right after
- * erasing it), so page 0 and vid_hdr_offset are always blank here - no header exists
- * yet to conflict with, and no read-before-write check is needed. This is also why
- * nand_ubi_vol_erase() does not itself write a fresh EC header: Phase 1 has no EC
- * table to make erase-count tracking meaningful (nand_ubi_eba_find_free_peb() does an
- * unweighted linear scan), so writing it once here covers every allocation path. */
+ * A free PEB is not necessarily blank: nand_ubi_vol_erase() now writes a fresh EC
+ * header (with an incremented erase counter) immediately after physically erasing a
+ * PEB, so it already carries a valid, honest EC by the time it re-enters the free
+ * pool. Overwriting that header here with a hardcoded ec=0 would silently erase the
+ * erase-count history this component is trying to track. So: read whatever is
+ * already on page 0 first. If it is a valid EC header, leave it alone -- its ec is
+ * exactly what we want to keep. Only a truly virgin PEB (blank page 0 -- straight
+ * from attach()'s initial scan, never yet erased under this scheme) gets a
+ * brand-new header stamped with ec=0. */
 static esp_err_t nand_ubi_vol_alloc_peb(nand_ubi_device_t *dev, uint32_t vol_id,
                                         uint32_t local_lnum, uint32_t eba_index,
                                         uint8_t vol_type, int32_t *out_pnum)
@@ -697,15 +706,25 @@ static esp_err_t nand_ubi_vol_alloc_peb(nand_ubi_device_t *dev, uint32_t vol_id,
         return ESP_ERR_NO_MEM;
     }
 
-    memset(page_buf, 0xFF, dev->page_size);
-    fill_ec_header(dev, (nand_ubi_ec_hdr_t *)page_buf);
-
-    esp_err_t ret = dev->nand_bdl->ops->write(dev->nand_bdl, page_buf,
-                                               (uint64_t)pnum * dev->peb_size, dev->page_size);
+    esp_err_t ret = dev->nand_bdl->ops->read(dev->nand_bdl, page_buf, dev->page_size,
+                                              (uint64_t)pnum * dev->peb_size, dev->page_size);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "pnum=%" PRIi32 ": EC header write failed: 0x%x", pnum, ret);
+        ESP_LOGE(TAG, "pnum=%" PRIi32 ": pre-alloc EC header read failed: 0x%x", pnum, ret);
         free(page_buf);
         return ret;
+    }
+
+    if (!nand_ubi_ec_hdr_valid((const nand_ubi_ec_hdr_t *)page_buf)) {
+        memset(page_buf, 0xFF, dev->page_size);
+        fill_ec_header(dev, (nand_ubi_ec_hdr_t *)page_buf, 0);
+
+        ret = dev->nand_bdl->ops->write(dev->nand_bdl, page_buf,
+                                         (uint64_t)pnum * dev->peb_size, dev->page_size);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "pnum=%" PRIi32 ": EC header write failed: 0x%x", pnum, ret);
+            free(page_buf);
+            return ret;
+        }
     }
 
     memset(page_buf, 0xFF, dev->page_size);
@@ -834,6 +853,14 @@ static esp_err_t nand_ubi_vol_erase(esp_blockdev_handle_t handle, uint64_t start
 
     xSemaphoreTake(dev->lock, portMAX_DELAY);
     esp_err_t ret = ESP_OK;
+    /* Reused across every PEB in the span rather than allocated per-iteration: erase
+     * spans can cover many LEBs (e.g. a full-volume erase), and this buffer is only
+     * ever page_size, not peb_size. */
+    uint8_t *page_buf = ubi_alloc(dev->page_size);
+    if (page_buf == NULL) {
+        xSemaphoreGive(dev->lock);
+        return ESP_ERR_NO_MEM;
+    }
     for (uint32_t lnum = start_lnum; lnum < start_lnum + leb_span; lnum++) {
         /* Same rationale as the attach scan: a long span of synchronous per-PEB erases
          * (each potentially several ms on real SPI NAND) can otherwise starve the idle
@@ -846,14 +873,49 @@ static esp_err_t nand_ubi_vol_erase(esp_blockdev_handle_t handle, uint64_t start
         if (pnum == UBI_LEB_UNMAPPED) {
             continue; /* already logically erased: idempotent no-op for this LEB */
         }
+
+        /* Read the outgoing EC header before the physical erase destroys it, so the
+         * fresh header written below can carry ec_old+1 instead of resetting the
+         * erase-cycle history to 0 on every erase (see nand_ubi_vol_alloc_peb()'s
+         * comment for why a free PEB carrying a valid EC header must never be
+         * silently overwritten with ec=0 again). A read failure or invalid header
+         * here is treated as "unknown history" (ec_old=0) rather than aborting the
+         * erase outright -- the erase itself remains this function's primary
+         * contract, and a missing prior EC shouldn't block reclaiming the PEB. */
+        uint64_t ec_old = 0;
+        esp_err_t read_ret = dev->nand_bdl->ops->read(dev->nand_bdl, page_buf, dev->page_size,
+                                                       (uint64_t)pnum * dev->peb_size, dev->page_size);
+        if (read_ret == ESP_OK && nand_ubi_ec_hdr_valid((const nand_ubi_ec_hdr_t *)page_buf)) {
+            ec_old = nand_ubi_be64(((const nand_ubi_ec_hdr_t *)page_buf)->ec);
+        } else {
+            ESP_LOGW(TAG, "lnum=%" PRIu32 " pnum=%" PRIi32 ": could not read prior EC (0x%x), "
+                     "treating as ec=0", lnum, pnum, read_ret);
+        }
+
         ret = dev->nand_bdl->ops->erase(dev->nand_bdl, (uint64_t)pnum * dev->peb_size, dev->peb_size);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "lnum=%" PRIu32 " pnum=%" PRIi32 ": erase failed: 0x%x", lnum, pnum, ret);
             break;
         }
+
+        /* A freshly-erased PEB immediately gets a fresh, honest EC header before it
+         * re-enters the free pool -- matching Linux UBI's convention of a free PEB
+         * always carrying a valid EC header, and making the erase-count durable even
+         * while the PEB sits idle (not just at its next allocation). */
+        memset(page_buf, 0xFF, dev->page_size);
+        fill_ec_header(dev, (nand_ubi_ec_hdr_t *)page_buf, ec_old + 1);
+        ret = dev->nand_bdl->ops->write(dev->nand_bdl, page_buf,
+                                         (uint64_t)pnum * dev->peb_size, dev->page_size);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "lnum=%" PRIu32 " pnum=%" PRIi32 ": post-erase EC header write failed: 0x%x",
+                     lnum, pnum, ret);
+            break;
+        }
+
         nand_ubi_eba_set(&dev->eba, eba_index, UBI_LEB_UNMAPPED);
         nand_ubi_eba_peb_set_free(&dev->eba, (uint32_t)pnum);
     }
+    free(page_buf);
     xSemaphoreGive(dev->lock);
     return ret;
 }

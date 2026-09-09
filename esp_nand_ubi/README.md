@@ -140,6 +140,15 @@ See each example's `README.md` for wiring and expected console output.
   write failure before returning to the caller. Not yet scheduled into a phase — see
   `docs/plans/2026-07-09-esp-nand-ubi-mvp.md` Phase 2.
 
+- **Erase counter is tracked but not yet acted on**: every erase through a volume's
+  `erase()` op persists an honest, incrementing `ec` in that PEB's on-flash EC header
+  (survives detach/reattach), but `nand_ubi_eba_find_free_peb()` is still a plain
+  first-fit linear scan — nothing yet *prefers* a low-EC PEB, so wear is not actually
+  spread by this layer. That allocator change is Task 12 (background WL). PEBs 0 and 1
+  (the volume-table mirrors, rewritten via a dedicated code path separate from the
+  per-volume erase/allocate path) are excluded from this tracking entirely — their EC
+  always reads 0.
+
 ## Status
 
 Phase 1 (minimum viable layer): attach scan, EBA table, per-volume read/write/erase,

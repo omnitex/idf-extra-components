@@ -138,14 +138,18 @@ TEST_CASE("attach: corrupt EC header is scheduled for erase, not treated as free
     g.nand_bdl->ops->release(g.nand_bdl);
 }
 
-TEST_CASE("attach: valid EC header with blank VID header is scheduled for erase, not treated as free",
+TEST_CASE("attach: valid EC header with blank VID header is treated as free, not scheduled for erase",
           "[nand_ubi][attach]")
 {
-    /* Regression test: simulates an allocation interrupted between the EC-header
-     * write and the VID-header write in nand_ubi_vol_alloc_peb(). Page 0 is NOT
-     * physically erased in this state, so the PEB must not be left in the default
-     * FREE peb_state, which would let a later reuse write a fresh EC header onto
-     * an already-written page. */
+    /* A valid EC header with a blank VID header is the normal on-flash shape of a free
+     * PEB now that nand_ubi_vol_erase() persists a fresh EC header immediately after
+     * erasing (matching Linux UBI's own free-PEB representation) -- format_ec_hdr_only()
+     * below models exactly that PEB shape, whether it arrived there via a genuine erase
+     * or an allocation interrupted between the EC-header write and the VID-header write
+     * in nand_ubi_vol_alloc_peb(). Either way it must be usable: attach() must leave it
+     * in the default FREE peb_state rather than UBI_PEB_ERASE_PENDING (which nothing
+     * currently drains -- see nand_ubi_vol_alloc_peb()'s own read-before-write handling
+     * of an already-valid EC header for why reusing this exact PEB is safe). */
     test_geometry g = make_geometry();
 
     format_ec_hdr_only(g.nand_bdl, 2, g.page_size, g.peb_size, kImageSeq, g.vid_hdr_offset, g.data_offset);
@@ -153,8 +157,8 @@ TEST_CASE("attach: valid EC header with blank VID header is scheduled for erase,
     nand_ubi_device_t *dev = nullptr;
     REQUIRE(nand_ubi_attach(g.nand_bdl, nullptr, &dev) == ESP_OK);
     REQUIRE(dev->leb_count == 0);
-    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_ERASE_PENDING);
-    REQUIRE(nand_ubi_eba_find_free_peb(&dev->eba, 3) == -1);
+    REQUIRE(peb_state_of(dev->eba, 2) == UBI_PEB_FREE);
+    REQUIRE(nand_ubi_eba_find_free_peb(&dev->eba, 3) == 2);
 
     REQUIRE(nand_ubi_detach(dev) == ESP_OK);
     g.nand_bdl->ops->release(g.nand_bdl);

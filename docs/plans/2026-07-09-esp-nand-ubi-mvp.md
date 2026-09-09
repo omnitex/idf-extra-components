@@ -495,15 +495,44 @@ Output format: sequential PEB-sized chunks, each containing:
   - `lnum = leb_byte_addr / dev->leb_size`; `offset = leb_byte_addr % dev->leb_size`
   - `pnum = eba_get_pnum(&ctx->dev->eba, lnum)`; return `ESP_ERR_NOT_FOUND` if unmapped
   - Forward: `nand_bdl.read(pnum × peb_size + data_offset + offset, dst, dst_sz, len)`
+  - **Superseded**: an unmapped LEB now reads back as `ESP_OK` with a 0xFF-filled
+    buffer instead of `ESP_ERR_NOT_FOUND` — `joltwallet/esp_littlefs` maps every
+    `ESP_ERR_*` to `LFS_ERR_IO`, so the original contract made the very first
+    superblock read of a freshly-created volume look like a hard I/O fault
+    instead of blank flash, breaking `format_if_mount_failed` on a brand-new
+    volume. See `README.md`'s "Read contract for unmapped LEBs".
 - `nand_ubi_write(dev, src, leb_byte_addr, len)`:
   - `lnum`, `offset` from address (using `ctx->dev->leb_size`)
   - If `eba[lnum] == unmapped`: allocate free PEB, write EC header (ec=0 for new allocs), write VID header (vol_id=0, lnum, ++global_sqnum)
   - Forward data write to correct physical offset
+  - **Updated**: "write EC header (ec=0 for new allocs)" now only applies to a
+    truly virgin (blank page 0) PEB. A free PEB that already carries a valid EC
+    header (see the erase-path note below) is left alone — allocation must not
+    clobber an already-persisted erase count with 0.
 - `nand_ubi_erase(dev, leb_byte_addr, LEB_SIZE)`:
   - `lnum` from address; get `pnum` from `ctx->dev->eba`
   - `nand_bdl.erase(pnum × peb_size, peb_size)`
   - Increment `ec[pnum]` if EC table present; write updated EC header
   - `eba[lnum] = unmapped`; `peb_state[pnum] = FREE`
+  - **Gap closed**: this task was marked done, but the shipped code originally
+    hardcoded `ec=0` on every EC header write (both here and in the allocator)
+    and never read/incremented a prior value — the plan's own spec above was
+    not actually implemented. Fixed: `nand_ubi_vol_erase()` now reads the
+    outgoing PEB's EC before erasing (erase destroys it), physically erases,
+    then writes a fresh header with `ec_old+1` immediately, before the PEB
+    re-enters the free pool — matching Linux UBI's convention that a free PEB
+    always carries a valid, persisted EC header. `attach()`'s scan had to change
+    to match: a valid EC header with a blank VID header (page_is_blank() check)
+    was previously classified as an interrupted allocation and shunted into
+    `UBI_PEB_ERASE_PENDING` (a state nothing drains — see Task 12/known gaps
+    below); that is now indistinguishable from, and correctly treated as, an
+    ordinary free PEB, exactly like it is in real UBI. **Still explicitly out of
+    scope** (deferred to Task 12): `nand_ubi_eba_find_free_peb()` remains a
+    plain EC-blind linear scan — nothing yet *prefers* low-EC PEBs, this only
+    makes the counter itself honest. PEBs 0/1 (volume-table mirrors, rewritten
+    via `write_vtbl_copy()`, a separate code path from `vol_erase`/`vol_alloc_peb`)
+    are explicitly excluded — their EC still always reads 0; see `README.md`
+    "Known limitations".
 
 **Task 7: Host tests** ✅ DONE (cd2ae93)
 - Location: `host_test/main/nand_ubi_test.c`
