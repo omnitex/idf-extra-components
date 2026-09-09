@@ -1,0 +1,6 @@
+dependencies:
+  espressif/esp_nand_ubi:
+    version: '*'
+    override_path: '../../../'
+  joltwallet/littlefs:
+    version: '>=1.21.0'

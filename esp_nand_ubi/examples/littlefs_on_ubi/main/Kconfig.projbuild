@@ -1,0 +1,10 @@
+menu "LittleFS on UBI Example Configuration"
+
+    config EXAMPLE_FORMAT_IF_MOUNT_FAILED
+        bool "Format the flash if mount failed"
+        default y
+        help
+            If this config item is set, format_if_mount_failed will be set to true and
+            the LittleFS volume will be formatted if the first mount attempt fails (e.g.
+            on a factory-blank chip with no prior LittleFS superblock).
+endmenu
