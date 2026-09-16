@@ -48,6 +48,19 @@ menu "SPI NAND Flash configuration"
             calls by up to 31 of 32 for sequential sector access patterns.
             Set to false to disable (no RAM overhead, original behaviour).
 
+    config NAND_DHARA_FTL_MAP_EXACT_REPEAT_CACHE
+        bool "Enable Dhara FTL map exact-repeat fast path"
+        depends on NAND_DHARA_FTL_MAP_PATH_CACHE
+        default n
+        help
+            When enabled (on top of NAND_DHARA_FTL_MAP_PATH_CACHE), an exact
+            repeat of the previous read-only sector lookup (same sector,
+            journal unchanged since) skips the metadata read and radix-tree
+            walk entirely and returns the cached result page directly.
+            Consumes 4 extra bytes of memory on top of the path cache.
+            Set to false to disable (path cache still walks one metadata
+            read for a repeated lookup).
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX

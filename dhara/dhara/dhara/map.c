@@ -161,6 +161,17 @@ static int trace_path(struct dhara_map *m, dhara_sector_t target,
     if (!new_meta &&
             m->prev_target != DHARA_SECTOR_NONE &&
             m->prev_root == p) {
+#if DHARA_MAP_EXACT_REPEAT_CACHE
+        /* Exact repeat of the previous lookup: the result is already
+         * known, so skip the metadata read and the walk entirely. */
+        if (target == m->prev_target) {
+            if (loc) {
+                *loc = m->prev_loc;
+            }
+            return 0;
+        }
+#endif
+
         const dhara_sector_t diff = target ^ m->prev_target;
         while (depth < DHARA_RADIX_DEPTH && !(diff & d_bit(depth))) {
             depth++;
@@ -241,6 +252,9 @@ resume:
     if (!new_meta) {
         m->prev_target = target;
         m->prev_root   = dhara_journal_root(&m->journal);
+#if DHARA_MAP_EXACT_REPEAT_CACHE
+        m->prev_loc    = p;
+#endif
     }
 #endif
 

@@ -31,6 +31,17 @@
 #define DHARA_MAP_PATH_CACHE  1
 #endif
 
+/* Enable the exact-repeat fast path on top of DHARA_MAP_PATH_CACHE above.
+ * An exact repeat of the previous read-only lookup (same sector, journal
+ * unchanged since) skips the metadata read and radix-tree walk entirely,
+ * returning the cached result page directly. Adds 4 bytes (prev_loc) on
+ * top of the path cache; has no effect if DHARA_MAP_PATH_CACHE is 0.
+ * Override via CONFIG_NAND_DHARA_FTL_MAP_EXACT_REPEAT_CACHE in Kconfig.
+ */
+#ifndef DHARA_MAP_EXACT_REPEAT_CACHE
+#define DHARA_MAP_EXACT_REPEAT_CACHE  1
+#endif
+
 /* The map is a journal indexing format. It maps virtual sectors to
  * pages of data in flash memory.
  */
@@ -52,6 +63,9 @@ struct dhara_map {
     dhara_sector_t  prev_target;                  /* DHARA_SECTOR_NONE = invalid */
     dhara_page_t    prev_path[DHARA_RADIX_DEPTH]; /* physical page at each depth */
     dhara_page_t    prev_root;                    /* journal root when path was traced */
+#if DHARA_MAP_EXACT_REPEAT_CACHE
+    dhara_page_t    prev_loc;                     /* result page (or NONE) of prev trace */
+#endif
 #endif
 };
 
