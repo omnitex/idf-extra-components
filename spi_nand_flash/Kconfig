@@ -61,6 +61,27 @@ menu "SPI NAND Flash configuration"
             Set to false to disable (path cache still walks one metadata
             read for a repeated lookup).
 
+    config NAND_DHARA_JOURNAL_META_CACHE_SLOTS
+        int "Dhara journal metadata checkpoint-page cache slots (0 = disabled)"
+        range 0 8
+        default 0
+        help
+            Number of full NAND pages cached in internal DRAM by the Dhara
+            journal layer (below the FTL map caches above) to accelerate
+            repeated dhara_journal_read_meta() reads from the same
+            checkpoint group. On a cache miss, the whole checkpoint page is
+            loaded and kept (not just the requested metadata slice), since
+            on SPI NAND the READ PAGE ADDRESS command dominates read cost
+            regardless of how many bytes are transferred -- so the full-page
+            load amortises across every metadata slot within that
+            checkpoint group. Cache entries are invalidated by key
+            (physical checkpoint-page address) whenever that same page is
+            rewritten or the journal is cleared, so a stale physical
+            address can never be served after reuse.
+            Each slot costs one NAND page (typically 2048 bytes) of
+            DMA-aligned internal DRAM. Total cost: SLOTS x page_size bytes.
+            Set to 0 to disable (no RAM overhead, original behaviour).
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX
