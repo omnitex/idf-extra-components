@@ -360,6 +360,57 @@ I (75936) fatfs_tp: read stats: reads=7904, programs=0, copies=0, erases=0, meta
 I (77346) main_task: Returned from app_main()
 ```
 
+### 2A) Dhara FTL trace path cache
+```
+I (43656) vfs_fat_nand: Mounting again
+I (43676) fatfs_tp: FAT FS: 472000 kB total, 472000 kB free
+I (43676) fatfs_tp: SPI: 80000 kHz, QIO; cluster=32768; test file=2097152 bytes
+I (43676) fatfs_tp: Volume was erased before mount; format uses the configured allocation unit
+I (43686) fatfs_tp: ======== baseline: stdio unbuffered ========
+I (45586) fatfs_tp: [stdio/_IONBF] chunk=512: Wrote 2097152 bytes in 1212781 us, avg 1729.21 kB/s
+I (45596) fatfs_tp: [stdio/_IONBF] chunk=512: Read 2097152 bytes in 688596 us, avg 3045.55 kB/s
+
+I (45596) fatfs_tp: write stats: reads=109, programs=1096, copies=8, erases=17, metadata hits=0, misses=107 (0.0% hit)
+I (45606) fatfs_tp: read stats: reads=3079, programs=0, copies=0, erases=0, metadata hits=0, misses=2054 (0.0% hit)
+I (48736) fatfs_tp: [stdio/_IONBF] chunk=4096: Wrote 2097152 bytes in 1299138 us, avg 1614.26 kB/s
+I (48736) fatfs_tp: [stdio/_IONBF] chunk=4096: Read 2097152 bytes in 584362 us, avg 3588.79 kB/s
+
+I (48736) fatfs_tp: write stats: reads=1519, programs=1096, copies=8, erases=18, metadata hits=0, misses=1517 (0.0% hit)
+I (48746) fatfs_tp: read stats: reads=3083, programs=0, copies=0, erases=0, metadata hits=0, misses=2058 (0.0% hit)
+I (52026) fatfs_tp: [stdio/_IONBF] chunk=16384: Wrote 2097152 bytes in 1288117 us, avg 1628.08 kB/s
+I (52026) fatfs_tp: [stdio/_IONBF] chunk=16384: Read 2097152 bytes in 573938 us, avg 3653.97 kB/s
+
+I (52026) fatfs_tp: write stats: reads=1507, programs=1096, copies=8, erases=17, metadata hits=0, misses=1505 (0.0% hit)
+I (52046) fatfs_tp: read stats: reads=3084, programs=0, copies=0, erases=0, metadata hits=0, misses=2059 (0.0% hit)
+I (55476) fatfs_tp: [stdio/_IONBF] chunk=32768: Wrote 2097152 bytes in 1445201 us, avg 1451.11 kB/s
+I (55476) fatfs_tp: [stdio/_IONBF] chunk=32768: Read 2097152 bytes in 571861 us, avg 3667.24 kB/s
+
+I (55486) fatfs_tp: write stats: reads=2448, programs=1096, copies=8, erases=18, metadata hits=0, misses=2446 (0.0% hit)
+I (55496) fatfs_tp: read stats: reads=3082, programs=0, copies=0, erases=0, metadata hits=0, misses=2057 (0.0% hit)
+I (56906) fatfs_tp: ======== optimized: POSIX read/write ========
+I (58836) fatfs_tp: [posix read/write] chunk=512: Wrote 2097152 bytes in 1284054 us, avg 1633.23 kB/s
+I (58836) fatfs_tp: [posix read/write] chunk=512: Read 2097152 bytes in 646216 us, avg 3245.28 kB/s
+
+I (58846) fatfs_tp: write stats: reads=1508, programs=1096, copies=8, erases=17, metadata hits=0, misses=1506 (0.0% hit)
+I (58856) fatfs_tp: read stats: reads=3083, programs=0, copies=0, erases=0, metadata hits=0, misses=2058 (0.0% hit)
+I (62296) fatfs_tp: [posix read/write] chunk=4096: Wrote 2097152 bytes in 1445313 us, avg 1451.00 kB/s
+I (62296) fatfs_tp: [posix read/write] chunk=4096: Read 2097152 bytes in 578949 us, avg 3622.34 kB/s
+
+I (62306) fatfs_tp: write stats: reads=2441, programs=1096, copies=8, erases=18, metadata hits=0, misses=2439 (0.0% hit)
+I (62316) fatfs_tp: read stats: reads=3084, programs=0, copies=0, erases=0, metadata hits=0, misses=2059 (0.0% hit)
+I (65586) fatfs_tp: [posix read/write] chunk=16384: Wrote 2097152 bytes in 1282396 us, avg 1635.34 kB/s
+I (65586) fatfs_tp: [posix read/write] chunk=16384: Read 2097152 bytes in 572260 us, avg 3664.68 kB/s
+
+I (65586) fatfs_tp: write stats: reads=1507, programs=1096, copies=8, erases=17, metadata hits=0, misses=1505 (0.0% hit)
+I (65596) fatfs_tp: read stats: reads=3084, programs=0, copies=0, erases=0, metadata hits=0, misses=2059 (0.0% hit)
+I (69036) fatfs_tp: [posix read/write] chunk=32768: Wrote 2097152 bytes in 1445517 us, avg 1450.80 kB/s
+I (69036) fatfs_tp: [posix read/write] chunk=32768: Read 2097152 bytes in 570862 us, avg 3673.66 kB/s
+
+I (69046) fatfs_tp: write stats: reads=2448, programs=1096, copies=8, erases=18, metadata hits=0, misses=2446 (0.0% hit)
+I (69056) fatfs_tp: read stats: reads=3082, programs=0, copies=0, erases=0, metadata hits=0, misses=2057 (0.0% hit)
+I (70466) main_task: Returned from app_main()
+```
+
 ### 2) Driver page register cache
 ```
 I (41236) vfs_fat_nand: Formatting FATFS partition, allocation unit size=32768
