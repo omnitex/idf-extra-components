@@ -25,9 +25,9 @@
 #include "esp_nand_blockdev.h"
 #endif
 
-#define DHARA_META_CACHE_ENTRY_COUNT 16
+#define DHARA_META_CACHE_ENTRY_COUNT CONFIG_NAND_FLASH_DHARA_META_CACHE
 
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
 typedef struct {
     dhara_page_t page;
     size_t offset;
@@ -49,13 +49,13 @@ typedef struct {
     dhara_page_t meta_cache_keys[DHARA_META_CACHE_SLOTS];
 #endif
     spi_nand_flash_perf_stats_t perf_stats;
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     dhara_meta_cache_entry_t meta_cache[DHARA_META_CACHE_ENTRY_COUNT];
     uint8_t next_meta_cache_entry;
 #endif
 } spi_nand_flash_dhara_priv_data_t;
 
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
 static void meta_cache_invalidate_all(spi_nand_flash_dhara_priv_data_t *priv)
 {
     for (size_t i = 0; i < DHARA_META_CACHE_ENTRY_COUNT; i++) {
@@ -267,7 +267,7 @@ static esp_err_t dhara_gc(spi_nand_flash_device_t *handle)
 
 static esp_err_t dhara_erase_chip(spi_nand_flash_device_t *handle)
 {
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     spi_nand_flash_dhara_priv_data_t *priv = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
     meta_cache_invalidate_all(priv);
 #endif
@@ -276,7 +276,7 @@ static esp_err_t dhara_erase_chip(spi_nand_flash_device_t *handle)
 
 static esp_err_t dhara_erase_block(spi_nand_flash_device_t *handle, uint32_t block)
 {
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     spi_nand_flash_dhara_priv_data_t *priv = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
     meta_cache_invalidate_block(priv, block);
 #endif
@@ -331,7 +331,7 @@ esp_err_t nand_wl_reset_perf_stats(spi_nand_flash_device_t *handle)
     }
     spi_nand_flash_dhara_priv_data_t *priv = (spi_nand_flash_dhara_priv_data_t *)handle->ops_priv_data;
     memset(&priv->perf_stats, 0, sizeof(priv->perf_stats));
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     meta_cache_invalidate_all(priv);
 #endif
     return ESP_OK;
@@ -349,7 +349,7 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
     spi_nand_flash_device_t *dev_handle = NULL;
     esp_err_t ret = ESP_OK;
     if (length == DHARA_META_SIZE) {
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
         if (meta_cache_read(dhara_priv_data, p, offset, length, data)) {
             dhara_priv_data->perf_stats.metadata_cache_hits++;
             return 0;
@@ -374,7 +374,7 @@ int dhara_nand_read(const struct dhara_nand *n, dhara_page_t p, size_t offset, s
         }
         return -1;
     }
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     if (length == DHARA_META_SIZE) {
         meta_cache_store(dhara_priv_data, p, offset, length, data);
     }
@@ -386,7 +386,7 @@ int dhara_nand_prog(const struct dhara_nand *n, dhara_page_t p, const uint8_t *d
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     esp_err_t ret = ESP_OK;
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     meta_cache_invalidate_page(dhara_priv_data, p);
 #endif
     dhara_priv_data->perf_stats.physical_programs++;
@@ -412,7 +412,7 @@ int dhara_nand_erase(const struct dhara_nand *n, dhara_block_t b, dhara_error_t 
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
     esp_err_t ret = ESP_OK;
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     meta_cache_invalidate_block(dhara_priv_data, b);
 #endif
     dhara_priv_data->perf_stats.physical_erases++;
@@ -458,7 +458,7 @@ int dhara_nand_is_bad(const struct dhara_nand *n, dhara_block_t b)
 void dhara_nand_mark_bad(const struct dhara_nand *n, dhara_block_t b)
 {
     spi_nand_flash_dhara_priv_data_t *dhara_priv_data = __containerof(n, spi_nand_flash_dhara_priv_data_t, dhara_nand);
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     meta_cache_invalidate_block(dhara_priv_data, b);
 #endif
 #ifdef CONFIG_NAND_FLASH_ENABLE_BDL
@@ -504,7 +504,7 @@ int dhara_nand_copy(const struct dhara_nand *n, dhara_page_t src, dhara_page_t d
     spi_nand_flash_device_t *dev_handle = NULL;
     esp_err_t ret = ESP_OK;
 
-#ifdef CONFIG_NAND_FLASH_DHARA_META_CACHE
+#if CONFIG_NAND_FLASH_DHARA_META_CACHE > 0
     meta_cache_invalidate_page(dhara_priv_data, dst);
 #endif
     dhara_priv_data->perf_stats.physical_copies++;

@@ -81,13 +81,19 @@ menu "SPI NAND Flash configuration"
             Each slot costs one NAND page (typically 2048 bytes) of
             DMA-aligned internal DRAM. Total cost: SLOTS x page_size bytes.
             Set to 0 to disable (no RAM overhead, original behaviour).
+
     config NAND_FLASH_DHARA_META_CACHE
-        bool "Cache Dhara metadata reads"
-        default n
+        int "Dhara glue-layer exact-match metadata cache entries (0 = disabled)"
+        range 0 32
+        default 0
         help
-            Cache up to 16 exact 132-byte Dhara metadata reads per device.
-            This experimental option uses approximately 2.4 KiB of device
-            memory and is intended for throughput testing.
+            Number of exact-match (page, offset, length) metadata read
+            entries cached at the dhara glue layer (dhara_nand_read()),
+            below CONFIG_NAND_DHARA_JOURNAL_META_CACHE_SLOTS. Each entry
+            holds one DHARA_META_SIZE-byte (132 B) metadata read plus its
+            key, roughly 148 bytes; entries are invalidated by physical
+            page on program/erase/copy/mark-bad. Round-robin eviction.
+            Set to 0 to disable (no RAM overhead, original behaviour).
 
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
