@@ -25,6 +25,76 @@ menu "SPI NAND Flash configuration"
             Note: This option requires ESP-IDF >= 6.0 (esp_blockdev component).
             Enabling this on ESP-IDF < 6.0 will result in a build error.
 
+    config NAND_FLASH_PAGE_REGISTER_CACHE
+        bool "Enable NAND page-register cache"
+        default n
+        help
+            When enabled, the SPI NAND driver tracks whether the chip's
+            internal page register already holds the requested page and
+            skips the READ PAGE ADDRESS command (25-100 us) on repeated
+            reads of the same page. The cache is invalidated on any
+            program, erase, or mark-bad operation, since those overwrite
+            the chip's internal register.
+            Set to false to disable (no caching, original behaviour).
+
+    config NAND_DHARA_FTL_MAP_PATH_CACHE
+        bool "Enable Dhara FTL map path cache"
+        default n
+        help
+            When enabled, Dhara FTL map caches the last successful read-only
+            FTL map traversal. Consumes 136 bytes of memory. Consecutive
+            sector lookups that share a common radix-tree prefix skip the
+            already-known levels entirely, reducing Dhara FTL journal read meta
+            calls by up to 31 of 32 for sequential sector access patterns.
+            Set to false to disable (no RAM overhead, original behaviour).
+
+    config NAND_DHARA_FTL_MAP_EXACT_REPEAT_CACHE
+        bool "Enable Dhara FTL map exact-repeat fast path"
+        depends on NAND_DHARA_FTL_MAP_PATH_CACHE
+        default n
+        help
+            When enabled (on top of NAND_DHARA_FTL_MAP_PATH_CACHE), an exact
+            repeat of the previous read-only sector lookup (same sector,
+            journal unchanged since) skips the metadata read and radix-tree
+            walk entirely and returns the cached result page directly.
+            Consumes 4 extra bytes of memory on top of the path cache.
+            Set to false to disable (path cache still walks one metadata
+            read for a repeated lookup).
+
+    config NAND_DHARA_JOURNAL_META_CACHE_SLOTS
+        int "Dhara journal metadata checkpoint-page cache slots (0 = disabled)"
+        range 0 8
+        default 0
+        help
+            Number of full NAND pages cached in internal DRAM by the Dhara
+            journal layer (below the FTL map caches above) to accelerate
+            repeated dhara_journal_read_meta() reads from the same
+            checkpoint group. On a cache miss, the whole checkpoint page is
+            loaded and kept (not just the requested metadata slice), since
+            on SPI NAND the READ PAGE ADDRESS command dominates read cost
+            regardless of how many bytes are transferred -- so the full-page
+            load amortises across every metadata slot within that
+            checkpoint group. Cache entries are invalidated by key
+            (physical checkpoint-page address) whenever that same page is
+            rewritten or the journal is cleared, so a stale physical
+            address can never be served after reuse.
+            Each slot costs one NAND page (typically 2048 bytes) of
+            DMA-aligned internal DRAM. Total cost: SLOTS x page_size bytes.
+            Set to 0 to disable (no RAM overhead, original behaviour).
+
+    config NAND_FLASH_DHARA_META_CACHE
+        int "Dhara glue-layer exact-match metadata cache entries (0 = disabled)"
+        range 0 32
+        default 0
+        help
+            Number of exact-match (page, offset, length) metadata read
+            entries cached at the dhara glue layer (dhara_nand_read()),
+            below CONFIG_NAND_DHARA_JOURNAL_META_CACHE_SLOTS. Each entry
+            holds one DHARA_META_SIZE-byte (132 B) metadata read plus its
+            key, roughly 148 bytes; entries are invalidated by physical
+            page on program/erase/copy/mark-bad. Round-robin eviction.
+            Set to 0 to disable (no RAM overhead, original behaviour).
+
     config NAND_ENABLE_STATS
         bool "Host test statistics enabled"
         depends on IDF_TARGET_LINUX

@@ -20,6 +20,21 @@
 #include <stdint.h>
 #include "nand.h"
 
+/* Number of full-page metadata cache slots.
+ * Each slot holds one checkpoint page (page_size bytes) in DMA-aligned DRAM,
+ * caching dhara_journal_read_meta() reads at the journal layer (below the
+ * dhara_map radix-tree cache in map.h). A cache hit avoids a full NAND page
+ * read (READ PAGE ADDRESS dominates SPI NAND read cost, so loading the full
+ * checkpoint page once amortises across all DHARA_META_SIZE-byte metadata
+ * slots within it).
+ * Set to 0 to disable the cache entirely (original behaviour, zero RAM overhead).
+ * Override via CONFIG_NAND_DHARA_JOURNAL_META_CACHE_SLOTS in Kconfig -> compile
+ * flag in dhara/CMakeLists.txt.
+ */
+#ifndef DHARA_META_CACHE_SLOTS
+#define DHARA_META_CACHE_SLOTS  0
+#endif
+
 /* Number of bytes used by the journal checkpoint header. */
 #define DHARA_HEADER_SIZE       16
 
@@ -116,6 +131,15 @@ struct dhara_journal {
     dhara_page_t            recover_next;
     dhara_page_t            recover_root;
     dhara_page_t            recover_meta;
+
+#if DHARA_META_CACHE_SLOTS > 0
+    uint8_t       **cache_bufs;   /* array of cache_slots pointers to page-sized DMA buffers */
+    dhara_page_t   *cache_keys;   /* checkpoint page stored in each slot (DHARA_PAGE_NONE = empty) */
+    uint8_t         cache_slots;  /* active slot count (<= DHARA_META_CACHE_SLOTS) */
+    uint8_t         cache_hand;   /* round-robin eviction index */
+    uint32_t        stat_hits;    /* read_meta calls served from cache */
+    uint32_t        stat_misses;  /* read_meta calls that caused a page load */
+#endif
 };
 
 /* Initialize a journal. You must supply a pointer to a NAND chip
@@ -128,6 +152,20 @@ struct dhara_journal {
 void dhara_journal_init(struct dhara_journal *j,
                         const struct dhara_nand *n,
                         uint8_t *page_buf);
+
+#if DHARA_META_CACHE_SLOTS > 0
+/* Attach an external multi-slot metadata cache to the journal.
+ * Must be called after dhara_journal_init() and before dhara_journal_resume().
+ * cache_bufs: array of cache_slots pointers, each pointing to a DMA-aligned
+ *             buffer of (1 << nand->log2_page_size) bytes in internal DRAM.
+ * cache_keys: array of cache_slots dhara_page_t values, pre-filled with
+ *             DHARA_PAGE_NONE by the caller.
+ */
+void dhara_journal_set_meta_cache(struct dhara_journal *j,
+                                   uint8_t **cache_bufs,
+                                   dhara_page_t *cache_keys,
+                                   uint8_t cache_slots);
+#endif
 
 /* Start up the journal -- search the NAND for the journal head, or
  * initialize a blank journal if one isn't found. Returns 0 on success
