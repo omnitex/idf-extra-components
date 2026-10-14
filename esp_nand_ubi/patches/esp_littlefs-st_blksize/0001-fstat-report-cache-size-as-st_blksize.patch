@@ -1,0 +1,20 @@
+--- a/src/esp_littlefs.c	2026-10-08 15:23:01
++++ b/src/esp_littlefs.c	2026-10-08 15:23:01
+@@ -2275,7 +2275,7 @@
+     vfs_littlefs_file_t *file = NULL;
+ 
+     memset(st, 0, sizeof(struct stat));
+-    st->st_blksize = efs->cfg.block_size;
++    st->st_blksize = efs->cfg.cache_size;
+ 
+     sem_take(efs);
+     if((uint32_t)fd > efs->cache_size) {
+@@ -2321,7 +2321,7 @@
+     int res;
+ 
+     memset(st, 0, sizeof(struct stat));
+-    st->st_blksize = efs->cfg.block_size;
++    st->st_blksize = efs->cfg.cache_size;
+ 
+     sem_take(efs);
+     res = lfs_stat(efs->fs, path, &info);

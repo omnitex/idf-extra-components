@@ -1,0 +1,19 @@
+menu "LittleFS on UBI Example Configuration"
+
+    config EXAMPLE_FORMAT_IF_MOUNT_FAILED
+        bool "Format the flash if mount failed"
+        default y
+        help
+            If this config item is set, format_if_mount_failed will be set to true and
+            the LittleFS volume will be formatted if the first mount attempt fails (e.g.
+            on a factory-blank chip with no prior LittleFS superblock).
+
+    config EXAMPLE_WIPE_NAND_ON_BOOT
+        bool "Erase the whole NAND chip on boot (destroys all data)"
+        default n
+        help
+            Erases every good block of the raw NAND before attaching UBI, so the
+            attach sees a blank chip and nand_ubi_get_blockdev() creates one volume
+            spanning the whole chip. Use for one boot to measure the full-chip case,
+            then disable it again: with it enabled, every boot starts from scratch.
+endmenu

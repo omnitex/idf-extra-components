@@ -1,0 +1,66 @@
+menu "NAND UBI configuration"
+
+    config ESP_NAND_UBI_ENABLE
+        bool "Enable UBI-like layer for SPI NAND flash"
+        depends on NAND_FLASH_ENABLE_BDL
+        default n
+        help
+            Enables the esp_nand_ubi component. Requires CONFIG_NAND_FLASH_ENABLE_BDL
+            and ESP-IDF >= 6.0. Provides position-independent factory images and
+            bad-block hiding on SPI NAND flash by exposing a flat logical-erase-block
+            (LEB) address space per volume above the raw NAND block device.
+
+    config ESP_NAND_UBI_RESERVED_PEBS
+        int "Default number of reserved PEBs for bad-block pool"
+        depends on ESP_NAND_UBI_ENABLE
+        range 0 32
+        default 4
+        help
+            Number of physical erase blocks held back as a spare pool for bad-block
+            replacement. Used as the default when nand_ubi_config_t.reserved_pebs is
+            not overridden by the caller.
+
+    config ESP_NAND_UBI_ALLOC_SAMPLES
+        int "Free PEBs sampled per allocation"
+        depends on ESP_NAND_UBI_ENABLE
+        range 1 8
+        default 4
+        help
+            Each allocation reads the EC headers of this many randomly chosen free PEBs
+            and takes the one with the lowest erase count. Erase counts are not kept in
+            RAM. 1 picks a random free PEB with no wear leveling; 2 or more keep the
+            erase-count spread bounded, and larger values narrow it further at the cost
+            of one EC header read per extra sample.
+
+
+    config ESP_NAND_UBI_CHECKPOINT
+        bool "Attach checkpoint (fast attach)"
+        depends on ESP_NAND_UBI_ENABLE
+        default y
+        help
+            Keeps a snapshot of the LEB map and PEB states on flash, so attach reads the
+            snapshot and a small set of PEBs instead of every PEB. Reserves a region at
+            the start of the chip for the snapshot; erased LEBs keep their PEB until the
+            next snapshot is written. A chip with checkpoints still attaches by full scan,
+            also on Linux. See docs/fastmap-design.md.
+
+            A volume created with this option off may reserve more LEBs than fit outside
+            the region; attach then warns, and writes fail once the chip is full.
+
+    config ESP_NAND_UBI_CKPT_REGION_PEBS
+        int "Checkpoint region size in PEBs (0 = square root of the PEB count)"
+        depends on ESP_NAND_UBI_CHECKPOINT
+        range 0 1024
+        default 0
+
+    config ESP_NAND_UBI_CKPT_POOL_PEBS
+        int "Free PEBs per checkpoint (0 = region size)"
+        depends on ESP_NAND_UBI_CHECKPOINT
+        range 0 1024
+        default 0
+        help
+            Writes go to these PEBs between two checkpoints. A larger pool writes
+            checkpoints less often, but attach reads more PEBs and the write that
+            refills the pool takes longer.
+
+endmenu
