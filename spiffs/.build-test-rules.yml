@@ -1,4 +1,7 @@
 spiffs/test_apps:
+  disable:
+    - if: IDF_VERSION_MAJOR < 6
+      reason: component requires ESP-IDF >= 6.0
   disable_test:
     - if: IDF_TARGET not in ["esp32", "esp32c3", "esp32s3"]
       reason: These chips should be sufficient for test coverage (Xtensa and RISC-V, single and dual core)
@@ -7,3 +10,6 @@ spiffs/host_test:
   enable:
     - if: IDF_TARGET == "linux"
       reason: only test on linux
+  disable:
+    - if: IDF_VERSION_MAJOR < 6
+      reason: component requires ESP-IDF >= 6.0
