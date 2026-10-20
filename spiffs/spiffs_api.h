@@ -27,7 +27,7 @@ typedef struct {
     spiffs *fs;                             /*!< Handle to the underlying SPIFFS */
     SemaphoreHandle_t lock;                 /*!< FS lock */
     const esp_partition_t* partition;       /*!< The partition on which SPIFFS is located */
-    char base_path[ESP_SPIFFS_PATH_MAX+1];  /*!< Mount point */
+    char base_path[ESP_SPIFFS_PATH_MAX + 1]; /*!< Mount point */
     bool by_label;                          /*!< Partition was mounted by label */
     spiffs_config cfg;                      /*!< SPIFFS Mount configuration */
     uint8_t *work;                          /*!< Work Buffer */
@@ -44,7 +44,7 @@ s32_t spiffs_api_write(spiffs *fs, uint32_t addr, uint32_t size, uint8_t *src);
 s32_t spiffs_api_erase(spiffs *fs, uint32_t addr, uint32_t size);
 
 void spiffs_api_check(spiffs *fs, spiffs_check_type type,
-                            spiffs_check_report report, uint32_t arg1, uint32_t arg2);
+                      spiffs_check_report report, uint32_t arg1, uint32_t arg2);
 
 #ifdef __cplusplus
 }
