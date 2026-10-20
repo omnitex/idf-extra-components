@@ -1,9 +1,9 @@
 spiffs/test_apps:
-  enable:
-    - if: IDF_TARGET in ["esp32", "esp32c3"]
-      reason: "Sufficient to test on one Xtensa and one RISC-V target"
+  disable_test:
+    - if: IDF_TARGET not in ["esp32", "esp32c3", "esp32s3"]
+      reason: These chips should be sufficient for test coverage (Xtensa and RISC-V, single and dual core)
 
 spiffs/host_test:
   enable:
     - if: IDF_TARGET == "linux"
-      reason: "Host test"
+      reason: only test on linux
