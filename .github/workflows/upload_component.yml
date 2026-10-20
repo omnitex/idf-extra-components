@@ -73,6 +73,7 @@ jobs:
             sh2lib
             spi_nand_flash
             spi_nand_flash_fatfs
+            spiffs
             supertinycron
             thorvg
             touch_element
