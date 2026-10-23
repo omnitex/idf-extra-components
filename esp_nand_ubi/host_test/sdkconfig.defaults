@@ -1,0 +1,6 @@
+CONFIG_IDF_TARGET="linux"
+CONFIG_NAND_FLASH_ENABLE_BDL=y
+CONFIG_ESP_NAND_UBI_ENABLE=y
+# The general suites test the mode without checkpoints (exact PEB numbers, immediate
+# erases); test_nand_ubi_checkpoint.cpp turns checkpoints on per attach.
+CONFIG_ESP_NAND_UBI_CHECKPOINT=n

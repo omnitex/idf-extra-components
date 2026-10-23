@@ -1,0 +1,48 @@
+menu "NAND UBI power-cut test"
+
+    choice PTEST_RESET
+        prompt "How the workload is interrupted"
+        default PTEST_RESET_AUTO
+        help
+            Auto: the app resets itself after a random delay, for unattended runs.
+            The NAND stays powered, so a program or erase already started completes.
+            Manual: the workload runs until power is removed (unplug the board).
+
+        config PTEST_RESET_AUTO
+            bool "Auto (esp_restart after a random delay)"
+        config PTEST_RESET_MANUAL
+            bool "Manual (unplug power)"
+    endchoice
+
+    config PTEST_RESET_MIN_MS
+        int "Minimum delay before the auto reset (ms)"
+        depends on PTEST_RESET_AUTO
+        default 50
+
+    config PTEST_RESET_MAX_MS
+        int "Maximum delay before the auto reset (ms)"
+        depends on PTEST_RESET_AUTO
+        default 3000
+
+    config PTEST_DATA_LEBS
+        int "Data LEBs in the workload volume"
+        range 4 400
+        default 32
+        help
+            Every boot reads all pages of these LEBs to verify them, so verify time
+            grows with this value.
+
+    config PTEST_PAGES_PER_STEP
+        int "Pages written per LEB rewrite"
+        range 1 64
+        default 16
+        help
+            Must not exceed the pages per LEB of the chip (62 on a 2 KiB-page,
+            128 KiB-block NAND).
+
+    config PTEST_STATS_LEBS
+        int "LEBs in the stats volume (ring of one record per page)"
+        range 2 16
+        default 4
+
+endmenu
