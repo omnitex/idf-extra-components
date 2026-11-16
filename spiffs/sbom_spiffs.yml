@@ -1,0 +1,6 @@
+name: spiffs
+version: 0.2-265-gad902ca
+supplier: 'Person: Peter Andersson'
+description: Wear-leveled SPI flash file system for embedded devices
+url: https://github.com/pellepl/spiffs
+hash: ad902cadceb39d0825a97e25ecb5867641f606ba
