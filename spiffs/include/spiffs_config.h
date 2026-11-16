@@ -87,7 +87,6 @@ extern void spiffs_api_unlock(struct spiffs_t *fs);
 // file flags
 #define _SPIPRIfl  "%02x"
 
-
 // Enable/disable API functions to determine exact number of bytes
 // for filedescriptor and cache buffers. Once decided for a configuration,
 // this can be disabled to reduce flash.
@@ -168,7 +167,7 @@ extern void spiffs_api_unlock(struct spiffs_t *fs);
 #define SPIFFS_OBJ_META_LEN             (CONFIG_SPIFFS_META_LENGTH)
 #define SPIFFS_PAGE_EXTRA_SIZE          (64)
 ESP_STATIC_ASSERT(SPIFFS_OBJ_META_LEN + SPIFFS_OBJ_NAME_LEN + SPIFFS_PAGE_EXTRA_SIZE
-        <= CONFIG_SPIFFS_PAGE_SIZE, "SPIFFS_OBJ_META_LEN or SPIFFS_OBJ_NAME_LEN too long");
+                  <= CONFIG_SPIFFS_PAGE_SIZE, "SPIFFS_OBJ_META_LEN or SPIFFS_OBJ_NAME_LEN too long");
 
 // Size of buffer allocated on stack used when copying data.
 // Lower value generates more read/writes. No meaning having it bigger

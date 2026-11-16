@@ -2,13 +2,17 @@
 #
 # Create a spiffs image of the specified directory on the host during build and optionally
 # have the created image flashed using `idf.py flash`
+
+# This file is included at project level, so CMAKE_CURRENT_LIST_DIR is the component
+# directory only here, not inside the function body.
+set(SPIFFS_COMPONENT_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 function(spiffs_create_partition_image partition base_dir)
     set(options FLASH_IN_PROJECT)
     set(multi DEPENDS)
     cmake_parse_arguments(arg "${options}" "" "${multi}" "${ARGN}")
 
-    idf_build_get_property(idf_path IDF_PATH)
-    set(spiffsgen_py ${PYTHON} ${idf_path}/components/spiffs/spiffsgen.py)
+    set(spiffsgen_py ${PYTHON} ${SPIFFS_COMPONENT_DIR}/spiffsgen.py)
 
     get_filename_component(base_dir_full_path ${base_dir} ABSOLUTE)
 

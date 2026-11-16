@@ -33,6 +33,7 @@ submodules:
   - "/quirc/quirc/"
   - "/raylib/raylib/"
   - "/soem/soem/"
+  - "/spiffs/spiffs/"
   - "/supertinycron/supertinycron/"
   - "/thorvg/thorvg/"
   - "/zlib/zlib/"

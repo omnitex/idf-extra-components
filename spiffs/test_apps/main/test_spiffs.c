@@ -36,7 +36,7 @@ void app_main(void)
 static const esp_partition_t *get_partition(void)
 {
     const esp_partition_t *result = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
-            ESP_PARTITION_SUBTYPE_DATA_SPIFFS, spiffs_test_partition_label);
+                                                             ESP_PARTITION_SUBTYPE_DATA_SPIFFS, spiffs_test_partition_label);
     TEST_ASSERT_NOT_NULL_MESSAGE(result, "partition table not set correctly");
     return result;
 }
@@ -199,7 +199,6 @@ static void test_spiffs_truncate(const char *filename)
     truncated_len = strlen(truncated_1);
     TEST_ASSERT_EQUAL(0, truncate(filename, truncated_len));
 
-
     FILE* f = fopen(filename, "rb");
     TEST_ASSERT_NOT_NULL(f);
     memset(output, 0, sizeof(output));
@@ -214,7 +213,6 @@ static void test_spiffs_truncate(const char *filename)
     TEST_ASSERT_EQUAL(-1, truncate(filename, strlen(input)));
     TEST_ASSERT_EQUAL(-1, truncate(filename, strlen(input) + 1));
     TEST_ASSERT_EQUAL(-1, truncate(filename, -1));
-
 
     // Truncating a truncated file should succeed
     const char truncated_2[] = "ABCDE";
@@ -371,7 +369,7 @@ static void test_spiffs_opendir_readdir_rewinddir(const char* dir_prefix)
     TEST_ASSERT_NOT_NULL(dir);
     int count = 0;
     const char* names[4];
-    while(count < 4) {
+    while (count < 4) {
         struct dirent* de = readdir(dir);
         if (!de) {
             break;
@@ -424,7 +422,7 @@ static void test_spiffs_readdir_many_files(const char* dir_prefix)
     const int n_files = 40;
     const int n_folders = 4;
     unsigned char file_count[n_files * n_folders];
-    memset(file_count, 0, sizeof(file_count)/sizeof(file_count[0]));
+    memset(file_count, 0, sizeof(file_count) / sizeof(file_count[0]));
     char file_name[ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN];
 
     /* clean stale files before the test */
@@ -476,7 +474,6 @@ static void test_spiffs_readdir_many_files(const char* dir_prefix)
         }
     }
 }
-
 
 typedef struct {
     const char* filename;
@@ -593,14 +590,13 @@ static void test_spiffs_concurrent(const char* filename_prefix)
     vSemaphoreDelete(args4.done);
 }
 
-
 static void test_setup(void)
 {
     esp_vfs_spiffs_conf_t conf = {
-      .base_path = "/spiffs",
-      .partition_label = spiffs_test_partition_label,
-      .max_files = 5,
-      .format_if_mount_failed = true
+        .base_path = "/spiffs",
+        .partition_label = spiffs_test_partition_label,
+        .max_files = 5,
+        .format_if_mount_failed = true
     };
 
     TEST_ESP_OK(esp_vfs_spiffs_register(&conf));
@@ -705,7 +701,6 @@ TEST_CASE("can lseek", "[spiffs]")
     test_teardown();
 }
 
-
 TEST_CASE("stat returns correct values", "[spiffs]")
 {
     test_setup();
@@ -790,7 +785,7 @@ TEST_CASE("mtime is updated when file is opened", "[spiffs]")
     TEST_ASSERT_EQUAL(0, stat(filename, &st));
     printf("mtime=%d\n", (int) st.st_mtime);
     TEST_ASSERT(st.st_mtime >= t_before_create
-             && st.st_mtime <= t_after_create);
+                && st.st_mtime <= t_after_create);
 
     /* Wait a bit, open again, check that mtime is updated */
     vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -800,7 +795,7 @@ TEST_CASE("mtime is updated when file is opened", "[spiffs]")
     TEST_ASSERT_EQUAL(0, fstat(fileno(f), &st));
     printf("mtime=%d\n", (int) st.st_mtime);
     TEST_ASSERT(st.st_mtime >= t_before_open
-             && st.st_mtime <= t_after_open);
+                && st.st_mtime <= t_after_open);
     fclose(f);
 
     /* Wait a bit, open for reading, check that mtime is not updated */
@@ -810,8 +805,8 @@ TEST_CASE("mtime is updated when file is opened", "[spiffs]")
     TEST_ASSERT_EQUAL(0, fstat(fileno(f), &st));
     printf("mtime=%d\n", (int) st.st_mtime);
     TEST_ASSERT(t_before_open_ro > t_after_open
-             && st.st_mtime >= t_before_open
-             && st.st_mtime <= t_after_open);
+                && st.st_mtime >= t_before_open
+                && st.st_mtime <= t_after_open);
     fclose(f);
 
     test_teardown();
@@ -910,8 +905,8 @@ static void test_spiffs_rw_speed(const char* filename, void* buf, size_t buf_siz
 
     float t_s = tv_end.tv_sec - tv_start.tv_sec + 1e-6f * (tv_end.tv_usec - tv_start.tv_usec);
     printf("%s %d bytes (block size %d) in %.3fms (%.3f MB/s)\n",
-            (is_write)?"Wrote":"Read", file_size, buf_size, t_s * 1e3,
-                    file_size / (1024.0f * 1024.0f * t_s));
+           (is_write) ? "Wrote" : "Read", file_size, buf_size, t_s * 1e3,
+           file_size / (1024.0f * 1024.0f * t_s));
 }
 
 TEST_CASE("write/read speed test", "[spiffs][timeout=60]")

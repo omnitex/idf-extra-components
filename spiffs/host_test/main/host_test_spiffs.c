@@ -70,7 +70,7 @@ static void init_spiffs(spiffs *fs, uint32_t max_files)
 
 #if CONFIG_SPIFFS_CACHE
     uint32_t cache_sz = sizeof(spiffs_cache) + max_files * (sizeof(spiffs_cache_page)
-                        + cfg.log_page_size);
+                                                            + cfg.log_page_size);
     uint8_t *cache = (uint8_t *) malloc(cache_sz);
 #else
     uint32_t cache_sz = 0;
@@ -279,7 +279,6 @@ TEST(spiffs, erase_check)
     spiffs fs;
 
     init_spiffs(&fs, 5);
-
 
     for (int write_iter = 0; write_iter < 100; ++write_iter) {
         spiffs_file f = SPIFFS_open(&fs, "/test", SPIFFS_CREAT | SPIFFS_TRUNC | SPIFFS_RDWR, 0);

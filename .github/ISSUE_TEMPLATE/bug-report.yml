@@ -73,6 +73,7 @@ body:
         - soem
         - spi_nand_flash
         - spi_nand_flash_fatfs
+        - spiffs
         - supertinycron
         - thorvg
         - touch_element
