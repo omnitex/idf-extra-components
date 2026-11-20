@@ -1,0 +1,18 @@
+menu "SPI NAND Flash test app"
+
+    choice TEST_NAND_BOARD
+        prompt "NAND test board"
+        default TEST_NAND_BOARD_SINGLE
+        help
+            Which chip select lines the probe case reads. All chips share the bus of the
+            other cases (HOST_ID and pins in test_spi_nand_common.h).
+
+        config TEST_NAND_BOARD_SINGLE
+            bool "Single chip on the default CS pin (CI runner)"
+
+        config TEST_NAND_BOARD_MULTI_ESP32
+            bool "ESP32 multi-chip board (U1-U8)"
+            depends on IDF_TARGET_ESP32
+    endchoice
+
+endmenu

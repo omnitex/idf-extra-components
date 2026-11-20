@@ -50,6 +50,9 @@ typedef struct spi_nand_transaction_t spi_nand_transaction_t;
 #define REG_CONFIG          0xB0
 #define REG_STATUS          0xC0
 
+/* CFG (B0h) on-die ECC enable; the same bit on most SPI NAND vendors. */
+#define REG_CONFIG_ECC_EN   (1 << 4)
+
 #define STAT_BUSY           (1 << 0)
 #define STAT_WRITE_ENABLED  (1 << 1)
 #define STAT_ERASE_FAILED   (1 << 2)

@@ -19,9 +19,6 @@
 
 static const char *TAG = "nand_generic";
 
-/* Common CFG bit for on-die ECC enable across many SPI NAND vendors. */
-#define REG_CONFIG_ECC_EN   (1 << 4)
-
 static void nand_generic_apply_io_limits(spi_nand_flash_device_t *dev)
 {
     if (dev->config.io_mode != SPI_NAND_IO_MODE_SIO) {

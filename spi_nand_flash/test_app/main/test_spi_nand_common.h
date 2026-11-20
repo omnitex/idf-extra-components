@@ -33,6 +33,12 @@
 
 void spi_nand_test_setup_chip(spi_device_handle_t *spi, uint8_t flags);
 
+/** Initialise @p host with @p bus_cfg; spi_nand_flash_test_teardown() frees it. */
+void spi_nand_test_setup_bus(spi_host_device_t host, const spi_bus_config_t *bus_cfg);
+
+/** Add a device on the bus from spi_nand_test_setup_bus(); teardown removes it. */
+void spi_nand_test_add_device(int cs, uint8_t flags, int clock_hz, spi_device_handle_t *spi);
+
 /** For custom SPI init paths that do not call spi_nand_test_setup_chip(). */
 void spi_nand_test_mark_bus_initialized(void);
 void spi_nand_test_set_spi_handle(spi_device_handle_t spi);
